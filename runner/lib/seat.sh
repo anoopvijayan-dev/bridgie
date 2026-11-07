@@ -57,9 +57,9 @@ run_seat() {
   [[ "$adapter" != "none" ]] || die "seat $seat has no model adapter (mechanical seats run in M1's verify command)"
   local adapter_sh="$BRIDGIE_HOME/adapters/$adapter/run.sh"
   [[ -x "$adapter_sh" ]] || die "adapter not found or not executable: $adapter_sh"
-  local writes output mode=readonly
+  local writes output mode="readonly"
   writes="$(node_run context.mjs manifest "$seat" writes)"; output="$(node_run context.mjs manifest "$seat" output)"
-  [[ "$writes" == "worktree" ]] && mode=write
+  [[ "$writes" == "worktree" ]] && mode="write"
 
   # 3. snapshot, launch, measure
   snapshot_state "$root" "$slug" "$run_dir/.snapshot"

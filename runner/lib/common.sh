@@ -23,7 +23,7 @@ project_root() {
 # node_run <module.mjs> args... → runs a runner module with BRIDGIE_HOME exported.
 node_run() {
   local mod="$1"; shift
-  BRIDGIE_HOME="$BRIDGIE_HOME" node "$BRIDGIE_HOME/runner/$mod" "$@"
+  node "$BRIDGIE_HOME/runner/$mod" "$@"   # BRIDGIE_HOME is exported by bin/bridgie
 }
 
 # Who is acting: $BRIDGIE_USER, else git user.name, else $USER.
