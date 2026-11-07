@@ -1,7 +1,7 @@
 // Single writer for Bridgie project state. Everything under <root>/.bridgie is
 // read and written through this module. Importable (surface.mjs) and a CLI.
 import { readFileSync, writeFileSync, renameSync, existsSync, mkdirSync, readdirSync, statSync } from 'node:fs';
-import { join, dirname, resolve } from 'node:path';
+import { join, dirname, resolve, sep } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parse as yparse, splitFrontmatter, joinFrontmatter } from './yaml.mjs';
@@ -10,11 +10,37 @@ import { validate, assertValid } from './schema.mjs';
 export const HOME = process.env.BRIDGIE_HOME || resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const SLUG = /^[a-z0-9][a-z0-9-]{0,63}$/;
 export const CONFIDENCE = ['opinion', 'anecdote', 'data', 'test'];
+export const RISK_ORDER = ['none', 'ux', 'data', 'infra', 'security', 'money'];
+export const maxRisk = (a, b) => (RISK_ORDER.indexOf(a) >= RISK_ORDER.indexOf(b) ? a : b);
+
+// ---------- seat lock ----------
+// While an agent (seat) runs, Bridgie state is read-only for everyone but that run's own directory,
+// so a human decision is refused with a clear message instead of being rolled back as tampering
+// (finding 4). The runner takes the lock in run_seat (runner/lib/seat.sh).
+const LOCK_STALE_MS = 6 * 3600 * 1000;
+export function seatLock(root) {
+  const dir = join(root, '.bridgie', '.seat-lock');
+  if (!existsSync(dir)) return null;
+  let o;
+  try { o = readJson(join(dir, 'owner.json')); } catch { o = { seat: 'unknown', since: statSync(dir).mtime.toISOString(), run_dir: null }; }
+  if (Date.now() - Date.parse(o.since) > LOCK_STALE_MS) return null;   // a crashed run cannot lock state forever
+  return o;
+}
+function assertUnlocked(file) {
+  const p = resolve(file).split(sep).join('/');
+  const i = p.lastIndexOf('/.bridgie/');
+  if (i < 0) return;
+  const root = p.slice(0, i);
+  const lock = seatLock(root);
+  if (!lock || (lock.run_dir && p.startsWith(`${root}/${lock.run_dir}/`))) return;
+  throw new Error(`an agent run is in progress (seat ${lock.seat}, since ${lock.since}); Bridgie state is read-only until it finishes, so nothing was changed. Try again when it finishes. If no agent is running, delete ${root}/.bridgie/.seat-lock`);
+}
 
 // ---------- files ----------
 export function loadSchema(name) { return JSON.parse(readFileSync(join(HOME, 'schemas', `${name}.json`), 'utf8')); }
 export function readJson(file) { return JSON.parse(readFileSync(file, 'utf8')); }
 export function writeJsonAtomic(file, obj, schemaName) {
+  assertUnlocked(file);
   if (schemaName) assertValid(loadSchema(schemaName), obj, file);
   mkdirSync(dirname(file), { recursive: true });
   const tmp = `${file}.tmp`;
@@ -24,6 +50,7 @@ export function writeJsonAtomic(file, obj, schemaName) {
 }
 export function readFm(file) { return splitFrontmatter(readFileSync(file, 'utf8')); }
 export function writeFm(file, data, body, schemaName) {
+  assertUnlocked(file);
   if (schemaName) assertValid(loadSchema(schemaName), data, file);
   mkdirSync(dirname(file), { recursive: true });
   const tmp = `${file}.tmp`;
@@ -138,6 +165,16 @@ export function betTransition(root, slug, to, opts = {}) {
   return { from, to };
 }
 
+// raiseRisk: the bet's risk only ever goes up; every raise is logged in the bet body.
+export function raiseRisk(root, slug, risk, reason) {
+  if (!RISK_ORDER.includes(risk)) throw new Error(`unknown risk "${risk}"`);
+  const file = betPath(root, slug);
+  const { data, body } = readFm(file);
+  if (RISK_ORDER.indexOf(risk) <= RISK_ORDER.indexOf(data.risk)) return { from: data.risk, to: data.risk, changed: false };
+  writeFm(file, { ...data, risk }, appendToSection(body, 'Risk log', `- ${today()} risk ${data.risk} → ${risk}: ${reason}`), 'bet');
+  return { from: data.risk, to: risk, changed: true };
+}
+
 // ---------- decisions ----------
 export function loadDecisions(root, slug) {
   const f = decisionsPath(root, slug);
@@ -149,7 +186,7 @@ export function addDecision(root, slug, d) {
   const doc = loadDecisions(root, slug);
   const id = `D${doc.next_id || 1}`;
   const rec = {
-    id, type: d.type, ...(d.task ? { task: d.task } : {}), raised_by: d.raised_by || null, context: d.context, options: d.options,
+    id, type: d.type, ...(d.task ? { task: d.task } : {}), ...(d.risk ? { risk: d.risk } : {}), raised_by: d.raised_by || null, context: d.context, options: d.options,
     allow_free_text: d.allow_free_text ?? (d.type === 'question'), status: 'pending',
     answer: null, free_text: null, decided_by: null, decided_at: null, effect: null, created_at: now(),
   };
@@ -157,6 +194,16 @@ export function addDecision(root, slug, d) {
   doc.next_id = (doc.next_id || 1) + 1;
   saveDecisions(root, slug, doc);
   return rec;
+}
+
+// supersedeDecision: the runner closes a pending decision that no longer applies.
+export function supersedeDecision(root, slug, id, reason) {
+  const doc = loadDecisions(root, slug);
+  const d = doc.decisions.find(x => x.id === id);
+  if (!d || d.status === 'answered') return d;
+  Object.assign(d, { status: 'answered', answer: 'superseded', free_text: null, decided_by: 'bridgie', decided_at: now(), effect: reason });
+  saveDecisions(root, slug, doc);
+  return d;
 }
 
 export function listDecisions(root, slug, opts = {}) {
@@ -303,6 +350,7 @@ Object.assign(EXTRA_OPS, {
   'decision-list': (a, flag, out) => out(listDecisions(a[0], a[1] && !a[1].startsWith('--') ? a[1] : null, { pending: a.includes('--pending') })),
   'ensure-sign': (a, flag, out) => out(ensureSignDecision(a[0], a[1]).id),
   'ingest-questions': (a, flag, out) => out(ingestQuestions(a[0], a[1], a[2], flag('run') || 'unknown')),
+  'seat-lock': (a, flag, out) => { const l = seatLock(a[0]); out(l ? JSON.stringify(l) : ''); },
   'needs-ack': (a, flag, out) => { const bet = readFm(betPath(a[0], a[1])).data; const p = lanePolicy(loadPolicy(a[0]), bet.lane, bet.risk); out(p.human_ack_before_build ? bet.risk : ''); },
   'status': (a, flag, out) => { const rows = status(a[0]); out(a.includes('--table') ? statusTable(rows) : rows); },
   'route': (a, flag, out) => { const { data } = splitFrontmatter(readFileSync(join(HOME, 'seats', a[1], 'SKILL.md'), 'utf8')); out(route(a[0], data)); },

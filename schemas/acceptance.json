@@ -14,7 +14,8 @@
         "pending",
         "approved",
         "approved_with_conditions",
-        "rejected"
+        "rejected",
+        "superseded"
       ]
     },
     "approver": {
@@ -74,6 +75,18 @@
               "string",
               "null"
             ]
+          },
+          "sha": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "digest": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       }
@@ -83,6 +96,27 @@
     },
     "title": {
       "type": "string"
+    },
+    "risk": {
+      "type": "string"
+    },
+    "packaged_at": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "packaged_sha": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "packaged_digest": {
+      "type": [
+        "string",
+        "null"
+      ]
     }
   }
 }

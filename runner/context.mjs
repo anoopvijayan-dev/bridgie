@@ -1,6 +1,6 @@
 // Assemble a seat's prompt from exactly the inputs its manifest declares.
 import { readFileSync, existsSync, readdirSync, statSync, writeFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { splitFrontmatter } from './yaml.mjs';
 import { assertValid } from './schema.mjs';
@@ -46,6 +46,18 @@ function resolveInput(name, ctx) {
     return { label: `task ${task}`, text: '```json\n' + JSON.stringify(t, null, 2) + '\n```', path: tp };
   }
   if (name === 'diff') return file(join(runDir, 'diff.patch'), 'diff.patch');
+  if (name === 'mechanical_results') {
+    // The runner ran these commands in the task worktree before the review (finding 6: the
+    // reviewer cannot run anything itself). Each row with the tail of its log.
+    const f = join(runDir, 'mechanical.json');
+    if (!existsSync(f)) return null;
+    const rows = readJson(f);
+    const tail = p => { if (!p || !existsSync(join(runDir, basename(p)))) return '(no log)'; const l = readFileSync(join(runDir, basename(p)), 'utf8').split('\n'); return l.slice(-60).join('\n').trim() || '(empty log)'; };
+    const text = rows.length
+      ? rows.map(r => `### ${r.id} · ${r.tier} · ${r.result}\nCommand: ${r.check}\n\n\`\`\`\n${tail(r.artifact)}\n\`\`\``).join('\n\n')
+      : 'The runner ran no commands for this task.';
+    return { label: 'test results (runner-run, read-only)', text, path: f };
+  }
   if (name === 'claim') { const f = newest(root, slug, task, 'claim.json'); return f ? file(f, 'latest claim.json') : null; }
   if (name === 'evidence') { const f = newest(root, slug, task, 'evidence.json'); return f ? file(f, 'latest evidence.json') : null; }
   if (name === 'repo_readonly') return { label: 'repository', text: `Repository root (read-only): ${cwd}\nRead any file you need to judge the work in context. Do not modify anything.` };

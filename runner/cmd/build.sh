@@ -14,7 +14,7 @@ require_build_ack() {
   [[ "$(node_run flow.mjs ack-declined "$root" "$slug")" == "true" ]] && die "build: the risk acknowledgement for '$slug' was declined"
   [[ "$(node_run flow.mjs ack-recorded "$root" "$slug")" == "true" ]] && return 0
   node_run flow.mjs ensure-decision "$root" "$slug" ack_risk \
-    "Bet '$slug' is risk '$needs'; policy requires a human acknowledgement before agents build or verify it." '["ack","decline"]' >/dev/null
+    "Bet '$slug' is risk '$needs'; policy requires a human acknowledgement before agents build or verify it." '["ack","decline"]' --risk "$needs" >/dev/null
   state_commit "$root" "ack requested for $slug"
   wait_human "build: waiting for a human ack of risk '$needs' (bridgie ack $slug, or bridgie open $slug)"
 }

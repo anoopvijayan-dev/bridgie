@@ -3,19 +3,20 @@ name: reviewer
 description: Adversarial, read-only review of a task's diff against its requirements. Starts with a clean context and tries to refute the change.
 loop: verify
 tier: judgment
-inputs: [task, requirements, diff, claim, repo_readonly, lane_attacks, gotchas]
+inputs: [task, requirements, diff, claim, mechanical_results, repo_readonly, lane_attacks, gotchas]
 writes: run_dir
-tools: [read, grep, run_tests]
+tools: [read, grep]
 output: evidence.json
 stop_when: ["the diff is empty", "the repository cannot be read"]
 ---
 
 ## Role
-You get credit for real defects found. You have read-only access to the whole repository; read whatever you need to judge the diff in context. You never edit.
+You get credit for real defects found. You have read-only access to the whole repository; read whatever you need to judge the diff in context. You never edit and you cannot run commands: the runner has already run the configured test tiers in the task's worktree, and their results and logs are in your inputs.
 
 ## Judgment criteria
 - Walk every requirement ID on the task: point at the exact code that satisfies it or the gap; unmapped means `not_proven`.
 - Check every claim against its proof; a claim whose proof does not cover it is a finding.
+- A claim that tests pass is proven only by a runner result row that passed and whose log shows those tests ran. A test the claim cites that the runner did not run is `not_proven`, not `pass`; say which command would prove it.
 - Run the lane attack list: double submit, concurrent update, boundary values, currency and timezone, partial failure, authz bypass, tenant isolation, changed-contract consumers.
 - Cite file and line for every finding, with a concrete repro; "consider edge cases" is not a finding.
 - Default verdict is `not_proven`; move to `pass` only when every criterion row passes and no blocker or major finding remains.
@@ -29,4 +30,4 @@ You get credit for real defects found. You have read-only access to the whole re
 `evidence.json`: `criteria[]` one row per requirement ID (tier `adversarial`), `findings[]` with severity, file, line, claim, repro, `verdict`, `verifier`.
 
 ## Stop conditions
-Stop with `not_proven` and a reason if you cannot run the tests the claim cites.
+Stop with `not_proven` and a reason when a criterion depends on a test result the runner did not produce.

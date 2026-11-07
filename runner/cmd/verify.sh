@@ -28,18 +28,26 @@ verify_checks_reviewer() {   # R10 and R11, before any model is called
 }
 
 run_mechanical() {   # run_mechanical <root> <slug> <wt> <vdir> → writes vdir/mechanical.json
-  local root="$1" slug="$2" wt="$3" vdir="$4" plan n=0 tier cmd rc rows="[]"
+  # A required tier with no configured command becomes a not_proven row (never silently skipped).
+  local root="$1" slug="$2" wt="$3" vdir="$4" plan n=0 tier cmd missing rc result rows="[]"
   plan="$(node_run flow.mjs mechanical-plan "$root" "$slug" "$wt")"
-  while IFS=$'\t' read -r tier cmd; do
-    [[ -n "$cmd" ]] || continue
+  while IFS=$'\t' read -r tier missing cmd; do
+    [[ -n "$tier" ]] || continue
     n=$((n + 1))
-    log "  $tier: $cmd"
-    set +e; (cd "$wt" && bash -c "$cmd") > "$vdir/$tier-$n.log" 2>&1; rc=$?; set -e
+    if [[ "$missing" == "1" ]]; then
+      log "  $tier: no command configured (required at this risk) → not_proven"
+      cmd="no command configured for required tier $tier (set verify.commands.$tier in .bridgie/policy.yaml)"; result="not_proven"
+      : > "$vdir/$tier-$n.log"
+    else
+      log "  $tier: $cmd"
+      set +e; (cd "$wt" && bash -c "$cmd") > "$vdir/$tier-$n.log" 2>&1; rc=$?; set -e
+      result="fail"; [[ $rc -eq 0 ]] && result="pass"
+    fi
     rows="$(node -e '
       const rows = JSON.parse(process.argv[1]);
-      rows.push({ id: `${process.argv[2]}:${process.argv[3]}`, tier: process.argv[2], check: process.argv[4], result: process.argv[5] === "0" ? "pass" : "fail", artifact: process.argv[6] });
-      console.log(JSON.stringify(rows));' "$rows" "$tier" "$n" "$cmd" "$rc" "$vdir/$tier-$n.log")"
-  done < <(node -e 'for (const x of JSON.parse(process.argv[1])) console.log(`${x.tier}\t${x.cmd}`)' "$plan")
+      rows.push({ id: `${process.argv[2]}:${process.argv[3]}`, tier: process.argv[2], check: process.argv[4], result: process.argv[5], artifact: process.argv[6] });
+      console.log(JSON.stringify(rows));' "$rows" "$tier" "$n" "$cmd" "$result" "$vdir/$tier-$n.log")"
+  done < <(node -e 'for (const x of JSON.parse(process.argv[1])) console.log(`${x.tier}\t${x.missing ? 1 : 0}\t${x.cmd ?? ""}`)' "$plan")
   printf '%s\n' "$rows" > "$vdir/mechanical.json"
 }
 
@@ -62,14 +70,20 @@ cmd_verify() {
   # 1. packet (R8) and risk paths (R9)
   local vdir; vdir="$(next_run_dir "$root" "$slug" verify)"; mkdir -p "$vdir"
   git_diff_packet "$root" "$slug" "$task" "$vdir"
-  local risk; risk="$(node_run flow.mjs risk-of-paths "$root" "$slug" "$vdir/files.txt")"
+  local risk eff paths; risk="$(node_run flow.mjs risk-of-paths "$root" "$slug" "$vdir/files.txt")"
+  eff="$(json_get "$risk" effective)"
+  paths="$(node -e 'console.log(JSON.parse(process.argv[1]).paths.join(", ") || "no risk paths")' "$risk")"
+  # Effective risk = max(bet, requirements, changed paths); a raise is persistent and logged.
+  if [[ "$(json_get "$(node_run flow.mjs raise-risk "$root" "$slug" "$eff" --reason "task $task changes $paths")" changed)" == "true" ]]; then
+    log "risk raised to $eff by the paths task $task changes"
+  fi
   if [[ "$(json_get "$risk" needs_ack)" == "true" ]]; then
     [[ "$(node_run flow.mjs ack-declined "$root" "$slug")" == "true" ]] && die "verify: the risk acknowledgement for '$slug' was declined"
     if [[ "$(node_run flow.mjs ack-recorded "$root" "$slug")" != "true" ]]; then
       node_run flow.mjs ensure-decision "$root" "$slug" ack_risk \
-        "Task $task changes risk paths ($(json_get "$risk" risk)): $(json_get "$risk" paths). Policy requires a human acknowledgement before verification." '["ack","decline"]' >/dev/null
+        "Task $task is risk $eff (changes: $paths). Policy requires a human acknowledgement before verification." '["ack","decline"]' --risk "$eff" >/dev/null
       state_commit "$root" "ack requested for $slug ($task)"
-      wait_human "verify: $task touches $(json_get "$risk" risk) paths; waiting for a human ack (bridgie ack $slug, or bridgie open $slug)"
+      wait_human "verify: $task touches $eff paths; waiting for a human ack (bridgie ack $slug, or bridgie open $slug)"
     fi
   fi
 

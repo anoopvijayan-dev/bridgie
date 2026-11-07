@@ -2,35 +2,26 @@
 # run_seat <slug> <loop/seat> [--task T] [--cwd DIR] [--packet DIR] → prints the run directory.
 # --packet copies diff.patch etc. into the run directory before the context is assembled.
 # --cwd is where the seat works (a task or review worktree); state always lives in the project root.
-# The only place an adapter is launched. Guards: fresh context from declared inputs,
-# state snapshot before/after (P1), output schema validation, cost entry.
+# The only place an adapter is launched. Guards: fresh context from declared inputs, a project-wide
+# seat lock, a full state manifest before/after (P1), output schema validation, cost entry.
 
-_state_files() {              # _state_files <root> <slug> → existing state files for the bet
-  local root="$1" slug="$2" f
-  for f in ".bridgie/bets/$slug/bet.md" ".bridgie/decisions/$slug.json" ".bridgie/specs/$slug/tasks.json" ".bridgie/acceptance/$slug.md"; do
-    [[ -f "$root/$f" ]] && printf '%s\n' "$f"
-  done
+# Single-writer guard (P1): runner/guard.mjs snapshots every file under .bridgie/ except worktrees,
+# rendered pages, the lock and this run's own directory, then reports added/removed/changed files.
+guard() {                     # guard <snapshot|check|restore> <root> <snapdir> <run_dir>
+  node_run guard.mjs "$1" "$2" "$3" --exclude "${4#"$2"/}"
 }
 
-snapshot_state() {            # snapshot_state <root> <slug> <snapdir>
-  local root="$1" slug="$2" snap="$3" f
-  mkdir -p "$snap"
-  while IFS= read -r f; do mkdir -p "$snap/$(dirname "$f")"; cp "$root/$f" "$snap/$f"; done < <(_state_files "$root" "$slug")
+# Seat lock: one agent run per project at a time; state writers refuse while it is held.
+seat_lock() {                 # seat_lock <root> <seat> <run_dir>
+  local lock="$1/.bridgie/.seat-lock"
+  if ! mkdir "$lock" 2>/dev/null; then
+    local held; held="$(node_run state.mjs seat-lock "$1")"
+    [[ -z "$held" ]] || die "another agent run is in progress in this project ($held); wait for it, or delete $lock if none is running"
+    rm -rf "$lock"; mkdir "$lock" || die "could not take the seat lock $lock"
+  fi
+  printf '{"seat":"%s","run_dir":"%s","since":"%s","pid":%s}\n' "$2" "${3#"$1"/}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$$" > "$lock/owner.json"
 }
-
-state_changed() {             # state_changed <root> <slug> <snapdir> → 0 if any state file differs or appeared
-  local root="$1" slug="$2" snap="$3" f
-  while IFS= read -r f; do
-    [[ -f "$snap/$f" ]] || return 0
-    cmp -s "$root/$f" "$snap/$f" || return 0
-  done < <(_state_files "$root" "$slug")
-  return 1
-}
-
-restore_state() {             # restore_state <root> <snapdir>
-  local root="$1" snap="$2" f
-  (cd "$snap" && find . -type f) | while IFS= read -r f; do cp "$snap/$f" "$root/$f"; done
-}
+seat_unlock() { rm -rf "$1/.bridgie/.seat-lock"; }
 
 # adapter_capabilities <adapter> <seat dir> [model] → {"vendor","reads_repo"} JSON
 adapter_capabilities() {
@@ -78,8 +69,11 @@ run_seat() {
   [[ "$writes" == "worktree" ]] && mode="write"
   adapter_capabilities "$adapter" "$seat_dir" "$model" > "$run_dir/adapter.json" || die "adapter $adapter: --capabilities failed"
 
-  # 3. snapshot, launch, measure
-  snapshot_state "$root" "$slug" "$run_dir/.snapshot"
+  # 3. lock, snapshot, launch, measure
+  seat_lock "$root" "$name" "$run_dir"
+  # shellcheck disable=SC2064   # expand now: the trap must release this root's lock
+  trap "seat_unlock '$root'" EXIT
+  guard snapshot "$root" "$run_dir/.snapshot" "$run_dir"
   local started_at start rc=0
   started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; start="$(date +%s)"
   set +e
@@ -92,12 +86,15 @@ run_seat() {
   set -e
   node_run state.mjs cost-add "$run_dir" --seat "$name" --adapter "$adapter" --model "$model" --started "$started_at" --duration "$(( $(date +%s) - start ))" --attempt "$n" --exit "$rc" >/dev/null
 
-  # 4. single-writer guard (P1)
-  if state_changed "$root" "$slug" "$run_dir/.snapshot"; then
-    restore_state "$root" "$run_dir/.snapshot"
-    printf 'seat %s modified Bridgie state directly; state restored from snapshot\n' "$name" > "$run_dir/VIOLATION"
+  # 4. single-writer guard (P1): any added, removed or changed state file fails the run
+  local diff; diff="$(guard check "$root" "$run_dir/.snapshot" "$run_dir")"
+  if [[ "$diff" != '{"added":[],"removed":[],"changed":[]}' ]]; then
+    guard restore "$root" "$run_dir/.snapshot" "$run_dir" >/dev/null
+    seat_unlock "$root"; trap - EXIT
+    printf 'seat %s modified Bridgie state directly; state restored from snapshot\n%s\n' "$name" "$diff" > "$run_dir/VIOLATION"
     die "seat $name wrote to Bridgie state files; run failed and state restored (see $run_dir/VIOLATION)"
   fi
+  seat_unlock "$root"; trap - EXIT
   [[ $rc -eq 0 ]] || die "adapter $adapter exited $rc for seat $name; see $run_dir/adapter.log"
 
   # 5. output contract
