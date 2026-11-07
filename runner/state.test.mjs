@@ -127,3 +127,20 @@ test('ingestQuestions turns a seat output into decisions and lists them in the b
   assert.match(st.readFm(st.betPath(root, 'd')).body, /## Open questions[\s\S]*- D1: Q one\?[\s\S]*- D2: Q two\?/);
   assert.equal(st.loadDecisions(root, 'd').decisions[1].allow_free_text, true);
 });
+test('route picks the seat override, else the tier default; env overrides both', () => {
+  const root = project();
+  assert.deepEqual(st.route(root, { name: 'reviewer', tier: 'judgment' }), { adapter: 'codex', model: 'default', effort: null });
+  assert.deepEqual(st.route(root, { name: 'grill', tier: 'judgment' }), { adapter: 'claude-code', model: 'opus', effort: 'xhigh' });
+  process.env.BRIDGIE_ADAPTER = 'fake';
+  assert.equal(st.route(root, { name: 'grill', tier: 'judgment' }).adapter, 'fake');
+  delete process.env.BRIDGIE_ADAPTER;
+});
+
+test('costAdd appends validated entries', () => {
+  const root = project();
+  const dir = join(root, '.bridgie', 'runs', 'b', 'grill-01'); mkdirSync(dir, { recursive: true });
+  st.costAdd(dir, { seat: 'grill', adapter: 'fake', model: 'none', started_at: '2026-11-07T00:00:00Z', duration_s: 1.5, attempt: 1, exit_code: 0 });
+  st.costAdd(dir, { seat: 'grill', adapter: 'fake', model: 'none', started_at: '2026-11-07T00:00:02Z', duration_s: 2, attempt: 2, exit_code: 1 });
+  assert.equal(st.readJson(join(dir, 'cost.json')).entries.length, 2);
+  assert.throws(() => st.costAdd(dir, { seat: 'grill' }), /invalid/);
+});

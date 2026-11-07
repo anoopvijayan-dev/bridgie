@@ -53,3 +53,8 @@ Learn    learn                 (M1)
 Tool     init [--lane L]  status  open [slug]  doctor  version  help
 USAGE
 }
+
+# json_get <json-string> <key> → value (strings unquoted)
+json_get() {
+  node -e 'const o=JSON.parse(process.argv[1]);const v=o[process.argv[2]];process.stdout.write(v===null||v===undefined?"":(typeof v==="string"?v:JSON.stringify(v)))' "$1" "$2"
+}

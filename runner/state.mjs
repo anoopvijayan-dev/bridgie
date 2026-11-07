@@ -232,6 +232,23 @@ export function ingestQuestions(root, slug, outputFile, runId) {
   return ids;
 }
 
+// ---------- routing and cost ----------
+export function route(root, manifest) {
+  const pol = loadPolicy(root);
+  const r = (pol.routing?.seats || {})[manifest.name] || (pol.routing?.tiers || {})[manifest.tier] || {};
+  return {
+    adapter: process.env.BRIDGIE_ADAPTER || r.adapter || 'none',
+    model: process.env.BRIDGIE_MODEL || r.model || 'default',
+    effort: r.effort || null,
+  };
+}
+export function costAdd(runDir, entry) {
+  const f = join(runDir, 'cost.json');
+  const doc = existsSync(f) ? readJson(f) : { entries: [] };
+  doc.entries.push(entry);
+  return writeJsonAtomic(f, doc, 'cost');
+}
+
 // ---------- CLI ----------
 function out(x) { process.stdout.write((typeof x === 'string' ? x : JSON.stringify(x, null, 2)) + '\n'); }
 export async function main(argv) {
@@ -260,6 +277,12 @@ Object.assign(EXTRA_OPS, {
   'decision-list': (a, flag, out) => out(listDecisions(a[0], a[1] && !a[1].startsWith('--') ? a[1] : null, { pending: a.includes('--pending') })),
   'ensure-sign': (a, flag, out) => out(ensureSignDecision(a[0], a[1]).id),
   'ingest-questions': (a, flag, out) => out(ingestQuestions(a[0], a[1], a[2], flag('run') || 'unknown')),
+  'route': (a, flag, out) => { const { data } = splitFrontmatter(readFileSync(join(HOME, 'seats', a[1], 'SKILL.md'), 'utf8')); out(route(a[0], data)); },
+  'cost-add': (a, flag, out) => out(costAdd(a[0], {
+    seat: flag('seat'), adapter: flag('adapter'), model: flag('model') || 'default', started_at: flag('started'),
+    duration_s: Number(flag('duration')), attempt: Number(flag('attempt')), exit_code: Number(flag('exit')),
+    tokens_in: null, tokens_out: null, usd: null,
+  })),
 });
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {

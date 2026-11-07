@@ -1,0 +1,9 @@
+{
+  "seat": "grill",
+  "summary_md": "Strongest assumption: merchants notice failed collections. Weakest evidence: no interview quotes. Pre-mortem: finance already retries by hand; the metric cannot be read by the date.",
+  "questions": [
+    { "context": "Does anyone retry failed card payments manually today, and who?", "options": ["yes, finance does", "yes, support does", "no", "don't know"], "allow_free_text": true },
+    { "context": "Is the churn baseline (4.1%) measured or estimated?", "options": ["measured", "estimated", "don't know"], "allow_free_text": true }
+  ],
+  "proposals": [ { "kind": "confidence", "text": "anecdote: two tickets and one conversation; no measured data yet" } ]
+}
