@@ -36,3 +36,8 @@ test('integer vs number', () => {
   assert.equal(validate({ type: 'integer' }, 3.2).length, 1);
   assert.deepEqual(validate({ type: 'number' }, 3.2), []);
 });
+test('additionalProperties as a schema validates unknown keys', () => {
+  const s = { type: 'object', additionalProperties: { type: 'integer' } };
+  assert.deepEqual(validate(s, { a: 1, b: 2 }), []);
+  assert.equal(validate(s, { a: 'x' }).length, 1);
+});

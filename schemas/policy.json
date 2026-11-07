@@ -1,0 +1,44 @@
+{
+  "type": "object",
+  "required": ["version"],
+  "properties": {
+    "version": { "type": "integer" },
+    "retries": { "type": "object", "properties": { "max_attempts": { "type": "integer" } } },
+    "commit_transcripts": { "type": "boolean" },
+    "lanes": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "tiers_default": { "type": "array", "items": { "type": "string" } },
+          "approvers": { "type": "integer" },
+          "cross_family": { "type": "boolean" },
+          "min_confidence_to_sign": { "type": "string", "enum": ["opinion", "anecdote", "data", "test"] },
+          "by_risk": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "tiers": { "type": "array", "items": { "type": "string" } },
+                "approvers": { "type": "integer" },
+                "auto_accept": { "type": "boolean" },
+                "min_confidence_to_sign": { "type": "string", "enum": ["opinion", "anecdote", "data", "test"] },
+                "human_ack_before_build": { "type": "boolean" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "routing": {
+      "type": "object",
+      "properties": {
+        "tiers": { "type": "object", "additionalProperties": { "$ref": "#/$defs/route" } },
+        "seats": { "type": "object", "additionalProperties": { "$ref": "#/$defs/route" } }
+      }
+    }
+  },
+  "$defs": {
+    "route": { "type": "object", "required": ["adapter"], "properties": { "adapter": { "type": "string" }, "model": { "type": "string" }, "effort": { "type": "string" } } }
+  }
+}

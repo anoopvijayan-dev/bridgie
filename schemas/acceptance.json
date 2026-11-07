@@ -1,0 +1,14 @@
+{
+  "type": "object",
+  "required": ["bet", "decision"],
+  "properties": {
+    "bet": { "type": "string" },
+    "decision": { "type": "string", "enum": ["pending", "approved", "approved_with_conditions", "rejected"] },
+    "approver": { "type": ["string", "null"] },
+    "decided_at": { "type": ["string", "null"] },
+    "git_sha": { "type": ["string", "null"] },
+    "conditions": { "type": "array", "items": { "type": "string" } },
+    "residual_uncertainty": { "type": "array", "items": { "type": "string" } },
+    "cost": { "type": "object" }
+  }
+}

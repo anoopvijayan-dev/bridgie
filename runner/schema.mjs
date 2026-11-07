@@ -41,6 +41,7 @@ export function validate(schema, value, path = '', root = schema) {
     for (const [k, v] of Object.entries(value)) {
       if (k in props) errs.push(...validate(props[k], v, path ? `${path}.${k}` : k, root));
       else if (schema.additionalProperties === false) errs.push(`${path ? path + '.' : ''}${k}: unexpected property`);
+      else if (schema.additionalProperties && typeof schema.additionalProperties === 'object') errs.push(...validate(schema.additionalProperties, v, path ? `${path}.${k}` : k, root));
     }
   }
   if (Array.isArray(value)) {
