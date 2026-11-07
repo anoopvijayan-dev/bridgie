@@ -1,0 +1,4 @@
+node_modules/
+.bridgie/ui/
+*.log
+.DS_Store

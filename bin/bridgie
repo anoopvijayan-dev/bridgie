@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Resolve the tool root even when invoked through a symlink.
+_self="${BASH_SOURCE[0]}"
+while [[ -L "$_self" ]]; do _self="$(readlink "$_self")"; done
+BRIDGIE_HOME="${BRIDGIE_HOME:-$(cd "$(dirname "$_self")/.." && pwd)}"
+export BRIDGIE_HOME
+
+# shellcheck source=../runner/lib/common.sh
+source "$BRIDGIE_HOME/runner/lib/common.sh"
+
+cmd="${1:-help}"
+shift || true
+
+case "$cmd" in
+  help|-h|--help) usage ;;
+  version|--version) printf 'bridgie %s\n' "$(tr -d '[:space:]' < "$BRIDGIE_HOME/VERSION")" ;;
+  *)
+    f="$BRIDGIE_HOME/runner/cmd/$cmd.sh"
+    [[ -f "$f" ]] || die "unknown command: $cmd (try 'bridgie help')"
+    # shellcheck source=/dev/null
+    source "$f"
+    "cmd_${cmd//-/_}" "$@"
+    ;;
+esac
