@@ -108,7 +108,7 @@ export function betNew(root, slug, opts = {}) {
 
 const TRANSITIONS = {
   draft: ['grilling', 'killed'],
-  grilling: ['evidence', 'killed'],
+  grilling: ['evidence', 'killed', 'draft'],
   evidence: ['grilling', 'signed', 'killed'],
   signed: ['delivered', 'killed'],
   delivered: ['evaluated'],

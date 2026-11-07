@@ -144,3 +144,10 @@ test('costAdd appends validated entries', () => {
   assert.equal(st.readJson(join(dir, 'cost.json')).entries.length, 2);
   assert.throws(() => st.costAdd(dir, { seat: 'grill' }), /invalid/);
 });
+test('grilling can revert to draft when a grill run fails', () => {
+  const root = project();
+  st.betNew(root, 'g', { title: 'G', lane: 'engineering', risk: 'none', owner: 'tester' });
+  st.betTransition(root, 'g', 'grilling');
+  st.betTransition(root, 'g', 'draft');
+  assert.equal(st.readFm(st.betPath(root, 'g')).data.status, 'draft');
+});
