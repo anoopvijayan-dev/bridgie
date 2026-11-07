@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{title}} · Bridgie</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--ink:#1b1f24;--muted:#5f6b7a;--line:#e3e7ec;--pri:#1d4ed8;--warn:#b45309;--bad:#b91c1c}
+*{box-sizing:border-box}body{margin:0;font:16px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--ink)}
+header{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:var(--card);border-bottom:1px solid var(--line)}
+header a{color:inherit;text-decoration:none;font-weight:600}.mode{font-size:12px;color:var(--muted)}
+main{max-width:860px;margin:0 auto;padding:16px}h1 small{font-weight:400;font-size:14px}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px;margin:12px 0}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px}.card .k{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}.card .v{margin-top:4px}
+.pill{display:inline-block;font-size:12px;padding:1px 8px;border-radius:999px;background:#e8eefc;color:var(--pri)}
+section.question,.signbox{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px;margin:10px 0}
+section.question.deferred{opacity:.75}
+label{display:block;margin:4px 0}input[type=text]{width:100%;padding:8px;border:1px solid var(--line);border-radius:8px;margin:6px 0}
+button{padding:8px 14px;border-radius:8px;border:1px solid var(--line);background:#fff;cursor:pointer;margin:6px 6px 0 0}
+button.primary{background:var(--pri);color:#fff;border-color:var(--pri)}button.danger{color:var(--bad);border-color:var(--bad)}button.ghost{color:var(--muted)}button[disabled]{opacity:.4;cursor:not-allowed}
+details{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 12px;margin:8px 0}summary{cursor:pointer;font-weight:600}
+ul.inbox{list-style:none;padding:0}ul.inbox li{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px;margin:8px 0}ul.inbox a{color:inherit;text-decoration:none}
+.ctx{color:var(--muted)}.age{float:right;color:var(--muted);font-size:12px}.warn{color:var(--warn)}.empty{color:var(--muted)}
+.cli code,code{background:#eef1f5;padding:2px 6px;border-radius:6px}.raw{font-size:12px;color:var(--muted);margin-top:16px}
+</style></head>
+<body><header><a href="{{home}}">Bridgie</a><span class="mode">{{mode}}</span></header><main>
+{{content}}
+</main></body></html>

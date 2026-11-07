@@ -5,14 +5,19 @@ die()  { printf 'bridgie: %s\n' "$*" >&2; exit 1; }
 log()  { printf '%s\n' "$*" >&2; }
 need_cmd() { command -v "$1" >/dev/null 2>&1 || die "missing required command: $1"; }
 
-# Walk up from $PWD to find a folder containing .bridgie/. Prints it, or fails.
-project_root() {
+# find_root: walk up from $PWD to a folder containing .bridgie/. Prints it, or returns 1.
+find_root() {
   local d="$PWD"
   while [[ "$d" != "/" && -n "$d" ]]; do
     [[ -d "$d/.bridgie" ]] && { printf '%s\n' "$d"; return 0; }
     d="$(dirname "$d")"
   done
-  die "not inside a bridgie project (no .bridgie/ found); run 'bridgie init' first"
+  return 1
+}
+
+# project_root: like find_root, but fails the command when there is no project.
+project_root() {
+  find_root || die "not inside a bridgie project (no .bridgie/ found); run 'bridgie init' first"
 }
 
 # node_run <module.mjs> args... → runs a runner module with BRIDGIE_HOME exported.
