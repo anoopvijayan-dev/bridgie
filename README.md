@@ -41,10 +41,21 @@ What each step guarantees:
 | Step | What happens | Guards |
 |---|---|---|
 | `shape` | branch `bridgie/<slug>`, `requirements.md` (EARS) and `design.md` | signed bet, clean tree |
-| `plan` | `tasks.json`, every requirement mapped | approved design, no cycles |
+| `plan` | `tasks.json`, every requirement mapped | approved design, no cycles; a requirement tagged `risk: money` raises the bet's risk; re-planning supersedes any acceptance package |
 | `build` | one task per run in `.bridgie/worktrees/<slug>/<task>` | human ack for risky bets; `.bridgie/` edits discarded; only declared inputs reach the model |
-| `verify` | mechanical checks, then a read-only reviewer in a detached worktree | different vendor from the producer; reviewer must read the repo; missing evidence = not proven; 3 attempts then blocked |
-| `accept` | one-page acceptance package | every task passed; approvers per policy (2 for money) |
+| `verify` | the runner runs every required test tier, then a read-only reviewer reads the results in a detached worktree | changed risk paths raise the bet's risk (logged, never lowered) and need a fresh ack; a required tier with no command is not proven; every evidence row counts and the reviewer's verdict can only tighten the result; different vendor from the producer; 3 attempts then blocked |
+| `accept` | one-page acceptance package, bound to the branch commit and a digest of spec, tasks and evidence | every task passed, re-checked at the moment of approval; a stale package is refused and rebuilt by `bridgie accept`; approvers per the current risk (2 for money), each a different person |
+
+Verification commands live in `.bridgie/policy.yaml` (`verify.commands.<tier>`; see the comment `bridgie init`
+writes). Without them Bridgie uses the lane's commands for the stacks it detects; a tier the risk requires
+but nobody configured is never skipped silently.
+
+While an agent runs, Bridgie state is read-only (a project-wide seat lock): your decisions are refused with a
+message rather than rolled back, and anything the agent adds, changes or deletes under `.bridgie/` is restored.
+
+`bridgie open` prints a personal link with an access token; decisions are recorded under the identity of that
+link. `bridgie open --invite alice` prints a second link for a second approver. With `--host` beyond
+localhost the traffic is plain HTTP, so share each link only with its person.
 
 Bridgie never pushes and never merges into your base branch. Merge `bridgie/<slug>` yourself after acceptance.
 In an agent harness, say `/bridgie` (the installed skill drives the CLI and leaves decisions to you).
@@ -65,8 +76,10 @@ In an agent harness, say `/bridgie` (the installed skill drives the CLI and leav
 
 ## Status
 
-v0.2.0 (M1): the whole loop runs end to end on the fake adapter and is covered by tests for spec
-requirements R1–R14 and properties P1–P3. Real adapters are verified against stub CLIs with the
+v0.3.0 (M2 hardening): enforcement gaps from an external review closed (acceptance binding, evidence
+reconciliation, effective risk and mandatory tiers, state guard and seat lock, authenticated decision
+server, reviewer works from runner-run test results). v0.2.0 (M1): the whole loop runs end to end on the
+fake adapter and is covered by tests for spec requirements R1–R14 and properties P1–P3. Real adapters are verified against stub CLIs with the
 flags of Claude Code 2.1, Codex 0.167 and Copilot CLI 1.0; Antigravity follows the v1 notes and its
 write mode is unverified (see `adapters/antigravity/gotchas.md`). Next (M3): marketing and sales lane
 content, seeded-bug evals for the reviewer, learn promotion.

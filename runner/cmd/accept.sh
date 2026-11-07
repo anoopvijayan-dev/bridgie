@@ -34,7 +34,11 @@ cmd_accept() {
   fi
 
   [[ "$(node_run flow.mjs all-passed "$root" "$slug")" == "true" ]] || die "accept: every task of '$slug' must pass first (R6); see bridgie status"
-  [[ -z "$(node_run flow.mjs pending-of-type "$root" "$slug" accept)" ]] || die "accept: '$slug' is already waiting for a decision (bridgie open $slug)"
+  if [[ -n "$(node_run flow.mjs pending-of-type "$root" "$slug" accept)" ]]; then
+    local stale; stale="$(node_run flow.mjs stale-package "$root" "$slug")"
+    [[ -n "$stale" ]] || die "accept: '$slug' is already waiting for a decision (bridgie open $slug)"
+    log "the previous acceptance package is stale ($stale); building a new one"
+  fi
   git_on_feature "$root" "$slug"
   local base; base="$(git -C "$root" config "branch.bridgie/$slug.bridgieBase" || echo main)"
   local packet; packet="$(mktemp -d)"

@@ -5,6 +5,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { spawn, execFileSync } from 'node:child_process';
+import { randomBytes, timingSafeEqual } from 'node:crypto';
 import * as st from './state.mjs';
 import * as fl from './flow.mjs';
 
@@ -213,29 +214,60 @@ function commitState(root, msg) {
   } catch { /* not a git repository: nothing to commit */ }
 }
 
-function featureSha(root, slug) {
-  try { return execFileSync('git', ['-C', root, 'rev-parse', `bridgie/${slug}`], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim(); } catch { return null; }
-}
+const LOOPBACK = new Set(['127.0.0.1', 'localhost', '::1', '[::1]']);
+const sameToken = (a, b) => typeof a === 'string' && typeof b === 'string' && a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
+const cookies = req => Object.fromEntries((req.headers.cookie || '').split(';').map(c => c.trim().split('=')).filter(p => p.length === 2));
 
-export function serve(root, { port = 0, host = '127.0.0.1', by = 'unknown' } = {}) {
+// serve: the live decision surface (finding 5). Every identity gets its own random access token,
+// delivered once in the link this command prints. The token becomes an HttpOnly cookie; every
+// decision must carry the same token in a form field (CSRF) and come from the server's own origin.
+// The identity a decision is recorded under is the token's identity, never a request field.
+//   invites: extra identities (second approvers, teammates on the LAN), one link each.
+export function serve(root, { port = 0, host = '127.0.0.1', by = 'unknown', invites = [] } = {}) {
+  const tokens = new Map();
+  const mint = who => { const t = randomBytes(24).toString('base64url'); tokens.set(t, who); return t; };
+  const links = [{ who: by, token: mint(by) }, ...invites.filter(w => w && w !== by).map(who => ({ who, token: mint(who) }))];
+  let cookieName = 'bridgie';
   const server = http.createServer((req, res) => {
-    const send = (code, html) => { res.writeHead(code, { 'content-type': 'text/html; charset=utf-8' }); res.end(html); };
-    const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+    const send = (code, html, headers = {}) => { res.writeHead(code, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'x-frame-options': 'DENY', ...headers }); res.end(html); };
+    const deny = msg => send(403, page('Not allowed', `<p class="warn">${esc(msg)}</p>`, {}));
+    const actualPort = server.address().port;
+    // DNS rebinding: on loopback, only answer to loopback host names.
+    const hostHeader = (req.headers.host || '').toLowerCase();
+    if (LOOPBACK.has(host) && ![...LOOPBACK].some(h => hostHeader === `${h}:${actualPort}`)) return deny('unexpected Host header');
+    const url = new URL(req.url, `http://${hostHeader || 'localhost'}`);
     try {
-      if (req.method === 'GET' && url.pathname === '/') return send(200, renderInbox(root));
+      // First visit: the token in the link becomes a cookie, then the token leaves the address bar.
+      const linkToken = url.searchParams.get('t');
+      if (req.method === 'GET' && linkToken) {
+        if (!tokens.has(linkToken)) return send(401, page('Link not valid', '<p class="warn">This link is not valid for this server. Use the link <code>bridgie open</code> printed.</p>', {}));
+        url.searchParams.delete('t');
+        return send(303, '', { location: url.pathname + (url.search || ''), 'set-cookie': `${cookieName}=${linkToken}; HttpOnly; SameSite=Lax; Path=/` });
+      }
+      const token = cookies(req)[cookieName];
+      const who = token && tokens.get(token);
+      if (!who) return send(401, page('Sign-in link needed', '<p class="warn">Open the link <code>bridgie open</code> printed in your terminal; it carries your access token.</p>', {}));
+      const withCsrf = html => html.replace(/<form method="post" action="\/decide"([^>]*)>/g, (m) => `${m}<input type="hidden" name="csrf" value="${esc(token)}">`)
+        .replace('</body>', `<p class="cli" style="text-align:center">acting as <b>${esc(who)}</b></p></body>`);
+      if (req.method === 'GET' && url.pathname === '/') return send(200, withCsrf(renderInbox(root)));
       const m = url.pathname.match(/^\/bet\/([a-z0-9-]+)$/);
-      if (req.method === 'GET' && m) return send(200, renderBet(root, m[1]));
+      if (req.method === 'GET' && m) return send(200, withCsrf(renderBet(root, m[1])));
       if (req.method === 'POST' && url.pathname === '/decide') {
+        const origin = req.headers.origin;
+        if (origin && origin !== `http://${req.headers.host}`) return deny(`cross-origin request from ${origin} refused`);
+        const fetchSite = req.headers['sec-fetch-site'];
+        if (fetchSite && !['same-origin', 'none'].includes(fetchSite)) return deny('cross-site request refused');
         let buf = '';
         req.on('data', c => { buf += c; if (buf.length > 1e6) req.destroy(); });
         req.on('end', () => {
           try {
             const p = new URLSearchParams(buf);
+            if (!sameToken(p.get('csrf'), token)) return deny('missing or wrong form token; reload the page and try again');
             const slug = p.get('slug'), id = p.get('id'); let answer = p.get('answer'); const text = p.get('text') || undefined;
             if (!slug || !id || !answer) throw new Error('pick an answer first');
             if (answer === '__text__') { if (!text) throw new Error('free-text answer is empty'); answer = text; }
-            fl.answer(root, slug, id, answer, { text, by, gitSha: featureSha(root, slug) });
-            commitState(root, `decide ${slug} ${id}: ${answer} (surface)`);
+            fl.answer(root, slug, id, answer, { text, by: who, gitSha: fl.featureSha(root, slug) });
+            commitState(root, `decide ${slug} ${id}: ${answer} (surface, ${who})`);
             res.writeHead(303, { location: `/bet/${slug}#${id}` }); res.end();
           } catch (e) {
             send(400, page('Not applied', `<p class="warn">${esc(e.message)}</p><p><a href="javascript:history.back()">Back</a></p>`, {}));
@@ -248,8 +280,11 @@ export function serve(root, { port = 0, host = '127.0.0.1', by = 'unknown' } = {
   });
   return new Promise(ok => server.listen(port, host, () => {
     const a = server.address();
-    console.log(`LISTENING http://${host}:${a.port}`);
-    ok({ server, url: `http://${host}:${a.port}` });
+    cookieName = `bridgie_${a.port}`;             // cookies ignore ports: one name per server
+    const shown = host.includes(':') ? `[${host}]` : host;
+    const base = `http://${shown}:${a.port}`;
+    console.log(`LISTENING ${base}`);
+    ok({ server, url: base, links: links.map(l => ({ who: l.who, url: `${base}/?t=${l.token}`, token: l.token })) });
   }));
 }
 
@@ -265,7 +300,17 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   const root = flag(a, 'root');
   if (op === 'render') { console.log(renderAll(root, flag(a, 'out') || join(root, '.bridgie', 'ui'))); }
   else if (op === 'serve') {
-    serve(root, { port: Number(flag(a, 'port') || 0), host: flag(a, 'host') || '127.0.0.1', by: flag(a, 'by') || 'unknown' })
-      .then(({ url }) => { const path = flag(a, 'path') || '/'; if (a.includes('--open')) openBrowser(url + path); console.log(`Open ${url}${path}  (Ctrl-C to stop)`); });
+    const invites = a.flatMap((x, i) => (x === '--invite' ? [a[i + 1]] : []));
+    const host = flag(a, 'host') || '127.0.0.1';
+    serve(root, { port: Number(flag(a, 'port') || 0), host, by: flag(a, 'by') || 'unknown', invites })
+      .then(({ links }) => {
+        const path = flag(a, 'path') || '/';
+        const link = l => l.url.replace('/?t=', `${path}?t=`);
+        if (a.includes('--open')) openBrowser(link(links[0]));
+        console.log(`OPEN ${link(links[0])}`);
+        console.log(`Open ${link(links[0])}  (your link, as ${links[0].who}; Ctrl-C to stop)`);
+        for (const l of links.slice(1)) console.log(`Link for ${l.who}: ${link(l)}`);
+        if (!LOOPBACK.has(host)) console.log('Listening beyond this machine over plain HTTP: give each link only to its person; anyone holding a link acts as that person.');
+      });
   } else { console.error(`surface.mjs: unknown op "${op}"`); process.exit(2); }
 }

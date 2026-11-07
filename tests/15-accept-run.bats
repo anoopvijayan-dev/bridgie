@@ -65,6 +65,7 @@ setup() {
 
 @test "money bets need two different approvers" {
   signed_bet "$P" b money
+  all_tiers "$P"
   bash -c "cd '$P' && bridgie shape b && bridgie shape b --approve" >/dev/null 2>&1
   run bash -c "cd '$P' && bridgie run b"
   [ "$status" -eq 0 ]
@@ -79,4 +80,31 @@ setup() {
   run bash -c "cd '$P' && BRIDGIE_USER=second bridgie accept b --conditions 'flag stays off until Monday'"
   [ "$status" -eq 0 ]
   [ "$(fm "$P/.bridgie/acceptance/b.md" decision)" = '"approved_with_conditions"' ]
+}
+
+@test "re-planning after packaging makes the old acceptance unusable; accept rebuilds the package" {
+  signed_bet "$P" b
+  bash -c "cd '$P' && bridgie shape b && bridgie shape b --approve && bridgie run b" >/dev/null 2>&1
+  [ "$(fm "$P/.bridgie/acceptance/b.md" decision)" = '"pending"' ]
+  bash -c "cd '$P' && bridgie plan b" >/dev/null 2>&1
+  [ "$(fm "$P/.bridgie/acceptance/b.md" decision)" = '"superseded"' ]
+  run bash -c "cd '$P' && bridgie accept b --approve"
+  [ "$status" -ne 0 ]
+  [ "$(fm "$P/.bridgie/bets/b/bet.md" status)" = '"signed"' ]
+}
+
+@test "approval is refused when the feature branch moved after packaging" {
+  signed_bet "$P" b
+  bash -c "cd '$P' && bridgie shape b && bridgie shape b --approve && bridgie run b" >/dev/null 2>&1
+  git -C "$P" commit -q --allow-empty -m "sneaky change after packaging"
+  run bash -c "cd '$P' && bridgie accept b --approve"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"stale"* ]]
+  [ "$(fm "$P/.bridgie/bets/b/bet.md" status)" = '"signed"' ]
+  run bash -c "cd '$P' && bridgie accept b"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"stale"* ]]
+  run bash -c "cd '$P' && bridgie accept b --approve"
+  [ "$status" -eq 0 ]
+  [ "$(fm "$P/.bridgie/bets/b/bet.md" status)" = '"delivered"' ]
 }

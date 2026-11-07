@@ -62,11 +62,32 @@ setup() {
 
 @test "touching a risk path asks for a human ack before verification (R9)" {
   printf 'version: 1\nlanes:\n  engineering:\n    risk_paths:\n      - { glob: "feature-*.txt", risk: security }\n' > "$P/.bridgie/policy.yaml"
+  all_tiers "$P"
   run bash -c "cd '$P' && bridgie verify b"
   [ "$status" -ne 0 ]
+  [[ "$output" == *"risk raised to security"* ]]
   [[ "$output" == *"waiting for a human ack"* ]]
+  [ "$(fm "$P/.bridgie/bets/b/bet.md" risk)" = '"security"' ]
+  grep -q 'risk none → security: task T1 changes feature-1.txt (security)' "$P/.bridgie/bets/b/bet.md"
   run bash -c "cd '$P' && bridgie ack b && bridgie verify b"
   [ "$status" -eq 0 ]
+  grep -q 'behavioural' "$P/.bridgie/runs/b/verify-02/evidence.json"
+}
+
+@test "a required tier with no command is not_proven and the task cannot pass" {
+  printf 'version: 1\nverify:\n  commands:\n    mechanical: ["true"]\n' > "$P/.bridgie/policy.yaml"
+  run bash -c "cd '$P' && bridgie verify b"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"specified: no command configured"* ]]
+  [ "$(task_field "$P" b T1 status)" = '"failed"' ]
+  grep -q 'no command configured for required tier specified' "$P/.bridgie/runs/b/verify-01/evidence.json"
+}
+
+@test "the reviewer gets the runner's test results and logs (it cannot run commands)" {
+  printf 'version: 1\nverify:\n  commands:\n    mechanical: ["echo built-ok"]\n    specified: ["echo 7 tests passed"]\n' > "$P/.bridgie/policy.yaml"
+  bash -c "cd '$P' && bridgie verify b" >/dev/null 2>&1
+  grep -q 'test results (runner-run, read-only)' "$P/.bridgie/runs/b/reviewer-01/prompt.md"
+  grep -q '7 tests passed' "$P/.bridgie/runs/b/reviewer-01/prompt.md"
 }
 
 @test "a reviewer that cannot read the repository is refused (R10)" {

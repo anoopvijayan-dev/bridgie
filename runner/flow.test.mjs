@@ -160,10 +160,10 @@ test('acceptance: refused until all tasks pass (R6); approvals respect policy co
 
 test('acceptance: reject records the reason and leaves the bet signed', () => {
   const root = project('none');
-  fl.writeTasksFromPlan(root, 'b', planOutput(root, [T('T1', ['R1', 'R2', 'P1'])]));
-  fl.setTask(root, 'b', 'T1', { status: 'passed' });
   for (const s of ['grilling', 'evidence']) st.betTransition(root, 'b', s);
   st.betTransition(root, 'b', 'signed', { by: 'tester' });
+  fl.writeTasksFromPlan(root, 'b', planOutput(root, [T('T1', ['R1', 'R2', 'P1'])]));
+  fl.setTask(root, 'b', 'T1', { status: 'passed' });
   fl.writeAcceptance(root, 'b', { body: 'x', residual: [], cost: {} });
   const d = st.listDecisions(root, 'b', { pending: true }).find(x => x.type === 'accept');
   assert.throws(() => fl.answer(root, 'b', d.id, 'reject', { by: 'tester' }), /reason/);
@@ -206,9 +206,10 @@ test('globToRegex and riskOfPaths pick the highest matching risk and whether an 
 test('mechanicalPlan: project commands win; else lane commands for detected stacks, limited to policy tiers', () => {
   const root = project('none', 'version: 1\nverify:\n  commands:\n    mechanical: ["npm test"]\n    contracts: ["never runs"]\n');
   const wt = mkdtempSync(join(tmpdir(), 'wt-'));
-  assert.deepEqual(fl.mechanicalPlan(root, 'b', wt), [{ tier: 'mechanical', cmd: 'npm test' }]);   // contracts not in tiers for risk none
+  // contracts is not required at risk none; specified is required and has no command → missing
+  assert.deepEqual(fl.mechanicalPlan(root, 'b', wt), [{ tier: 'mechanical', cmd: 'npm test' }, { tier: 'specified', cmd: null, missing: true }]);
   const root2 = project('none');
   writeFileSync(join(wt, 'package.json'), '{}');
   assert.deepEqual(fl.mechanicalPlan(root2, 'b', wt).map(x => x.cmd), ['npm run lint --if-present', 'npm run build --if-present', 'npx vitest run']);
-  assert.deepEqual(fl.mechanicalPlan(root2, 'b', mkdtempSync(join(tmpdir(), 'empty-'))), []);
+  assert.deepEqual(fl.mechanicalPlan(root2, 'b', mkdtempSync(join(tmpdir(), 'empty-'))).map(x => `${x.tier}:${x.missing}`), ['mechanical:true', 'specified:true']);
 });

@@ -109,6 +109,17 @@
           },
           "task": {
             "type": "string"
+          },
+          "risk": {
+            "type": "string",
+            "enum": [
+              "money",
+              "data",
+              "security",
+              "infra",
+              "ux",
+              "none"
+            ]
           }
         }
       }

@@ -2,6 +2,8 @@
 // and the effects of approve_design, ack_risk, unblock and accept decisions.
 // Every write still goes through state.mjs's atomic, schema-checked writers.
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, statSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import { parse as yparse } from './yaml.mjs';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -17,6 +19,18 @@ export function requirementIds(root, slug) {
   const f = requirementsPath(root, slug);
   if (!existsSync(f)) throw new Error(`no requirements.md for bet "${slug}" (run bridgie shape ${slug})`);
   return [...readFileSync(f, 'utf8').matchAll(/^## ([RP][0-9]+)\b/gm)].map(m => m[1]);
+}
+
+// requirementRisks: the "risk: <level>" tag on each requirement heading (## R2 · event · risk: money).
+export function requirementRisks(root, slug) {
+  const f = requirementsPath(root, slug);
+  if (!existsSync(f)) return {};
+  const out = {};
+  for (const m of readFileSync(f, 'utf8').matchAll(/^## ([RP][0-9]+)\b([^\n]*)$/gm)) {
+    const r = m[2].match(/risk:\s*([a-z]+)/i);
+    if (r && st.RISK_ORDER.includes(r[1].toLowerCase())) out[m[1]] = r[1].toLowerCase();
+  }
+  return out;
 }
 
 // writeSpecFiles: requirements.md and design.md from the shaper's output.
@@ -89,6 +103,10 @@ export function writeTasksFromPlan(root, slug, outputFile) {
     tasks: list.map(t => ({ id: t.id, title: t.title || t.id, requirements: t.requirements, depends_on: t.depends_on || [], status: 'todo', attempts: 0, max_attempts: max, branch: null, evidence: null, escalation: null })),
   };
   saveTasks(root, slug, doc);
+  // Effective risk (finding 3): a requirement tagged with a higher risk raises the bet's risk.
+  for (const [id, risk] of Object.entries(requirementRisks(root, slug))) st.raiseRisk(root, slug, risk, `requirement ${id} is tagged risk: ${risk}`);
+  // Re-planning invalidates any acceptance package built from the previous plan (finding 1).
+  invalidateAcceptance(root, slug, 're-planned');
   return doc;
 }
 
@@ -145,13 +163,19 @@ export function reconcile(root, slug, id, reviewerFile, mechanicalRows, outFile)
   const doc = loadTasks(root, slug);
   const t = getTask(doc, id);
   const rev = assertValid(st.loadSchema('evidence'), st.readJson(reviewerFile), reviewerFile);
-  const criteria = t.requirements.map(r => rev.criteria.find(c => c.id === r) ||
-    { id: r, tier: 'adversarial', check: 'no evidence row from the reviewer', result: 'not_proven', artifact: null });
+  // Every reviewer row counts (finding 2): a requirement is proven only when it has at least one
+  // row and every one of its rows passes. Rows for ids outside the task still count.
+  const missing = r => ({ id: r, tier: 'adversarial', check: 'no evidence row from the reviewer', result: 'not_proven', artifact: null });
+  const criteria = [
+    ...t.requirements.flatMap(r => { const rs = rev.criteria.filter(c => c.id === r); return rs.length ? rs : [missing(r)]; }),
+    ...rev.criteria.filter(c => !t.requirements.includes(c.id)),
+  ];
   const rows = [...criteria, ...mechanicalRows];
   const serious = rev.findings.filter(f => f.severity === 'blocker' || f.severity === 'major');
+  // The reviewer's own verdict can only make the result stricter, never looser.
   let verdict = 'pass';
-  if (rows.some(r => r.result === 'fail') || serious.length) verdict = 'fail';
-  else if (rows.some(r => r.result !== 'pass')) verdict = 'not_proven';
+  if (rows.some(r => r.result === 'fail') || serious.length || rev.verdict === 'fail') verdict = 'fail';
+  else if (rows.some(r => r.result !== 'pass') || rev.verdict !== 'pass') verdict = 'not_proven';
   const evidence = { task: id, criteria: rows, findings: rev.findings, verdict, verifier: rev.verifier };
   st.writeJsonAtomic(outFile, evidence, 'evidence');
 
@@ -159,6 +183,7 @@ export function reconcile(root, slug, id, reviewerFile, mechanicalRows, outFile)
     const why = [
       ...rows.filter(r => r.result !== 'pass').map(r => `${r.id} ${r.result} (${r.check})`),
       ...serious.map(f => `${f.severity}: ${f.claim}${f.file ? ` at ${f.file}:${f.line ?? '?'}` : ''}`),
+      ...(rev.verdict !== 'pass' ? [`reviewer verdict ${rev.verdict}`] : []),
     ].join('; ');
     t.evidence = outFile;
     if (t.attempts >= t.max_attempts) {
@@ -197,7 +222,7 @@ export function globToRegex(glob) {
   return new RegExp(`^${re}$`);
 }
 
-const RISK_ORDER = ['none', 'ux', 'data', 'infra', 'security', 'money'];
+const RISK_ORDER = st.RISK_ORDER;
 export function riskOfPaths(root, slug, files) {
   const bet = st.readFm(st.betPath(root, slug)).data;
   const policy = st.loadPolicy(root);
@@ -213,8 +238,9 @@ export function riskOfPaths(root, slug, files) {
     paths.push(`${f} (${hit})`);
     if (RISK_ORDER.indexOf(hit) > RISK_ORDER.indexOf(risk)) risk = hit;
   }
-  const needs_ack = risk !== 'none' && !!st.lanePolicy(policy, bet.lane, risk).human_ack_before_build;
-  return { risk, paths, needs_ack };
+  const effective = st.maxRisk(bet.risk, risk);
+  const needs_ack = !!st.lanePolicy(policy, bet.lane, effective).human_ack_before_build && effective !== 'none';
+  return { risk, paths, needs_ack, effective };
 }
 
 function detectStacks(wt) {
@@ -225,18 +251,30 @@ function detectStacks(wt) {
   return stacks;
 }
 
+// Tiers the runner runs as commands; "adversarial" is the reviewer seat and "human" is acceptance.
+export const COMMAND_TIERS = ['mechanical', 'specified', 'contracts', 'invariants', 'behavioural', 'dual_run'];
+
+// mechanicalPlan: commands for every command tier the policy requires at the bet's risk.
+// A required tier with no command is returned as { tier, cmd: null, missing: true } so verify
+// records it as not_proven instead of silently dropping it (finding 3).
 export function mechanicalPlan(root, slug, wt) {
   const bet = st.readFm(st.betPath(root, slug)).data;
   const policy = st.loadPolicy(root);
   const tiers = st.lanePolicy(policy, bet.lane, bet.risk).tiers || policy.lanes?.[bet.lane]?.tiers_default || ['mechanical'];
-  const commandTiers = ['mechanical', 'specified', 'contracts', 'invariants'].filter(t => tiers.includes(t));
+  const commandTiers = COMMAND_TIERS.filter(t => tiers.includes(t));
   const project = policy.verify?.commands;
-  if (project) return commandTiers.flatMap(t => (project[t] || []).map(cmd => ({ tier: t, cmd })));
-  const laneFile = join(st.HOME, 'lanes', bet.lane, 'verifiers.yaml');
-  if (!existsSync(laneFile)) return [];
-  const lane = yparse(readFileSync(laneFile, 'utf8')).tiers || {};
-  const stacks = detectStacks(wt);
-  return commandTiers.flatMap(t => stacks.flatMap(sk => (lane[t]?.[sk] || []).map(cmd => ({ tier: t, cmd }))));
+  let byTier;
+  if (project) byTier = t => project[t] || [];
+  else {
+    const laneFile = join(st.HOME, 'lanes', bet.lane, 'verifiers.yaml');
+    const lane = existsSync(laneFile) ? yparse(readFileSync(laneFile, 'utf8')).tiers || {} : {};
+    const stacks = detectStacks(wt);
+    byTier = t => stacks.flatMap(sk => lane[t]?.[sk] || []);
+  }
+  return commandTiers.flatMap(t => {
+    const cmds = byTier(t);
+    return cmds.length ? cmds.map(cmd => ({ tier: t, cmd })) : [{ tier: t, cmd: null, missing: true }];
+  });
 }
 
 // producerVendor: vendor of the newest producer run (implementer/hardener) for a task.
@@ -263,13 +301,20 @@ export function crossFamily(root, slug) {
 export function ensureDecision(root, slug, type, context, options, extra = {}) {
   const doc = st.loadDecisions(root, slug);
   const open = doc.decisions.find(d => d.type === type && d.status !== 'answered' && (extra.task ? d.task === extra.task : true));
-  if (open) return open;
-  return st.addDecision(root, slug, { type, context, options, allow_free_text: extra.allow_free_text ?? true, task: extra.task });
+  if (open && !(extra.risk && open.risk !== extra.risk)) return open;
+  if (open) st.supersedeDecision(root, slug, open.id, `superseded: risk is now ${extra.risk}`);
+  return st.addDecision(root, slug, { type, context, options, allow_free_text: extra.allow_free_text ?? true, task: extra.task, risk: extra.risk });
 }
 
-const latest = (root, slug, type) => st.loadDecisions(root, slug).decisions.filter(d => d.type === type && d.status === 'answered').pop();
+const latest = (root, slug, type) => st.loadDecisions(root, slug).decisions.filter(d => d.type === type && d.status === 'answered' && d.answer !== 'superseded').pop();
 export const designApproved = (root, slug) => latest(root, slug, 'approve_design')?.answer === 'approve';
-export const ackRecorded = (root, slug) => latest(root, slug, 'ack_risk')?.answer === 'ack';
+// An ack covers the risk level it was given for; a later raise needs a new ack (finding 3).
+export function ackRecorded(root, slug) {
+  const d = latest(root, slug, 'ack_risk');
+  if (d?.answer !== 'ack') return false;
+  const risk = st.readFm(st.betPath(root, slug)).data.risk;
+  return st.RISK_ORDER.indexOf(d.risk || 'none') >= st.RISK_ORDER.indexOf(risk);
+}
 export const ackDeclined = (root, slug) => latest(root, slug, 'ack_risk')?.answer === 'decline';
 
 function effectFor(root, slug, extra) {
@@ -332,12 +377,51 @@ export function acceptancePacket(root, slug, diffStat = '') {
 }
 
 // ---------- acceptance ----------
+// featureSha: the commit of bridgie/<slug>, or null outside git.
+export function featureSha(root, slug) {
+  try { return execFileSync('git', ['-C', root, 'rev-parse', '-q', '--verify', `bridgie/${slug}`], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() || null; } catch { return null; }
+}
+
+// packageDigest: one hash over everything an approval vouches for — requirements, design,
+// the task list with statuses, and every task's evidence file.
+export function packageDigest(root, slug) {
+  const h = createHash('sha256');
+  const add = (name, f) => { h.update(`${name}\0`); h.update(existsSync(f) ? readFileSync(f) : '(missing)'); h.update('\0'); };
+  const dir = join(root, '.bridgie', 'specs', slug);
+  add('requirements.md', join(dir, 'requirements.md'));
+  add('design.md', join(dir, 'design.md'));
+  add('tasks.json', st.tasksPath(root, slug));
+  for (const t of loadTasks(root, slug).tasks) if (t.evidence) add(`evidence:${t.id}`, t.evidence);
+  return h.digest('hex');
+}
+
+// stalePackage: why the acceptance package no longer describes the work, or null if it still does.
+export function stalePackage(root, slug, data) {
+  const pending = loadTasks(root, slug).tasks.filter(t => t.status !== 'passed');
+  if (pending.length) return `tasks no longer passed: ${pending.map(t => `${t.id} (${t.status})`).join(', ')}`;
+  if (data.packaged_digest && data.packaged_digest !== packageDigest(root, slug)) return 'requirements, design, tasks or evidence changed since the package was built';
+  const sha = featureSha(root, slug);
+  if (data.packaged_sha && sha !== data.packaged_sha) return `bridgie/${slug} moved from ${data.packaged_sha.slice(0, 10)} to ${sha ? sha.slice(0, 10) : 'nothing'} since the package was built`;
+  return null;
+}
+
+// invalidateAcceptance: close pending accept decisions and mark the package superseded.
+export function invalidateAcceptance(root, slug, reason) {
+  for (const d of st.loadDecisions(root, slug).decisions.filter(x => x.type === 'accept' && x.status !== 'answered')) st.supersedeDecision(root, slug, d.id, `superseded: ${reason}`);
+  const f = acceptancePath(root, slug);
+  if (!existsSync(f)) return;
+  const { data, body } = st.readFm(f);
+  if (data.decision === 'pending') st.writeFm(f, { ...data, decision: 'superseded', conditions: [...(data.conditions || []), `superseded: ${reason}`] }, body, 'acceptance');
+}
+
 export function writeAcceptance(root, slug, { body, residual = [], cost = {} }) {
   const pending = loadTasks(root, slug).tasks.filter(t => t.status !== 'passed');
   if (pending.length) throw new Error(`cannot accept "${slug}": tasks not passed: ${pending.map(t => t.id).join(', ')}`);
+  invalidateAcceptance(root, slug, 'a new package was built');
   const bet = st.readFm(st.betPath(root, slug)).data;
   const required = st.lanePolicy(st.loadPolicy(root), bet.lane, bet.risk).approvers || 1;
-  const data = { bet: slug, title: bet.title, decision: 'pending', approver: null, decided_at: null, git_sha: null, conditions: [], residual_uncertainty: residual, cost, approvals: [], approvers_required: required };
+  const data = { bet: slug, title: bet.title, decision: 'pending', approver: null, decided_at: null, git_sha: null, conditions: [], residual_uncertainty: residual, cost, approvals: [], approvers_required: required,
+    risk: bet.risk, packaged_at: st.now(), packaged_sha: featureSha(root, slug), packaged_digest: packageDigest(root, slug) };
   st.writeFm(acceptancePath(root, slug), data, body.startsWith('\n') ? body : `\n${body}`, 'acceptance');
   ensureDecision(root, slug, 'accept', `Accept "${bet.title}"? ${required} approval(s) required. Read the acceptance package first.`,
     ['approve', 'approve with conditions', 'reject'], { allow_free_text: true });
@@ -347,19 +431,27 @@ function acceptEffect(root, slug, ans, { by, text, gitSha }) {
   const f = acceptancePath(root, slug);
   const { data, body } = st.readFm(f);
   if (ans !== 'approve' && !text) throw new Error(`"${ans}" needs a reason or the conditions (--text)`);
+  if (data.decision !== 'pending') throw new Error(`the acceptance package for "${slug}" is ${data.decision}; run bridgie accept ${slug} to build a new one`);
   if (ans === 'reject') {
-    st.writeFm(f, { ...data, decision: 'rejected', approver: by, decided_at: st.now(), git_sha: gitSha || null, conditions: [text] }, body, 'acceptance');
+    st.writeFm(f, { ...data, decision: 'rejected', approver: by, decided_at: st.now(), git_sha: data.packaged_sha || gitSha || null, conditions: [text] }, body, 'acceptance');
     return 'rejected; fix and re-run bridgie accept';
   }
+  // Approval is bound to what was packaged (finding 1): re-check the gates at the moment of approval.
+  const stale = stalePackage(root, slug, data);
+  if (stale) throw new Error(`the acceptance package for "${slug}" is stale: ${stale}. Run bridgie accept ${slug} again`);
+  if (data.packaged_sha && gitSha && gitSha !== data.packaged_sha) throw new Error(`approval names ${gitSha.slice(0, 10)} but the package was built at ${data.packaged_sha.slice(0, 10)}`);
+  const bet = st.readFm(st.betPath(root, slug)).data;
+  const required = Math.max(data.approvers_required, st.lanePolicy(st.loadPolicy(root), bet.lane, bet.risk).approvers || 1);
   if (data.approvals.some(a => a.by === by)) throw new Error(`${by} already approved; a different approver is required`);
-  const approvals = [...data.approvals, { by, at: st.now(), decision: ans, conditions: text || null }];
+  const sha = data.packaged_sha || gitSha || null;
+  const approvals = [...data.approvals, { by, at: st.now(), decision: ans, conditions: text || null, sha, digest: data.packaged_digest || null }];
   const conditions = approvals.filter(a => a.conditions).map(a => a.conditions);
-  if (approvals.length < data.approvers_required) {
-    st.writeFm(f, { ...data, approvals, conditions }, body, 'acceptance');
-    return `approval ${approvals.length} of ${data.approvers_required} recorded`;
+  if (approvals.length < required) {
+    st.writeFm(f, { ...data, approvers_required: required, approvals, conditions }, body, 'acceptance');
+    return `approval ${approvals.length} of ${required} recorded`;
   }
   const decision = approvals.some(a => a.decision === 'approve with conditions') ? 'approved_with_conditions' : 'approved';
-  st.writeFm(f, { ...data, approvals, conditions, decision, approver: approvals.map(a => a.by).join(', '), decided_at: st.now(), git_sha: gitSha || null }, body, 'acceptance');
+  st.writeFm(f, { ...data, approvers_required: required, approvals, conditions, decision, approver: approvals.map(a => a.by).join(', '), decided_at: st.now(), git_sha: sha }, body, 'acceptance');
   st.betTransition(root, slug, 'delivered');
   return `${decision}; bet delivered. Merge bridgie/${slug} when you are ready.`;
 }
@@ -384,7 +476,10 @@ const OPS = {
   'cross-family': a => out(String(crossFamily(a[0], a[1]))),
   'mark-passed': a => out(markPassed(a[0], a[1], a[2], a[3])),
   'all-passed': a => out(String(allPassed(a[0], a[1]))),
-  'ensure-decision': a => out(ensureDecision(a[0], a[1], a[2], a[3], JSON.parse(a[4]), flag(a, 'task') ? { task: flag(a, 'task') } : {}).id),
+  'ensure-decision': a => out(ensureDecision(a[0], a[1], a[2], a[3], JSON.parse(a[4]), { ...(flag(a, 'task') ? { task: flag(a, 'task') } : {}), ...(flag(a, 'risk') ? { risk: flag(a, 'risk') } : {}) }).id),
+  'raise-risk': a => out(st.raiseRisk(a[0], a[1], a[2], flag(a, 'reason') || 'raised by the runner')),
+  'stale-package': a => { const f = acceptancePath(a[0], a[1]); out(existsSync(f) ? stalePackage(a[0], a[1], st.readFm(f).data) || '' : 'no package'); },
+  'invalidate-acceptance': a => { invalidateAcceptance(a[0], a[1], a[2] || 'invalidated'); out('ok'); },
   'design-approved': a => out(String(designApproved(a[0], a[1]))),
   'ack-recorded': a => out(String(ackRecorded(a[0], a[1]))),
   'ack-declined': a => out(String(ackDeclined(a[0], a[1]))),
