@@ -4,8 +4,9 @@ import http from 'node:http';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { spawn } from 'node:child_process';
+import { spawn, execFileSync } from 'node:child_process';
 import * as st from './state.mjs';
+import * as fl from './flow.mjs';
 
 const T = name => readFileSync(join(st.HOME, 'ui', 'templates', `${name}.html`), 'utf8');
 export const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -109,6 +110,10 @@ export function renderAll(root, outDir) {
   return outDir;
 }
 
+function featureSha(root, slug) {
+  try { return execFileSync('git', ['-C', root, 'rev-parse', `bridgie/${slug}`], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim(); } catch { return null; }
+}
+
 export function serve(root, { port = 0, host = '127.0.0.1', by = 'unknown' } = {}) {
   const server = http.createServer((req, res) => {
     const send = (code, html) => { res.writeHead(code, { 'content-type': 'text/html; charset=utf-8' }); res.end(html); };
@@ -126,7 +131,7 @@ export function serve(root, { port = 0, host = '127.0.0.1', by = 'unknown' } = {
             const slug = p.get('slug'), id = p.get('id'); let answer = p.get('answer'); const text = p.get('text') || undefined;
             if (!slug || !id || !answer) throw new Error('pick an answer first');
             if (answer === '__text__') { if (!text) throw new Error('free-text answer is empty'); answer = text; }
-            st.answerDecision(root, slug, id, answer, { text, by });
+            fl.answer(root, slug, id, answer, { text, by, gitSha: featureSha(root, slug) });
             res.writeHead(303, { location: `/bet/${slug}#${id}` }); res.end();
           } catch (e) {
             send(400, page('Not applied', `<p class="warn">${esc(e.message)}</p><p><a href="javascript:history.back()">Back</a></p>`, {}));

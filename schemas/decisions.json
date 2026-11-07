@@ -1,30 +1,115 @@
 {
   "type": "object",
-  "required": ["bet", "decisions"],
+  "required": [
+    "bet",
+    "decisions"
+  ],
   "additionalProperties": false,
   "properties": {
-    "bet": { "type": "string" },
-    "next_id": { "type": "integer" },
+    "bet": {
+      "type": "string"
+    },
+    "next_id": {
+      "type": "integer"
+    },
     "decisions": {
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["id", "type", "context", "options", "status"],
+        "required": [
+          "id",
+          "type",
+          "context",
+          "options",
+          "status"
+        ],
         "additionalProperties": false,
         "properties": {
-          "id": { "type": "string", "pattern": "^D[0-9]+$" },
-          "type": { "type": "string", "enum": ["question", "sign", "approve_design", "ack_risk", "accept", "unblock"] },
-          "raised_by": { "type": ["object", "null"], "properties": { "seat": { "type": "string" }, "run": { "type": "string" } } },
-          "context": { "type": "string" },
-          "options": { "type": "array", "items": { "type": "string" } },
-          "allow_free_text": { "type": "boolean" },
-          "status": { "type": "string", "enum": ["pending", "answered", "deferred"] },
-          "answer": { "type": ["string", "null"] },
-          "free_text": { "type": ["string", "null"] },
-          "decided_by": { "type": ["string", "null"] },
-          "decided_at": { "type": ["string", "null"] },
-          "effect": { "type": ["string", "null"] },
-          "created_at": { "type": "string" }
+          "id": {
+            "type": "string",
+            "pattern": "^D[0-9]+$"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "question",
+              "sign",
+              "approve_design",
+              "ack_risk",
+              "accept",
+              "unblock"
+            ]
+          },
+          "raised_by": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "seat": {
+                "type": "string"
+              },
+              "run": {
+                "type": "string"
+              }
+            }
+          },
+          "context": {
+            "type": "string"
+          },
+          "options": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "allow_free_text": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "answered",
+              "deferred"
+            ]
+          },
+          "answer": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "free_text": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "decided_by": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "decided_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "effect": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "task": {
+            "type": "string"
+          }
         }
       }
     }

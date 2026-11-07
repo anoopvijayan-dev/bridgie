@@ -1,14 +1,88 @@
 {
   "type": "object",
-  "required": ["bet", "decision"],
+  "required": [
+    "bet",
+    "decision"
+  ],
   "properties": {
-    "bet": { "type": "string" },
-    "decision": { "type": "string", "enum": ["pending", "approved", "approved_with_conditions", "rejected"] },
-    "approver": { "type": ["string", "null"] },
-    "decided_at": { "type": ["string", "null"] },
-    "git_sha": { "type": ["string", "null"] },
-    "conditions": { "type": "array", "items": { "type": "string" } },
-    "residual_uncertainty": { "type": "array", "items": { "type": "string" } },
-    "cost": { "type": "object" }
+    "bet": {
+      "type": "string"
+    },
+    "decision": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "approved",
+        "approved_with_conditions",
+        "rejected"
+      ]
+    },
+    "approver": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "decided_at": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "git_sha": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "conditions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "residual_uncertainty": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "cost": {
+      "type": "object"
+    },
+    "approvals": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "by",
+          "at",
+          "decision"
+        ],
+        "properties": {
+          "by": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string"
+          },
+          "decision": {
+            "type": "string"
+          },
+          "conditions": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "approvers_required": {
+      "type": "integer"
+    },
+    "title": {
+      "type": "string"
+    }
   }
 }

@@ -17,7 +17,7 @@ cmd_sign() {
   local status; status="$(node_run state.mjs fm-get "$root/.bridgie/bets/$slug/bet.md" status | tr -d '"')"
   [[ "$status" == "evidence" ]] || die "sign: bet '$slug' is '$status'; it must be in 'evidence' (run 'bridgie grill $slug' first)"
   local id; id="$(node_run state.mjs ensure-sign "$root" "$slug")" || exit 1
-  node_run state.mjs decision-answer "$root" "$slug" "$id" "$answer" --by "$(bridgie_user)" >/dev/null || exit 1
+  node_run flow.mjs decision-answer "$root" "$slug" "$id" "$answer" --by "$(bridgie_user)" >/dev/null || exit 1
   state_commit "$root" "sign $slug: $answer"
   log "bet $slug: $answer ($id)"
 }

@@ -1,24 +1,80 @@
 {
   "type": "object",
-  "required": ["seat", "summary_md"],
+  "required": [
+    "seat",
+    "summary_md"
+  ],
   "additionalProperties": false,
   "properties": {
-    "seat": { "type": "string" },
-    "summary_md": { "type": "string" },
+    "seat": {
+      "type": "string"
+    },
+    "summary_md": {
+      "type": "string"
+    },
     "questions": {
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["context", "options"],
+        "required": [
+          "context",
+          "options"
+        ],
         "additionalProperties": false,
         "properties": {
-          "context": { "type": "string" },
-          "options": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
-          "allow_free_text": { "type": "boolean" }
+          "context": {
+            "type": "string"
+          },
+          "options": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1
+          },
+          "allow_free_text": {
+            "type": "boolean"
+          }
         }
       }
     },
-    "proposals": { "type": "array", "items": { "type": "object", "required": ["kind", "text"], "properties": { "kind": { "type": "string", "enum": ["gotcha", "test", "policy", "confidence", "design", "task"] }, "text": { "type": "string" } } } },
-    "artifact_md": { "type": ["string", "null"] }
+    "proposals": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "kind",
+          "text"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "gotcha",
+              "test",
+              "policy",
+              "confidence",
+              "design",
+              "task"
+            ]
+          },
+          "text": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "artifact_md": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "files": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    }
   }
 }

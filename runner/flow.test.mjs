@@ -1,0 +1,173 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import * as st from './state.mjs';
+import * as fl from './flow.mjs';
+
+const REQS = `# Requirements\n\n## R1 · event · risk: none\nWHEN a THE SYSTEM SHALL b\n\n## R2 · event · risk: money\nWHEN c THE SYSTEM SHALL d\n\n## P1 · property\nFor any x, y SHALL hold.\nValidates: R2\n`;
+
+function project(risk = 'none', policy = 'version: 1\n') {
+  const root = mkdtempSync(join(tmpdir(), 'bridgie-flow-'));
+  for (const d of ['bets', 'specs', 'runs', 'acceptance', 'decisions', 'learn']) mkdirSync(join(root, '.bridgie', d), { recursive: true });
+  writeFileSync(join(root, '.bridgie', 'policy.yaml'), policy);
+  st.betNew(root, 'b', { title: 'B', lane: 'engineering', risk, owner: 'tester' });
+  mkdirSync(join(root, '.bridgie', 'specs', 'b'), { recursive: true });
+  writeFileSync(join(root, '.bridgie', 'specs', 'b', 'requirements.md'), REQS);
+  return root;
+}
+function planOutput(root, tasks) {
+  const f = join(root, 'plan-out.json');
+  writeFileSync(f, JSON.stringify({ seat: 'decomposer', summary_md: 's', artifact_md: '```json\n' + JSON.stringify({ tasks }) + '\n```' }));
+  return f;
+}
+const T = (id, requirements, depends_on = []) => ({ id, title: `task ${id}`, requirements, depends_on });
+
+test('requirementIds reads R and P headings', () => {
+  assert.deepEqual(fl.requirementIds(project(), 'b'), ['R1', 'R2', 'P1']);
+});
+
+test('writeTasksFromPlan validates mapping, ids, deps and cycles', () => {
+  const root = project();
+  assert.throws(() => fl.writeTasksFromPlan(root, 'b', planOutput(root, [T('T1', ['R1'])])), /not covered by any task: R2, P1/);
+  assert.throws(() => fl.writeTasksFromPlan(root, 'b', planOutput(root, [T('T1', ['R1', 'R2', 'P1', 'R9'])])), /unknown requirement R9/);
+  assert.throws(() => fl.writeTasksFromPlan(root, 'b', planOutput(root, [T('T1', ['R1'], ['T2']), T('T2', ['R2', 'P1'], ['T1'])])), /cycle/);
+  assert.throws(() => fl.writeTasksFromPlan(root, 'b', planOutput(root, [T('T1', ['R1', 'R2', 'P1'], ['T7'])])), /unknown task T7/);
+  const doc = fl.writeTasksFromPlan(root, 'b', planOutput(root, [T('T1', ['R1']), T('T2', ['R2', 'P1'], ['T1'])]));
+  assert.equal(doc.tasks[1].status, 'todo');
+  assert.equal(doc.tasks[1].max_attempts, 3);
+  assert.ok(existsSync(st.tasksPath(root, 'b')));
+});
+
+test('readyTasks respects dependencies and retry budget', () => {
+  const root = project();
+  fl.writeTasksFromPlan(root, 'b', planOutput(root, [T('T1', ['R1']), T('T2', ['R2', 'P1'], ['T1'])]));
+  assert.deepEqual(fl.readyTasks(root, 'b').map(t => t.id), ['T1']);
+  fl.startAttempt(root, 'b', 'T1', 'br');
+  assert.deepEqual(fl.readyTasks(root, 'b').map(t => t.id), []);
+  fl.setTask(root, 'b', 'T1', { status: 'passed' });
+  assert.deepEqual(fl.readyTasks(root, 'b').map(t => t.id), ['T2']);
+});
+
+function verifyOut(root, rows, findings = []) {
+  const f = join(root, `ev-${Math.random()}.json`);
+  writeFileSync(f, JSON.stringify({ task: 'T1', criteria: rows, findings, verdict: 'pass', verifier: { seat: 'reviewer', adapter: 'fake', model: 'm' } }));
+  return f;
+}
+const row = (id, result = 'pass', tier = 'adversarial') => ({ id, tier, check: `check ${id}`, result, artifact: null });
+
+test('reconcile: all criteria pass → pass; missing row → not_proven (R4); major finding → fail', () => {
+  const root = project();
+  fl.writeTasksFromPlan(root, 'b', planOutput(root, [T('T1', ['R1', 'R2', 'P1'])]));
+  fl.startAttempt(root, 'b', 'T1', 'br'); fl.setTask(root, 'b', 'T1', { status: 'verify' });
+  const out = join(root, 'final.json');
+  let r = fl.reconcile(root, 'b', 'T1', verifyOut(root, [row('R1'), row('R2')]), [row('mechanical:1', 'pass', 'mechanical')], out);
+  assert.equal(r.verdict, 'not_proven');
+  const ev = JSON.parse(readFileSync(out, 'utf8'));
+  assert.equal(ev.criteria.find(c => c.id === 'P1').result, 'not_proven');
+  assert.equal(fl.loadTasks(root, 'b').tasks[0].status, 'failed');
+
+  fl.startAttempt(root, 'b', 'T1', 'br'); fl.setTask(root, 'b', 'T1', { status: 'verify' });
+  r = fl.reconcile(root, 'b', 'T1', verifyOut(root, [row('R1'), row('R2'), row('P1')], [{ severity: 'major', file: 'a', line: 1, claim: 'race', repro: 'two posts' }]), [], out);
+  assert.equal(r.verdict, 'fail');
+
+  fl.startAttempt(root, 'b', 'T1', 'br'); fl.setTask(root, 'b', 'T1', { status: 'verify' });
+  r = fl.reconcile(root, 'b', 'T1', verifyOut(root, [row('R1'), row('R2'), row('P1')], [{ severity: 'minor', file: 'a', line: 1, claim: 'naming', repro: 'n/a' }]), [row('mechanical:1', 'pass', 'mechanical')], out);
+  assert.equal(r.verdict, 'pass');
+  assert.equal(fl.loadTasks(root, 'b').tasks[0].status, 'verify');   // stays until the merge succeeds
+  fl.markPassed(root, 'b', 'T1', out);
+  assert.equal(fl.loadTasks(root, 'b').tasks[0].status, 'passed');
+});
+
+test('reconcile: a failing mechanical row fails the task', () => {
+  const root = project();
+  fl.writeTasksFromPlan(root, 'b', planOutput(root, [T('T1', ['R1', 'R2', 'P1'])]));
+  fl.startAttempt(root, 'b', 'T1', 'br'); fl.setTask(root, 'b', 'T1', { status: 'verify' });
+  const r = fl.reconcile(root, 'b', 'T1', verifyOut(root, [row('R1'), row('R2'), row('P1')]), [row('mechanical:1', 'fail', 'mechanical')], join(root, 'f.json'));
+  assert.equal(r.verdict, 'fail');
+});
+
+test('after max_attempts failures the task is blocked with an escalation and an unblock decision (R5)', () => {
+  const root = project();
+  fl.writeTasksFromPlan(root, 'b', planOutput(root, [T('T1', ['R1', 'R2', 'P1'])]));
+  for (let i = 0; i < 3; i++) {
+    fl.startAttempt(root, 'b', 'T1', 'br'); fl.setTask(root, 'b', 'T1', { status: 'verify' });
+    fl.reconcile(root, 'b', 'T1', verifyOut(root, [row('R1', 'fail')]), [], join(root, 'f.json'));
+  }
+  const t = fl.loadTasks(root, 'b').tasks[0];
+  assert.equal(t.status, 'blocked');
+  assert.match(t.escalation, /3 attempts/);
+  assert.deepEqual(fl.readyTasks(root, 'b'), []);
+  const d = st.listDecisions(root, 'b', { pending: true }).find(x => x.type === 'unblock');
+  assert.equal(d.task, 'T1');
+  assert.throws(() => fl.startAttempt(root, 'b', 'T1', 'br'), /blocked/);
+});
+
+test('unblock effects: retry with guidance, take over manually, kill task', () => {
+  const root = project();
+  fl.writeTasksFromPlan(root, 'b', planOutput(root, [T('T1', ['R1', 'R2', 'P1'])]));
+  fl.setTask(root, 'b', 'T1', { status: 'blocked', attempts: 3, escalation: 'stuck' });
+  let d = fl.ensureDecision(root, 'b', 'unblock', 'T1 blocked', ['retry with guidance', 'take over manually', 'kill task'], { task: 'T1' });
+  fl.answer(root, 'b', d.id, 'retry with guidance', { by: 'tester', text: 'use the existing ledger service' });
+  let t = fl.loadTasks(root, 'b').tasks[0];
+  assert.equal(t.status, 'failed'); assert.equal(t.max_attempts, 4); assert.match(t.escalation, /guidance: use the existing ledger service/);
+  fl.setTask(root, 'b', 'T1', { status: 'blocked' });
+  d = fl.ensureDecision(root, 'b', 'unblock', 'T1 blocked', ['retry with guidance', 'take over manually', 'kill task'], { task: 'T1' });
+  fl.answer(root, 'b', d.id, 'take over manually', { by: 'tester' });
+  assert.equal(fl.loadTasks(root, 'b').tasks[0].status, 'verify');
+});
+
+test('design approval, ack and gates', () => {
+  const root = project();
+  assert.equal(fl.designApproved(root, 'b'), false);
+  let d = fl.ensureDecision(root, 'b', 'approve_design', 'Approve?', ['approve', 'request changes']);
+  fl.answer(root, 'b', d.id, 'request changes', { by: 'tester', text: 'split the migration' });
+  assert.equal(fl.designApproved(root, 'b'), false);
+  d = fl.ensureDecision(root, 'b', 'approve_design', 'Approve?', ['approve', 'request changes']);
+  fl.answer(root, 'b', d.id, 'approve', { by: 'tester' });
+  assert.equal(fl.designApproved(root, 'b'), true);
+  assert.equal(fl.ackRecorded(root, 'b'), false);
+  d = fl.ensureDecision(root, 'b', 'ack_risk', 'paths', ['ack', 'decline']);
+  fl.answer(root, 'b', d.id, 'ack', { by: 'tester' });
+  assert.equal(fl.ackRecorded(root, 'b'), true);
+});
+
+test('acceptance: refused until all tasks pass (R6); approvals respect policy count; delivered on approval', () => {
+  const root = project('money');
+  fl.writeTasksFromPlan(root, 'b', planOutput(root, [T('T1', ['R1', 'R2', 'P1'])]));
+  assert.equal(fl.allPassed(root, 'b'), false);
+  assert.throws(() => fl.writeAcceptance(root, 'b', { body: 'x', residual: [], cost: {} }), /not passed: T1/);
+  fl.setTask(root, 'b', 'T1', { status: 'passed' });
+  for (const s of ['grilling', 'evidence']) st.betTransition(root, 'b', s);
+  st.setFm(st.betPath(root, 'b'), { confidence: 'data' }); st.betTransition(root, 'b', 'signed', { by: 'tester' });
+  fl.writeAcceptance(root, 'b', { body: '## Evidence matrix\n', residual: ['no load test'], cost: { usd: 1 } });
+  let d = st.listDecisions(root, 'b', { pending: true }).find(x => x.type === 'accept');
+  fl.answer(root, 'b', d.id, 'approve', { by: 'anoop', gitSha: 'abc123' });
+  let fm = st.readFm(fl.acceptancePath(root, 'b')).data;
+  assert.equal(fm.decision, 'pending');                    // money needs 2 approvers by default
+  assert.equal(fm.approvals.length, 1);
+  d = st.listDecisions(root, 'b', { pending: true }).find(x => x.type === 'accept');
+  assert.ok(d, 'a second accept decision is raised');
+  assert.throws(() => fl.answer(root, 'b', d.id, 'approve', { by: 'anoop', gitSha: 'abc123' }), /different approver/);
+  fl.answer(root, 'b', d.id, 'approve with conditions', { by: 'reviewer2', text: 'flag off until Monday', gitSha: 'abc123' });
+  fm = st.readFm(fl.acceptancePath(root, 'b')).data;
+  assert.equal(fm.decision, 'approved_with_conditions');
+  assert.deepEqual(fm.conditions, ['flag off until Monday']);
+  assert.equal(fm.git_sha, 'abc123');
+  assert.equal(st.readFm(st.betPath(root, 'b')).data.status, 'delivered');
+});
+
+test('acceptance: reject records the reason and leaves the bet signed', () => {
+  const root = project('none');
+  fl.writeTasksFromPlan(root, 'b', planOutput(root, [T('T1', ['R1', 'R2', 'P1'])]));
+  fl.setTask(root, 'b', 'T1', { status: 'passed' });
+  for (const s of ['grilling', 'evidence']) st.betTransition(root, 'b', s);
+  st.betTransition(root, 'b', 'signed', { by: 'tester' });
+  fl.writeAcceptance(root, 'b', { body: 'x', residual: [], cost: {} });
+  const d = st.listDecisions(root, 'b', { pending: true }).find(x => x.type === 'accept');
+  assert.throws(() => fl.answer(root, 'b', d.id, 'reject', { by: 'tester' }), /reason/);
+  fl.answer(root, 'b', d.id, 'reject', { by: 'tester', text: 'missing audit log' });
+  assert.equal(st.readFm(fl.acceptancePath(root, 'b')).data.decision, 'rejected');
+  assert.equal(st.readFm(st.betPath(root, 'b')).data.status, 'signed');
+});

@@ -145,7 +145,7 @@ export function addDecision(root, slug, d) {
   const doc = loadDecisions(root, slug);
   const id = `D${doc.next_id || 1}`;
   const rec = {
-    id, type: d.type, raised_by: d.raised_by || null, context: d.context, options: d.options,
+    id, type: d.type, ...(d.task ? { task: d.task } : {}), raised_by: d.raised_by || null, context: d.context, options: d.options,
     allow_free_text: d.allow_free_text ?? (d.type === 'question'), status: 'pending',
     answer: null, free_text: null, decided_by: null, decided_at: null, effect: null, created_at: now(),
   };
@@ -212,7 +212,8 @@ export function answerDecision(root, slug, id, answer, opts = {}) {
       effect = 'bet stays in evidence; add evidence tasks or re-grill';
     }
   }
-  // approve_design, ack_risk, accept, unblock: recorded here; their state effects are wired by the M1 build/verify/accept commands.
+  // approve_design, ack_risk, accept, unblock: their effects live in flow.mjs and arrive as opts.effectFn.
+  if (opts.effectFn) effect = opts.effectFn(d, answer, { by, text: opts.text }) || effect;
 
   d.status = 'answered'; d.answer = answer; d.free_text = opts.text || null;
   d.decided_by = by; d.decided_at = now(); d.effect = effect;
