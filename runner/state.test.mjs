@@ -151,3 +151,16 @@ test('grilling can revert to draft when a grill run fails', () => {
   st.betTransition(root, 'g', 'draft');
   assert.equal(st.readFm(st.betPath(root, 'g')).data.status, 'draft');
 });
+test('status summarises every bet with pending decision counts', () => {
+  const root = project();
+  st.betNew(root, 'a', { title: 'A', lane: 'engineering', risk: 'none', owner: 'tester' });
+  st.betNew(root, 'b', { title: 'B', lane: 'marketing', risk: 'ux', owner: 'tester' });
+  st.betTransition(root, 'b', 'grilling');
+  st.addDecision(root, 'b', { type: 'question', context: 'q', options: ['x'] });
+  const rows = st.status(root);
+  assert.deepEqual(rows.map(r => [r.slug, r.status, r.pending]), [['a', 'draft', 0], ['b', 'grilling', 1]]);
+  const table = st.statusTable(rows);
+  assert.match(table, /SLUG\s+LANE\s+RISK\s+STATUS\s+CONF\s+PENDING\s+TASKS\s+TITLE/);
+  assert.match(table, /b\s+marketing\s+ux\s+grilling\s+opinion\s+1\s+-\s+B/);
+  assert.equal(st.statusTable([]), 'No bets yet. Create one with: bridgie bet new <slug>');
+});

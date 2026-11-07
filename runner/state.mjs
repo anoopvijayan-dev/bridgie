@@ -249,6 +249,27 @@ export function costAdd(runDir, entry) {
   return writeJsonAtomic(f, doc, 'cost');
 }
 
+// ---------- status ----------
+export function status(root) {
+  return listBets(root).map(slug => {
+    const { data } = readFm(betPath(root, slug));
+    const pending = loadDecisions(root, slug).decisions.filter(d => d.status === 'pending').length;
+    let tasks = null;
+    if (existsSync(tasksPath(root, slug))) {
+      const t = readJson(tasksPath(root, slug)).tasks;
+      tasks = { total: t.length, passed: t.filter(x => x.status === 'passed').length, blocked: t.filter(x => x.status === 'blocked').length };
+    }
+    return { slug, title: data.title, lane: data.lane, risk: data.risk, status: data.status, confidence: data.confidence, pending, tasks };
+  });
+}
+export function statusTable(rows) {
+  if (!rows.length) return 'No bets yet. Create one with: bridgie bet new <slug>';
+  const cols = [['SLUG', r => r.slug], ['LANE', r => r.lane], ['RISK', r => r.risk], ['STATUS', r => r.status], ['CONF', r => r.confidence], ['PENDING', r => String(r.pending)], ['TASKS', r => r.tasks ? `${r.tasks.passed}/${r.tasks.total}${r.tasks.blocked ? ` (${r.tasks.blocked} blocked)` : ''}` : '-'], ['TITLE', r => r.title]];
+  const widths = cols.map(([h, f]) => Math.max(h.length, ...rows.map(r => f(r).length)));
+  const line = vals => vals.map((v, i) => v.padEnd(widths[i])).join('  ').trimEnd();
+  return [line(cols.map(c => c[0])), ...rows.map(r => line(cols.map(c => c[1](r))))].join('\n');
+}
+
 // ---------- CLI ----------
 function out(x) { process.stdout.write((typeof x === 'string' ? x : JSON.stringify(x, null, 2)) + '\n'); }
 export async function main(argv) {
@@ -277,6 +298,7 @@ Object.assign(EXTRA_OPS, {
   'decision-list': (a, flag, out) => out(listDecisions(a[0], a[1] && !a[1].startsWith('--') ? a[1] : null, { pending: a.includes('--pending') })),
   'ensure-sign': (a, flag, out) => out(ensureSignDecision(a[0], a[1]).id),
   'ingest-questions': (a, flag, out) => out(ingestQuestions(a[0], a[1], a[2], flag('run') || 'unknown')),
+  'status': (a, flag, out) => { const rows = status(a[0]); out(a.includes('--table') ? statusTable(rows) : rows); },
   'route': (a, flag, out) => { const { data } = splitFrontmatter(readFileSync(join(HOME, 'seats', a[1], 'SKILL.md'), 'utf8')); out(route(a[0], data)); },
   'cost-add': (a, flag, out) => out(costAdd(a[0], {
     seat: flag('seat'), adapter: flag('adapter'), model: flag('model') || 'default', started_at: flag('started'),
