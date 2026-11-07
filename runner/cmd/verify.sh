@@ -18,7 +18,7 @@ verify_checks_reviewer() {   # R10 and R11, before any model is called
   local root="$1" slug="$2" task="$3" route adapter caps reads vendor producer
   route="$(node_run state.mjs route "$root" verify/reviewer)"
   adapter="$(json_get "$route" adapter)"
-  caps="$(adapter_capabilities "$adapter" "$BRIDGIE_HOME/seats/verify/reviewer")" || die "verify: adapter $adapter: --capabilities failed"
+  caps="$(adapter_capabilities "$adapter" "$BRIDGIE_HOME/seats/verify/reviewer" "$(json_get "$route" model)")" || die "verify: adapter $adapter: --capabilities failed"
   reads="$(json_get "$caps" reads_repo)"; vendor="$(json_get "$caps" vendor)"
   [[ "$reads" == "true" ]] || die "verify: reviewer adapter '$adapter' cannot read the repository; a packet-only review is refused (R10)"
   if [[ "$(node_run flow.mjs cross-family "$root" "$slug")" == "true" ]]; then

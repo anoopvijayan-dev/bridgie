@@ -2,6 +2,7 @@
 // read and written through this module. Importable (surface.mjs) and a CLI.
 import { readFileSync, writeFileSync, renameSync, existsSync, mkdirSync, readdirSync, statSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
+import { homedir } from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parse as yparse, splitFrontmatter, joinFrontmatter } from './yaml.mjs';
 import { validate, assertValid } from './schema.mjs';
@@ -58,9 +59,12 @@ function deepMerge(a, b) {
 }
 export function loadPolicy(root) {
   const def = yparse(readFileSync(join(HOME, 'policy', 'default.yaml'), 'utf8'));
+  // default ← user (~/.bridgie/policy.yaml or $BRIDGIE_USER_POLICY, e.g. model routing per machine) ← project
+  const uf = process.env.BRIDGIE_USER_POLICY || join(homedir(), '.bridgie', 'policy.yaml');
+  const user = existsSync(uf) ? yparse(readFileSync(uf, 'utf8')) : {};
   const pf = join(root, '.bridgie', 'policy.yaml');
   const proj = existsSync(pf) ? yparse(readFileSync(pf, 'utf8')) : {};
-  const merged = deepMerge(def, proj);
+  const merged = deepMerge(deepMerge(def, user), proj);
   assertValid(loadSchema('policy'), merged, 'policy');
   return merged;
 }

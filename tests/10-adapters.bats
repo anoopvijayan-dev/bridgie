@@ -56,7 +56,12 @@ STUB
 printf '%s\n' "$@" > "$STUB_LOG"
 printf '```json\n{"seat":"grill","summary_md":"from agy"}\n```\n'
 STUB
-  chmod +x "$S"/claude "$S"/codex "$S"/agy
+  cat > "$S/copilot" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$@" > "$STUB_LOG"; printf 'cwd=%s\n' "$PWD" >> "$STUB_LOG"
+printf 'ok\n```json\n{"seat":"grill","summary_md":"from copilot"}\n```\n'
+STUB
+  chmod +x "$S"/claude "$S"/codex "$S"/agy "$S"/copilot
   export PATH="$S:$PATH"
   W="$(mktemp -d)"; mkdir -p "$W/run"; echo "PROMPT-BODY" > "$W/run/prompt.md"
 }
@@ -122,4 +127,18 @@ run_adapter() { "$BRIDGIE_HOME/adapters/$1/run.sh" --seat "$BRIDGIE_HOME/seats/d
   [ "$output" = "OK" ]
   run "$BRIDGIE_HOME/adapters/antigravity/run.sh" --capabilities
   [ "$output" = '{"vendor":"google","reads_repo":true}' ]
+}
+
+@test "copilot: -p instruction last, read-only denies write, vendor follows the model" {
+  stub_env
+  run run_adapter copilot --mode readonly --model claude-opus-5.5 --effort high
+  [ "$status" -eq 0 ]
+  grep -q '"summary_md": "from copilot"' "$W/run/seat-output.json"
+  grep -qx 'claude-opus-5.5' "$STUB_LOG"; grep -qx 'high' "$STUB_LOG"; grep -qx 'write' "$STUB_LOG"
+  [ "$(grep -n -- '--deny-tool' "$STUB_LOG" | wc -l)" -ge 1 ]
+  [ "$(tail -3 "$STUB_LOG" | head -1)" = "-p" ]
+  run "$BRIDGIE_HOME/adapters/copilot/run.sh" --capabilities --model claude-opus-5.5
+  [ "$output" = '{"vendor":"anthropic","reads_repo":true}' ]
+  run "$BRIDGIE_HOME/adapters/copilot/run.sh" --capabilities --model gpt-5.6
+  [ "$output" = '{"vendor":"openai","reads_repo":true}' ]
 }

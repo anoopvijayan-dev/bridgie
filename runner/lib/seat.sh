@@ -32,9 +32,9 @@ restore_state() {             # restore_state <root> <snapdir>
   (cd "$snap" && find . -type f) | while IFS= read -r f; do cp "$snap/$f" "$root/$f"; done
 }
 
-# adapter_capabilities <adapter> <seat dir> → {"vendor","reads_repo"} JSON
+# adapter_capabilities <adapter> <seat dir> [model] → {"vendor","reads_repo"} JSON
 adapter_capabilities() {
-  "$BRIDGIE_HOME/adapters/$1/run.sh" --capabilities --seat "$2"
+  "$BRIDGIE_HOME/adapters/$1/run.sh" --capabilities --seat "$2" --model "${3:-default}"
 }
 
 run_seat() {
@@ -76,7 +76,7 @@ run_seat() {
   local writes output mode="readonly"
   writes="$(node_run context.mjs manifest "$seat" writes)"; output="$(node_run context.mjs manifest "$seat" output)"
   [[ "$writes" == "worktree" ]] && mode="write"
-  adapter_capabilities "$adapter" "$seat_dir" > "$run_dir/adapter.json" || die "adapter $adapter: --capabilities failed"
+  adapter_capabilities "$adapter" "$seat_dir" "$model" > "$run_dir/adapter.json" || die "adapter $adapter: --capabilities failed"
 
   # 3. snapshot, launch, measure
   snapshot_state "$root" "$slug" "$run_dir/.snapshot"

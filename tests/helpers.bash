@@ -5,6 +5,7 @@ export BRIDGIE_HOME
 export PATH="$BRIDGIE_HOME/bin:$PATH"
 export BRIDGIE_NO_COMMIT=1
 export BRIDGIE_USER=tester
+export BRIDGIE_USER_POLICY=/nonexistent/bridgie-user-policy.yaml   # isolate tests from ~/.bridgie
 
 make_project() {            # make_project [--git] → prints path
   local dir; dir="$(mktemp -d)"

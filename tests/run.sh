@@ -2,6 +2,7 @@
 # Run every check: shellcheck (if present), node unit tests, bats CLI tests, doctor.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
+export BRIDGIE_USER_POLICY=/nonexistent/bridgie-user-policy.yaml   # isolate tests from ~/.bridgie
 if command -v shellcheck >/dev/null 2>&1; then
   shellcheck -x -S warning bin/bridgie runner/lib/*.sh runner/cmd/*.sh adapters/*/run.sh tests/*.bash
 else
