@@ -1,7 +1,7 @@
 // Build/verify/accept flow on top of state.mjs: tasks, evidence reconciliation, acceptance,
 // and the effects of approve_design, ack_risk, unblock and accept decisions.
 // Every write still goes through state.mjs's atomic, schema-checked writers.
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import * as st from './state.mjs';
@@ -16,6 +16,21 @@ export function requirementIds(root, slug) {
   const f = requirementsPath(root, slug);
   if (!existsSync(f)) throw new Error(`no requirements.md for bet "${slug}" (run bridgie shape ${slug})`);
   return [...readFileSync(f, 'utf8').matchAll(/^## ([RP][0-9]+)\b/gm)].map(m => m[1]);
+}
+
+// writeSpecFiles: requirements.md and design.md from the shaper's output.
+export function writeSpecFiles(root, slug, outputFile) {
+  const o = assertValid(st.loadSchema('seat-output'), st.readJson(outputFile), outputFile);
+  const files = o.files || {};
+  const req = files['requirements.md'], design = files['design.md'] ?? o.artifact_md;
+  if (!req) throw new Error('shaper output has no files["requirements.md"]');
+  if (!/^## R[0-9]+\b/m.test(req)) throw new Error('requirements.md has no "## R<n>" requirement headings');
+  if (!design) throw new Error('shaper output has no files["design.md"]');
+  const dir = join(root, '.bridgie', 'specs', slug);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, 'requirements.md'), req.endsWith('\n') ? req : `${req}\n`);
+  writeFileSync(join(dir, 'design.md'), design.endsWith('\n') ? design : `${design}\n`);
+  return { requirements: join(dir, 'requirements.md'), design: join(dir, 'design.md'), ids: requirementIds(root, slug) };
 }
 
 export function loadTasks(root, slug) {
@@ -225,6 +240,7 @@ function flag(a, n) { const i = a.indexOf(`--${n}`); return i >= 0 ? a[i + 1] : 
 const out = x => process.stdout.write((typeof x === 'string' ? x : JSON.stringify(x, null, 2)) + '\n');
 const OPS = {
   'requirement-ids': a => out(requirementIds(a[0], a[1])),
+  'write-spec': a => out(writeSpecFiles(a[0], a[1], a[2]).ids.join(' ')),
   'write-tasks': a => out(writeTasksFromPlan(a[0], a[1], a[2])),
   'ready-tasks': a => out(readyTasks(a[0], a[1]).map(t => t.id).join('\n')),
   'task-get': a => out(getTask(loadTasks(a[0], a[1]), a[2])),

@@ -66,9 +66,11 @@ export function assemble(root, slug, seatRel, opts = {}) {
   const bet = readFm(betPath(root, slug)).data;
   const ctx = { root, slug, lane: bet.lane, runDir: opts.runDir, cwd: opts.cwd || root, task: opts.task };
   const sections = [], inputs = [], missing = [];
-  for (const name of manifest.inputs) {
+  for (const raw of manifest.inputs) {
+    const optional = raw.endsWith('?');
+    const name = optional ? raw.slice(0, -1) : raw;
     const r = resolveInput(name, ctx);
-    if (!r) { if (REQUIRED.has(name)) throw new Error(`required input "${name}" is missing for seat ${seatRel}`); missing.push(name); continue; }
+    if (!r) { if (REQUIRED.has(name) && !optional) throw new Error(`required input "${name}" is missing for seat ${seatRel}`); missing.push(name); continue; }
     inputs.push(name);
     sections.push(`## ${name} — ${r.label}\n\n${r.text.trim()}\n`);
   }

@@ -21,3 +21,19 @@ make_project() {            # make_project [--git] → prints path
 fm() {                      # fm <file> <key> → frontmatter value as JSON
   node "$BRIDGIE_HOME/runner/state.mjs" fm-get "$1" "$2"
 }
+
+# signed_bet <project> <slug> [risk]: init (if needed), bet, grill (fake), answer, sign. Needs BRIDGIE_ADAPTER=fake.
+signed_bet() {
+  local p="$1" slug="$2" risk="${3:-none}"
+  (
+    cd "$p" || exit 1
+    [[ -d .bridgie ]] || bridgie init >/dev/null 2>&1
+    bridgie bet new "$slug" --title "Net collection" --risk "$risk" >/dev/null 2>&1
+    bridgie grill "$slug" >/dev/null 2>&1
+    bridgie decide "$slug" D1 no >/dev/null 2>&1
+    bridgie decide "$slug" D2 measured >/dev/null 2>&1
+    node "$BRIDGIE_HOME/runner/state.mjs" fm-set ".bridgie/bets/$slug/bet.md" confidence '"test"' --schema bet
+    bridgie sign "$slug" >/dev/null 2>&1
+  )
+  [[ "$(fm "$p/.bridgie/bets/$slug/bet.md" status)" == '"signed"' ]]
+}

@@ -171,3 +171,12 @@ test('acceptance: reject records the reason and leaves the bet signed', () => {
   assert.equal(st.readFm(fl.acceptancePath(root, 'b')).data.decision, 'rejected');
   assert.equal(st.readFm(st.betPath(root, 'b')).data.status, 'signed');
 });
+
+test('writeSpecFiles writes requirements and design from the shaper output', () => {
+  const root = project();
+  const f = join(root, 'shape.json');
+  writeFileSync(f, JSON.stringify({ seat: 'shaper', summary_md: 's', files: { 'requirements.md': '## R1 · event\nWHEN a THE SYSTEM SHALL b\n', 'design.md': '# Design\n' } }));
+  assert.deepEqual(fl.writeSpecFiles(root, 'b', f).ids, ['R1']);
+  writeFileSync(f, JSON.stringify({ seat: 'shaper', summary_md: 's', files: { 'requirements.md': 'no headings', 'design.md': 'd' } }));
+  assert.throws(() => fl.writeSpecFiles(root, 'b', f), /no "## R<n>"/);
+});
