@@ -75,7 +75,7 @@ export function assemble(root, slug, seatRel, opts = {}) {
   const refs = (manifest.references || []).map(p => `## ${p}\n\n${readFileSync(join(dir, p), 'utf8').trim()}\n`);
   const writes = manifest.writes === 'worktree' ? ` and inside your worktree (${ctx.cwd})` : '';
   const outputNote = manifest.output === 'none' ? 'This seat produces no file; print your result.' :
-    `Write exactly one file: ${join(opts.runDir || '<run-dir>', manifest.output)}\nIt must validate against ${join(HOME, 'schemas', manifest.output)}.` +
+    `End your reply with exactly one fenced \`\`\`json block containing your ${manifest.output} (or write it to ${join(opts.runDir || '<run-dir>', manifest.output)}).\nIt must validate against ${join(HOME, 'schemas', manifest.output)}.` +
     (manifest.output === 'seat-output.json' ? `\nSet "seat": "${manifest.name}".` : '');
   const prompt = [
     `# Seat: ${manifest.name} (${manifest.loop})`, '', body.trim(), '',
