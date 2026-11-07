@@ -190,3 +190,25 @@ test('failAttempt fails, then blocks on the last attempt with an unblock decisio
   assert.equal(fl.failAttempt(root, 'b', 'T1', 'edited .bridgie/').status, 'blocked');
   assert.ok(st.listDecisions(root, 'b', { pending: true }).some(d => d.type === 'unblock' && d.task === 'T1'));
 });
+
+test('globToRegex and riskOfPaths pick the highest matching risk and whether an ack is needed', () => {
+  assert.ok(fl.globToRegex('**/Modules/Payments/**').test('src/Services/FSM/Modules/Payments/Charge.cs'));
+  assert.ok(fl.globToRegex('terraform/**').test('terraform/main.tf'));
+  assert.ok(!fl.globToRegex('terraform/**').test('src/terraform.md'));
+  const root = project('none', 'version: 1\nlanes:\n  engineering:\n    risk_paths:\n      - { glob: "src/ledger/**", risk: money }\n');
+  let r = fl.riskOfPaths(root, 'b', ['README.md', 'src/app.ts']);
+  assert.equal(r.risk, 'none'); assert.equal(r.needs_ack, false);
+  r = fl.riskOfPaths(root, 'b', ['terraform/main.tf', 'src/ledger/post.ts']);
+  assert.equal(r.risk, 'money'); assert.equal(r.needs_ack, true);
+  assert.deepEqual(r.paths, ['terraform/main.tf (infra)', 'src/ledger/post.ts (money)']);
+});
+
+test('mechanicalPlan: project commands win; else lane commands for detected stacks, limited to policy tiers', () => {
+  const root = project('none', 'version: 1\nverify:\n  commands:\n    mechanical: ["npm test"]\n    contracts: ["never runs"]\n');
+  const wt = mkdtempSync(join(tmpdir(), 'wt-'));
+  assert.deepEqual(fl.mechanicalPlan(root, 'b', wt), [{ tier: 'mechanical', cmd: 'npm test' }]);   // contracts not in tiers for risk none
+  const root2 = project('none');
+  writeFileSync(join(wt, 'package.json'), '{}');
+  assert.deepEqual(fl.mechanicalPlan(root2, 'b', wt).map(x => x.cmd), ['npm run lint --if-present', 'npm run build --if-present', 'npx vitest run']);
+  assert.deepEqual(fl.mechanicalPlan(root2, 'b', mkdtempSync(join(tmpdir(), 'empty-'))), []);
+});

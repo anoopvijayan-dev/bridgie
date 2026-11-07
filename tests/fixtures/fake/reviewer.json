@@ -1,0 +1,13 @@
+{
+  "task": "T1",
+  "criteria": [
+    { "id": "R1", "tier": "adversarial", "check": "read the change; walked the event path", "result": "pass", "artifact": null },
+    { "id": "R2", "tier": "adversarial", "check": "duplicate request replayed against the handler", "result": "pass", "artifact": null },
+    { "id": "P1", "tier": "adversarial", "check": "unique index on request_id", "result": "pass", "artifact": null }
+  ],
+  "findings": [
+    { "severity": "minor", "file": "feature-1.txt", "line": 1, "criterion": null, "claim": "wording could be clearer", "repro": "read the file", "disposition": null }
+  ],
+  "verdict": "pass",
+  "verifier": { "seat": "reviewer", "adapter": "fake", "model": "default" }
+}

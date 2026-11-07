@@ -1,7 +1,8 @@
 // Build/verify/accept flow on top of state.mjs: tasks, evidence reconciliation, acceptance,
 // and the effects of approve_design, ack_risk, unblock and accept decisions.
 // Every write still goes through state.mjs's atomic, schema-checked writers.
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, statSync } from 'node:fs';
+import { parse as yparse } from './yaml.mjs';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import * as st from './state.mjs';
@@ -182,6 +183,82 @@ export function markPassed(root, slug, id, evidenceFile) {
   return setTask(root, slug, id, { status: 'passed', evidence: evidenceFile, escalation: null });
 }
 
+// ---------- verification planning ----------
+export function globToRegex(glob) {
+  let re = '';
+  for (let i = 0; i < glob.length; i++) {
+    const c = glob[i];
+    if (c === '*' && glob[i + 1] === '*') {
+      if (glob[i + 2] === '/') { re += '(?:.*/)?'; i += 2; } else { re += '.*'; i += 1; }
+    } else if (c === '*') re += '[^/]*';
+    else if (c === '?') re += '[^/]';
+    else re += c.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+  }
+  return new RegExp(`^${re}$`);
+}
+
+const RISK_ORDER = ['none', 'ux', 'data', 'infra', 'security', 'money'];
+export function riskOfPaths(root, slug, files) {
+  const bet = st.readFm(st.betPath(root, slug)).data;
+  const policy = st.loadPolicy(root);
+  const laneFile = join(st.HOME, 'lanes', bet.lane, 'risk-paths.yaml');
+  const rules = [
+    ...(existsSync(laneFile) ? yparse(readFileSync(laneFile, 'utf8')).paths || [] : []),
+    ...(policy.lanes?.[bet.lane]?.risk_paths || []),
+  ].map(r => ({ re: globToRegex(r.glob), risk: r.risk }));
+  let risk = 'none'; const paths = [];
+  for (const f of files) {
+    const hit = rules.filter(r => r.re.test(f)).map(r => r.risk).sort((a, b) => RISK_ORDER.indexOf(b) - RISK_ORDER.indexOf(a))[0];
+    if (!hit) continue;
+    paths.push(`${f} (${hit})`);
+    if (RISK_ORDER.indexOf(hit) > RISK_ORDER.indexOf(risk)) risk = hit;
+  }
+  const needs_ack = risk !== 'none' && !!st.lanePolicy(policy, bet.lane, risk).human_ack_before_build;
+  return { risk, paths, needs_ack };
+}
+
+function detectStacks(wt) {
+  const stacks = [];
+  const has = (dir, test) => existsSync(dir) && readdirSync(dir).some(test);
+  if (has(wt, f => f.endsWith('.sln')) || has(join(wt, 'src'), f => f.endsWith('.sln'))) stacks.push('dotnet');
+  if (existsSync(join(wt, 'package.json'))) stacks.push('node');
+  return stacks;
+}
+
+export function mechanicalPlan(root, slug, wt) {
+  const bet = st.readFm(st.betPath(root, slug)).data;
+  const policy = st.loadPolicy(root);
+  const tiers = st.lanePolicy(policy, bet.lane, bet.risk).tiers || policy.lanes?.[bet.lane]?.tiers_default || ['mechanical'];
+  const commandTiers = ['mechanical', 'specified', 'contracts', 'invariants'].filter(t => tiers.includes(t));
+  const project = policy.verify?.commands;
+  if (project) return commandTiers.flatMap(t => (project[t] || []).map(cmd => ({ tier: t, cmd })));
+  const laneFile = join(st.HOME, 'lanes', bet.lane, 'verifiers.yaml');
+  if (!existsSync(laneFile)) return [];
+  const lane = yparse(readFileSync(laneFile, 'utf8')).tiers || {};
+  const stacks = detectStacks(wt);
+  return commandTiers.flatMap(t => stacks.flatMap(sk => (lane[t]?.[sk] || []).map(cmd => ({ tier: t, cmd }))));
+}
+
+// producerVendor: vendor of the newest producer run (implementer/hardener) for a task.
+export function producerVendor(root, slug, task) {
+  const d = st.runsDir(root, slug);
+  let best = null;
+  for (const run of existsSync(d) ? readdirSync(d) : []) {
+    if (!/^(implementer|hardener)-/.test(run)) continue;
+    const claim = join(d, run, 'claim.json'), caps = join(d, run, 'adapter.json');
+    if (!existsSync(claim) || !existsSync(caps)) continue;
+    try { if (st.readJson(claim).task !== task) continue; } catch { continue; }
+    const m = statSync(claim).mtimeMs;
+    if (!best || m > best.m) best = { m, vendor: st.readJson(caps).vendor };
+  }
+  return best ? best.vendor : '';
+}
+
+export function crossFamily(root, slug) {
+  const bet = st.readFm(st.betPath(root, slug)).data;
+  return !!st.lanePolicy(st.loadPolicy(root), bet.lane, bet.risk).cross_family;
+}
+
 // ---------- decisions ----------
 export function ensureDecision(root, slug, type, context, options, extra = {}) {
   const doc = st.loadDecisions(root, slug);
@@ -273,6 +350,10 @@ const OPS = {
   'reconcile': a => out(reconcile(a[0], a[1], a[2], a[3], JSON.parse(readFileSync(a[4], 'utf8')), a[5]).verdict),
   'fail-attempt': a => out(failAttempt(a[0], a[1], a[2], a[3]).status),
   'stamp-task': a => { stampTask(a[0], a[1]); out('ok'); },
+  'risk-of-paths': a => out(riskOfPaths(a[0], a[1], readFileSync(a[2], 'utf8').split('\n').filter(Boolean))),
+  'mechanical-plan': a => out(mechanicalPlan(a[0], a[1], a[2])),
+  'producer-vendor': a => out(producerVendor(a[0], a[1], a[2])),
+  'cross-family': a => out(String(crossFamily(a[0], a[1]))),
   'mark-passed': a => out(markPassed(a[0], a[1], a[2], a[3])),
   'all-passed': a => out(String(allPassed(a[0], a[1]))),
   'ensure-decision': a => out(ensureDecision(a[0], a[1], a[2], a[3], JSON.parse(a[4]), flag(a, 'task') ? { task: flag(a, 'task') } : {}).id),
