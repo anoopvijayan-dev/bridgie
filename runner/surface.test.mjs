@@ -52,3 +52,17 @@ test('renderAll writes read-only pages with CLI hints', () => {
   assert.ok(html.includes('bridgie decide b D1'));
   assert.ok(!html.includes('<form'));
 });
+
+test('bet page blocks sign when confidence is below the policy minimum for the risk', () => {
+  const root = mkdtempSync(join(tmpdir(), 'bridgie-ui-'));
+  for (const d of ['bets', 'specs', 'runs', 'acceptance', 'decisions', 'learn']) mkdirSync(join(root, '.bridgie', d), { recursive: true });
+  writeFileSync(join(root, '.bridgie', 'policy.yaml'), 'version: 1\n');
+  st.betNew(root, 'm', { title: 'Money bet', lane: 'engineering', risk: 'money', owner: 'tester' });
+  st.betTransition(root, 'm', 'grilling'); st.betTransition(root, 'm', 'evidence');
+  st.ensureSignDecision(root, 'm');
+  const html = renderBet(root, 'm');
+  assert.ok(html.includes('confidence &quot;opinion&quot; is below &quot;data&quot;'));
+  assert.match(html, /value="sign"[^>]*disabled/);
+  st.setFm(st.betPath(root, 'm'), { confidence: 'data' });
+  assert.ok(!/value="sign"[^>]*disabled/.test(renderBet(root, 'm')));
+});
