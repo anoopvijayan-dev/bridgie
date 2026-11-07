@@ -164,3 +164,14 @@ test('status summarises every bet with pending decision counts', () => {
   assert.match(table, /b\s+marketing\s+ux\s+grilling\s+opinion\s+1\s+-\s+B/);
   assert.equal(st.statusTable([]), 'No bets yet. Create one with: bridgie bet new <slug>');
 });
+
+test('user policy sits between defaults and the project', () => {
+  const root = project();
+  const uf = join(root, 'user-policy.yaml');
+  writeFileSync(uf, 'version: 1\nrouting:\n  tiers:\n    judgment: { adapter: copilot, model: claude-opus-5.5 }\nlanes:\n  engineering:\n    by_risk:\n      money: { min_confidence_to_sign: anecdote }\n');
+  process.env.BRIDGIE_USER_POLICY = uf;
+  const p = st.loadPolicy(root);
+  delete process.env.BRIDGIE_USER_POLICY;
+  assert.equal(p.routing.tiers.judgment.adapter, 'copilot');                          // from user
+  assert.equal(p.lanes.engineering.by_risk.money.min_confidence_to_sign, 'test');     // project wins
+});

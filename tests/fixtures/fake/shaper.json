@@ -1,0 +1,15 @@
+{
+  "seat": "shaper",
+  "summary_md": "Event-driven retry with an idempotency key; one new table; flag off by default.",
+  "files": {
+    "requirements.md": "# Requirements \u2014 Net collection\n\n## R1 \u00b7 event \u00b7 risk: none\nWHEN a collection is created THE SYSTEM SHALL record it with status pending.\n\n## R2 \u00b7 event \u00b7 risk: none\nWHEN the same collection request arrives twice THE SYSTEM SHALL apply side effects exactly once.\n\n## P1 \u00b7 property\nFor any sequence of collection requests, the number of ledger entries SHALL equal the number of distinct request ids.\nValidates: R2\n",
+    "design.md": "# Design \u2014 Net collection\n\n## Context\nFailed card payments are retried by hand.\n## Options considered\nA: scheduled job. B: event-driven retry. B chosen.\n## Decision\nEvent-driven retry with an idempotency key per request id.\n## Consequences\nNeeds a dedup table.\n## Data changes\nNew table collection(request_id unique).\n## Interfaces and contracts\nPOST /collections.\n## Failure modes\nDuplicate delivery; partial failure between insert and publish.\n## Migration\nAdditive.\n## Rollout and flag\nFlag net_collect, default off.\n## Observability\nCounter collections_created.\n## Security notes\nMerchant-scoped.\n## Consumer trace\nNone changed.\n"
+  },
+  "questions": [],
+  "proposals": [
+    {
+      "kind": "task",
+      "text": "T1 create collection; T2 idempotency"
+    }
+  ]
+}

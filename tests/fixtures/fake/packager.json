@@ -1,0 +1,5 @@
+{
+  "seat": "packager",
+  "summary_md": "All three criteria pass; one minor finding; no load test.",
+  "artifact_md": "# Acceptance \u2014 Net collection\n\n## The bet and its criteria\nMerchants' failed collections retried once, idempotently. R1, R2, P1.\n\n## What changed and blast radius\nTwo files; one new endpoint; no shared contracts changed.\n\n## Evidence matrix\n| Criterion | Tier | Result |\n|---|---|---|\n| R1 | adversarial | pass |\n| R2 | adversarial | pass |\n| P1 | adversarial | pass |\n\n## Findings\nOne minor wording finding, not fixed.\n\n## Rollback and alerts\nFlag net_collect off.\n\n## Residual uncertainty\n- No load test was run.\n- Property P1 checked by review, not by a property test.\n\n## Decision\nApprove, approve with conditions, or reject on the decision page.\n"
+}

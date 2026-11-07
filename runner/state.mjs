@@ -2,6 +2,7 @@
 // read and written through this module. Importable (surface.mjs) and a CLI.
 import { readFileSync, writeFileSync, renameSync, existsSync, mkdirSync, readdirSync, statSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
+import { homedir } from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parse as yparse, splitFrontmatter, joinFrontmatter } from './yaml.mjs';
 import { validate, assertValid } from './schema.mjs';
@@ -58,9 +59,12 @@ function deepMerge(a, b) {
 }
 export function loadPolicy(root) {
   const def = yparse(readFileSync(join(HOME, 'policy', 'default.yaml'), 'utf8'));
+  // default ← user (~/.bridgie/policy.yaml or $BRIDGIE_USER_POLICY, e.g. model routing per machine) ← project
+  const uf = process.env.BRIDGIE_USER_POLICY || join(homedir(), '.bridgie', 'policy.yaml');
+  const user = existsSync(uf) ? yparse(readFileSync(uf, 'utf8')) : {};
   const pf = join(root, '.bridgie', 'policy.yaml');
   const proj = existsSync(pf) ? yparse(readFileSync(pf, 'utf8')) : {};
-  const merged = deepMerge(def, proj);
+  const merged = deepMerge(deepMerge(def, user), proj);
   assertValid(loadSchema('policy'), merged, 'policy');
   return merged;
 }
@@ -145,7 +149,7 @@ export function addDecision(root, slug, d) {
   const doc = loadDecisions(root, slug);
   const id = `D${doc.next_id || 1}`;
   const rec = {
-    id, type: d.type, raised_by: d.raised_by || null, context: d.context, options: d.options,
+    id, type: d.type, ...(d.task ? { task: d.task } : {}), raised_by: d.raised_by || null, context: d.context, options: d.options,
     allow_free_text: d.allow_free_text ?? (d.type === 'question'), status: 'pending',
     answer: null, free_text: null, decided_by: null, decided_at: null, effect: null, created_at: now(),
   };
@@ -212,7 +216,8 @@ export function answerDecision(root, slug, id, answer, opts = {}) {
       effect = 'bet stays in evidence; add evidence tasks or re-grill';
     }
   }
-  // approve_design, ack_risk, accept, unblock: recorded here; their state effects are wired by the M1 build/verify/accept commands.
+  // approve_design, ack_risk, accept, unblock: their effects live in flow.mjs and arrive as opts.effectFn.
+  if (opts.effectFn) effect = opts.effectFn(d, answer, { by, text: opts.text }) || effect;
 
   d.status = 'answered'; d.answer = answer; d.free_text = opts.text || null;
   d.decided_by = by; d.decided_at = now(); d.effect = effect;
@@ -298,6 +303,7 @@ Object.assign(EXTRA_OPS, {
   'decision-list': (a, flag, out) => out(listDecisions(a[0], a[1] && !a[1].startsWith('--') ? a[1] : null, { pending: a.includes('--pending') })),
   'ensure-sign': (a, flag, out) => out(ensureSignDecision(a[0], a[1]).id),
   'ingest-questions': (a, flag, out) => out(ingestQuestions(a[0], a[1], a[2], flag('run') || 'unknown')),
+  'needs-ack': (a, flag, out) => { const bet = readFm(betPath(a[0], a[1])).data; const p = lanePolicy(loadPolicy(a[0]), bet.lane, bet.risk); out(p.human_ack_before_build ? bet.risk : ''); },
   'status': (a, flag, out) => { const rows = status(a[0]); out(a.includes('--table') ? statusTable(rows) : rows); },
   'route': (a, flag, out) => { const { data } = splitFrontmatter(readFileSync(join(HOME, 'seats', a[1], 'SKILL.md'), 'utf8')); out(route(a[0], data)); },
   'cost-add': (a, flag, out) => out(costAdd(a[0], {

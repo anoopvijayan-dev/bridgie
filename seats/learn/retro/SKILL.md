@@ -3,7 +3,7 @@ name: retro
 description: Turn a bet's failures, retries, findings and decisions into proposed gotchas, tests, lint rules and policy changes.
 loop: learn
 tier: production
-inputs: [bet, requirements, evidence, gotchas]
+inputs: [bet, requirements?, acceptance?, evidence, gotchas]
 writes: run_dir
 tools: [read]
 output: seat-output.json

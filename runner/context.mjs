@@ -58,6 +58,8 @@ function resolveInput(name, ctx) {
     return parts.length ? { label: 'gotchas (project, then lane)', text: parts.join('\n\n') } : null;
   }
   if (name === 'agents_md') return file(join(root, 'AGENTS.md'), 'AGENTS.md');
+  if (name === 'acceptance_packet') return file(join(runDir, 'acceptance-packet.md'), 'acceptance packet (runner-built)');
+  if (name === 'acceptance') return file(join(root, '.bridgie', 'acceptance', `${slug}.md`), `.bridgie/acceptance/${slug}.md`);
   throw new Error(`unknown seat input "${name}"`);
 }
 
@@ -66,16 +68,18 @@ export function assemble(root, slug, seatRel, opts = {}) {
   const bet = readFm(betPath(root, slug)).data;
   const ctx = { root, slug, lane: bet.lane, runDir: opts.runDir, cwd: opts.cwd || root, task: opts.task };
   const sections = [], inputs = [], missing = [];
-  for (const name of manifest.inputs) {
+  for (const raw of manifest.inputs) {
+    const optional = raw.endsWith('?');
+    const name = optional ? raw.slice(0, -1) : raw;
     const r = resolveInput(name, ctx);
-    if (!r) { if (REQUIRED.has(name)) throw new Error(`required input "${name}" is missing for seat ${seatRel}`); missing.push(name); continue; }
+    if (!r) { if (REQUIRED.has(name) && !optional) throw new Error(`required input "${name}" is missing for seat ${seatRel}`); missing.push(name); continue; }
     inputs.push(name);
     sections.push(`## ${name} — ${r.label}\n\n${r.text.trim()}\n`);
   }
   const refs = (manifest.references || []).map(p => `## ${p}\n\n${readFileSync(join(dir, p), 'utf8').trim()}\n`);
   const writes = manifest.writes === 'worktree' ? ` and inside your worktree (${ctx.cwd})` : '';
   const outputNote = manifest.output === 'none' ? 'This seat produces no file; print your result.' :
-    `Write exactly one file: ${join(opts.runDir || '<run-dir>', manifest.output)}\nIt must validate against ${join(HOME, 'schemas', manifest.output)}.` +
+    `End your reply with exactly one fenced \`\`\`json block containing your ${manifest.output} (or write it to ${join(opts.runDir || '<run-dir>', manifest.output)}).\nIt must validate against ${join(HOME, 'schemas', manifest.output)}.` +
     (manifest.output === 'seat-output.json' ? `\nSet "seat": "${manifest.name}".` : '');
   const prompt = [
     `# Seat: ${manifest.name} (${manifest.loop})`, '', body.trim(), '',

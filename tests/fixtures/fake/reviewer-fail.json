@@ -1,0 +1,11 @@
+{
+  "task": "T1",
+  "criteria": [
+    { "id": "R1", "tier": "adversarial", "check": "status not set to pending", "result": "fail", "artifact": null }
+  ],
+  "findings": [
+    { "severity": "major", "file": "feature-1.txt", "line": 1, "criterion": "R1", "claim": "collection created without a status", "repro": "POST /collections then GET it", "disposition": null }
+  ],
+  "verdict": "fail",
+  "verifier": { "seat": "reviewer", "adapter": "fake", "model": "default" }
+}

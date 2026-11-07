@@ -3,11 +3,11 @@ name: packager
 description: Assemble the one-screen acceptance package from the bet, requirements, evidence, findings, cost and rollback notes.
 loop: accept
 tier: production
-inputs: [bet, requirements, design, evidence, gotchas]
+inputs: [bet, requirements, design, acceptance_packet, gotchas]
 writes: run_dir
 tools: [read]
 output: seat-output.json
-stop_when: ["any task is not passed"]
+stop_when: ["the acceptance packet shows a task that is not passed"]
 ---
 
 ## Role

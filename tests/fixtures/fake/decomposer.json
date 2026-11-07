@@ -1,0 +1,5 @@
+{
+  "seat": "decomposer",
+  "summary_md": "Two tasks; every requirement mapped.",
+  "artifact_md": "```json\n{\n  \"tasks\": [\n    {\n      \"id\": \"T1\",\n      \"title\": \"Create collection endpoint\",\n      \"requirements\": [\n        \"R1\"\n      ],\n      \"depends_on\": []\n    },\n    {\n      \"id\": \"T2\",\n      \"title\": \"Idempotent collection handling\",\n      \"requirements\": [\n        \"R2\",\n        \"P1\"\n      ],\n      \"depends_on\": [\n        \"T1\"\n      ]\n    }\n  ]\n}\n```"
+}

@@ -13,12 +13,11 @@ cmd_decide() {
     esac
   done
   local root; root="$(project_root)"
-  local res
-  if [[ -n "$text" ]]; then
-    res="$(node_run state.mjs decision-answer "$root" "$slug" "$id" "$answer" --text "$text" --by "$(bridgie_user)")" || exit 1
-  else
-    res="$(node_run state.mjs decision-answer "$root" "$slug" "$id" "$answer" --by "$(bridgie_user)")" || exit 1
-  fi
+  local res args=(--by "$(bridgie_user)")
+  [[ -n "$text" ]] && args+=(--text "$text")
+  local sha; sha="$(git -C "$root" rev-parse -q --verify "bridgie/$slug" 2>/dev/null || true)"
+  [[ -n "$sha" ]] && args+=(--sha "$sha")
+  res="$(node_run flow.mjs decision-answer "$root" "$slug" "$id" "$answer" "${args[@]}")" || exit 1
   state_commit "$root" "decide $slug $id: $answer"
   log "$id → $answer ($(printf '%s' "$res" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>process.stdout.write(JSON.parse(s).effect||""))'))"
 }
