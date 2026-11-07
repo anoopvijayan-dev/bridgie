@@ -110,6 +110,30 @@ export function startAttempt(root, slug, id, branch) {
   return t;
 }
 
+// failAttempt: the producer could not finish (adapter error, bad output, edited .bridgie/).
+export function failAttempt(root, slug, id, reason) {
+  const doc = loadTasks(root, slug);
+  const t = getTask(doc, id);
+  if (t.attempts >= t.max_attempts) {
+    t.status = 'blocked';
+    t.escalation = `blocked after ${t.attempts} attempts. Last: ${reason}`;
+    saveTasks(root, slug, doc);
+    ensureDecision(root, slug, 'unblock', `Task ${id} "${t.title}" is ${t.escalation}`,
+      ['retry with guidance', 'take over manually', 'kill task'], { task: id, allow_free_text: true });
+  } else {
+    t.status = 'failed';
+    t.escalation = `attempt ${t.attempts} of ${t.max_attempts} failed: ${reason}`;
+    saveTasks(root, slug, doc);
+  }
+  return t;
+}
+
+// stampTask: the runner, not the model, decides which task an output belongs to.
+export function stampTask(file, id) {
+  const o = st.readJson(file);
+  if (o.task !== id) { o.task = id; writeFileSync(file, JSON.stringify(o, null, 2) + '\n'); }
+}
+
 export const allPassed = (root, slug) => loadTasks(root, slug).tasks.every(t => t.status === 'passed');
 
 // ---------- evidence ----------
@@ -247,6 +271,8 @@ const OPS = {
   'task-set': a => out(setTask(a[0], a[1], a[2], JSON.parse(a[3]))),
   'start-attempt': a => out(startAttempt(a[0], a[1], a[2], a[3])),
   'reconcile': a => out(reconcile(a[0], a[1], a[2], a[3], JSON.parse(readFileSync(a[4], 'utf8')), a[5]).verdict),
+  'fail-attempt': a => out(failAttempt(a[0], a[1], a[2], a[3]).status),
+  'stamp-task': a => { stampTask(a[0], a[1]); out('ok'); },
   'mark-passed': a => out(markPassed(a[0], a[1], a[2], a[3])),
   'all-passed': a => out(String(allPassed(a[0], a[1]))),
   'ensure-decision': a => out(ensureDecision(a[0], a[1], a[2], a[3], JSON.parse(a[4]), flag(a, 'task') ? { task: flag(a, 'task') } : {}).id),

@@ -299,6 +299,7 @@ Object.assign(EXTRA_OPS, {
   'decision-list': (a, flag, out) => out(listDecisions(a[0], a[1] && !a[1].startsWith('--') ? a[1] : null, { pending: a.includes('--pending') })),
   'ensure-sign': (a, flag, out) => out(ensureSignDecision(a[0], a[1]).id),
   'ingest-questions': (a, flag, out) => out(ingestQuestions(a[0], a[1], a[2], flag('run') || 'unknown')),
+  'needs-ack': (a, flag, out) => { const bet = readFm(betPath(a[0], a[1])).data; const p = lanePolicy(loadPolicy(a[0]), bet.lane, bet.risk); out(p.human_ack_before_build ? bet.risk : ''); },
   'status': (a, flag, out) => { const rows = status(a[0]); out(a.includes('--table') ? statusTable(rows) : rows); },
   'route': (a, flag, out) => { const { data } = splitFrontmatter(readFileSync(join(HOME, 'seats', a[1], 'SKILL.md'), 'utf8')); out(route(a[0], data)); },
   'cost-add': (a, flag, out) => out(costAdd(a[0], {

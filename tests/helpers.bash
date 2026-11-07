@@ -37,3 +37,13 @@ signed_bet() {
   )
   [[ "$(fm "$p/.bridgie/bets/$slug/bet.md" status)" == '"signed"' ]]
 }
+
+# planned_bet <project> <slug> [risk]: signed → shaped → approved → planned (fake adapter).
+planned_bet() {
+  signed_bet "$@" || return 1
+  (cd "$1" && bridgie shape "$2" && bridgie shape "$2" --approve && bridgie plan "$2") >/dev/null 2>&1
+  [[ -f "$1/.bridgie/specs/$2/tasks.json" ]]
+}
+
+# task_field <project> <slug> <task> <field>
+task_field() { node -e 'const t=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).tasks.find(x=>x.id===process.argv[2]);console.log(JSON.stringify(t[process.argv[3]]))' "$1/.bridgie/specs/$2/tasks.json" "$3" "$4"; }

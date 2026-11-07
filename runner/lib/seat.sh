@@ -1,5 +1,6 @@
 # shellcheck shell=bash
-# run_seat <slug> <loop/seat> [--task T] [--cwd DIR] → prints the run directory.
+# run_seat <slug> <loop/seat> [--task T] [--cwd DIR] [--packet DIR] → prints the run directory.
+# --packet copies diff.patch etc. into the run directory before the context is assembled.
 # --cwd is where the seat works (a task or review worktree); state always lives in the project root.
 # The only place an adapter is launched. Guards: fresh context from declared inputs,
 # state snapshot before/after (P1), output schema validation, cost entry.
@@ -38,11 +39,12 @@ adapter_capabilities() {
 
 run_seat() {
   local slug="$1" seat="$2"; shift 2
-  local task="" cwd=""
+  local task="" cwd="" packet=""
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --task) task="$2"; shift 2 ;;
       --cwd) cwd="$2"; shift 2 ;;
+      --packet) packet="$2"; shift 2 ;;
       *) die "run_seat: unknown argument $1" ;;
     esac
   done
@@ -55,6 +57,7 @@ run_seat() {
   local n; n="$(find "$runs" -maxdepth 1 -type d -name "$name-*" | wc -l | tr -d ' ')"; n=$((n + 1))
   local run_id; run_id="$(printf '%s-%02d' "$name" "$n")"
   local run_dir="$runs/$run_id"; mkdir -p "$run_dir"
+  if [[ -n "$packet" ]]; then cp "$packet"/* "$run_dir"/ 2>/dev/null || true; fi
 
   # 1. fresh context from declared inputs only
   if [[ -n "$task" ]]; then

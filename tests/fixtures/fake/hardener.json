@@ -1,0 +1,8 @@
+{
+  "task": "T1",
+  "claims": [
+    { "text": "failure-modes: idempotency covered by the request-id unique index", "proof_cmd": "grep -n unique feature.txt", "proof_output": "1:unique request_id" }
+  ],
+  "files_changed": [],
+  "notes": "observability: no metric yet (gap)"
+}

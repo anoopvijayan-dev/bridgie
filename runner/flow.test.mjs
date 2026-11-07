@@ -180,3 +180,13 @@ test('writeSpecFiles writes requirements and design from the shaper output', () 
   writeFileSync(f, JSON.stringify({ seat: 'shaper', summary_md: 's', files: { 'requirements.md': 'no headings', 'design.md': 'd' } }));
   assert.throws(() => fl.writeSpecFiles(root, 'b', f), /no "## R<n>"/);
 });
+
+test('failAttempt fails, then blocks on the last attempt with an unblock decision', () => {
+  const root = project();
+  fl.writeTasksFromPlan(root, 'b', planOutput(root, [T('T1', ['R1', 'R2', 'P1'])]));
+  fl.startAttempt(root, 'b', 'T1', 'br');
+  assert.equal(fl.failAttempt(root, 'b', 'T1', 'adapter exited 1').status, 'failed');
+  fl.startAttempt(root, 'b', 'T1', 'br'); fl.startAttempt(root, 'b', 'T1', 'br');
+  assert.equal(fl.failAttempt(root, 'b', 'T1', 'edited .bridgie/').status, 'blocked');
+  assert.ok(st.listDecisions(root, 'b', { pending: true }).some(d => d.type === 'unblock' && d.task === 'T1'));
+});
