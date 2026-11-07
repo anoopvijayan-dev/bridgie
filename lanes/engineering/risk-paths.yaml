@@ -1,0 +1,13 @@
+# Glob → risk level. Projects extend this in .bridgie/policy.yaml under lanes.engineering.risk_paths.
+paths:
+  - { glob: "**/Modules/Payments/**", risk: money }
+  - { glob: "**/Services/Payments/**", risk: money }
+  - { glob: "**/Billing/**", risk: money }
+  - { glob: "**/Modules/Identity/**", risk: security }
+  - { glob: "**/Auth/**", risk: security }
+  - { glob: "terraform/**", risk: infra }
+  - { glob: ".github/**", risk: infra }
+  - { glob: "docker/**", risk: infra }
+  - { glob: "build/**", risk: infra }
+  - { glob: "scripts/**", risk: infra }
+  - { glob: "**/Migrations/**", risk: data }

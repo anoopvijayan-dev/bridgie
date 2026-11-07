@@ -1,0 +1,11 @@
+# Engineering attack list (reviewer)
+- Double submit: the same request or event arrives twice. Side effects once?
+- Concurrent update: two writers race on the same row or aggregate.
+- Boundary values: zero, negative, max, empty, null, unicode, very long.
+- Currency and timezone: minor units, zero-decimal currencies, DST, UTC vs local.
+- Partial failure: the first write succeeds and the second fails; the worker dies mid-batch.
+- Authz bypass: new endpoint or handler missing the scope or permission check.
+- Tenant isolation: a query without the tenant filter.
+- Changed contract consumers: every consumer of a changed DTO, field or event, including web, mobile, PDF, email.
+- Migration safety: reversible, additive first, backfill size.
+- Error paths: exceptions swallowed, retries without backoff, logs with secrets.

@@ -1,0 +1,12 @@
+# How each verification tier runs for the stacks this lane knows. Projects override per stack.
+tiers:
+  mechanical:
+    dotnet: ["dotnet build", "dotnet test --filter \"ArchTests\""]
+    node: ["npm run lint --if-present", "npm run build --if-present"]
+  specified:
+    dotnet: ["dotnet test --filter \"UnitTests\""]
+    node: ["npx vitest run"]
+  contracts:
+    dotnet: ["dotnet test --filter \"ContractTests\""]
+  invariants:
+    dotnet: ["dotnet test --filter \"PropertyTests\""]
