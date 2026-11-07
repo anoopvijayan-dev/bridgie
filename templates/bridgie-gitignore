@@ -3,3 +3,5 @@ ui/
 runs/**/prompt.md
 runs/**/output.md
 runs/**/.snapshot/
+worktrees/
+.fake-state/
