@@ -37,3 +37,89 @@ FAKE() { "$BRIDGIE_HOME/adapters/fake/run.sh" "$@"; }
   BRIDGIE_FAKE_SCRIPT="$d/s.sh" FAKE --seat "$BRIDGIE_HOME/seats/decide/grill" --prompt "$d/p.md" --out "$d/.bridgie/runs/b/x/o.json" --cwd "$d" --mode write --model m >/dev/null
   [ "$(cat "$d/touched.txt")" = "grill 1" ]
 }
+
+# --- real adapters against stub CLIs ---------------------------------------
+stub_env() {   # creates stub claude/codex/agy on PATH; each logs args and replies with a json block
+  S="$(mktemp -d)"; export STUB_LOG="$S/args.log"
+  cat > "$S/claude" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$@" > "$STUB_LOG"; printf 'cwd=%s\n' "$PWD" >> "$STUB_LOG"; cat > "${STUB_LOG}.stdin"
+printf 'Done.\n```json\n{"seat":"grill","summary_md":"from claude"}\n```\n'
+STUB
+  cat > "$S/codex" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$@" > "$STUB_LOG"; cat > "${STUB_LOG}.stdin"
+while [[ $# -gt 0 ]]; do if [[ "$1" == "-o" ]]; then printf '```json\n{"seat":"grill","summary_md":"from codex"}\n```\n' > "$2"; fi; shift; done
+STUB
+  cat > "$S/agy" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$@" > "$STUB_LOG"
+printf '```json\n{"seat":"grill","summary_md":"from agy"}\n```\n'
+STUB
+  chmod +x "$S"/claude "$S"/codex "$S"/agy
+  export PATH="$S:$PATH"
+  W="$(mktemp -d)"; mkdir -p "$W/run"; echo "PROMPT-BODY" > "$W/run/prompt.md"
+}
+run_adapter() { "$BRIDGIE_HOME/adapters/$1/run.sh" --seat "$BRIDGIE_HOME/seats/decide/grill" --prompt "$W/run/prompt.md" --out "$W/run/seat-output.json" --cwd "$W" "${@:2}"; }
+
+@test "claude-code: readonly uses dontAsk with no edit tools; prompt on stdin; JSON extracted" {
+  stub_env
+  run run_adapter claude-code --mode readonly --model default
+  [ "$status" -eq 0 ]
+  grep -q '"summary_md": "from claude"' "$W/run/seat-output.json"
+  grep -qx -- '-p' "$STUB_LOG"; grep -qx 'dontAsk' "$STUB_LOG"; grep -qx 'Edit' "$STUB_LOG"
+  ! grep -qx -- '--model' "$STUB_LOG"
+  grep -q 'PROMPT-BODY' "${STUB_LOG}.stdin"
+  grep -qx "cwd=$W" "$STUB_LOG"
+}
+
+@test "claude-code: write mode uses acceptEdits, passes model and effort, blocks push" {
+  stub_env
+  run run_adapter claude-code --mode write --model opus --effort xhigh
+  [ "$status" -eq 0 ]
+  grep -qx 'acceptEdits' "$STUB_LOG"; grep -qx 'opus' "$STUB_LOG"; grep -qx 'xhigh' "$STUB_LOG"
+  grep -qx 'Bash(git push:\*)' "$STUB_LOG"
+}
+
+@test "codex: read-only sandbox, -C cwd, -o reply, -m only when a model is set" {
+  stub_env
+  run run_adapter codex --mode readonly --model default
+  [ "$status" -eq 0 ]
+  grep -q '"summary_md": "from codex"' "$W/run/seat-output.json"
+  grep -qx 'read-only' "$STUB_LOG"; grep -qx -- "-C" "$STUB_LOG"; grep -qx "$W" "$STUB_LOG"
+  ! grep -qx -- '-m' "$STUB_LOG"
+  run run_adapter codex --mode write --model gpt-5 --effort high
+  grep -qx 'workspace-write' "$STUB_LOG"; grep -qx 'gpt-5' "$STUB_LOG"; grep -qx 'model_reasoning_effort="high"' "$STUB_LOG"
+}
+
+@test "antigravity: project from env, plan mode when readonly, --print last" {
+  stub_env
+  BRIDGIE_AGY_PROJECT=proj-123 run run_adapter antigravity --mode readonly --model default
+  [ "$status" -eq 0 ]
+  grep -q '"summary_md": "from agy"' "$W/run/seat-output.json"
+  grep -qx 'proj-123' "$STUB_LOG"; grep -qx 'plan' "$STUB_LOG"
+  [ "$(tail -2 "$STUB_LOG" | head -1)" = "--print" ]
+  tail -1 "$STUB_LOG" | grep -q 'prompt.md'
+}
+
+@test "antigravity: finds the project whose folderUri covers the working dir" {
+  stub_env
+  H="$(mktemp -d)"; mkdir -p "$H/.gemini/config/projects"
+  printf '{"id":"other","folderUri":"file:///somewhere/else"}' > "$H/.gemini/config/projects/a.json"
+  printf '{"id":"mine","folderUri":"file://%s"}' "$W" > "$H/.gemini/config/projects/b.json"
+  HOME="$H" run run_adapter antigravity --mode readonly --model default
+  [ "$status" -eq 0 ]
+  grep -qx 'mine' "$STUB_LOG"
+}
+
+@test "adapters fail clearly when the model gives no JSON, and probe/capabilities work" {
+  stub_env
+  printf '#!/usr/bin/env bash\ncat >/dev/null; echo "no json here"\n' > "$(dirname "$STUB_LOG")/claude"
+  run run_adapter claude-code --mode readonly --model default
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"no JSON block"* ]]
+  run "$BRIDGIE_HOME/adapters/codex/run.sh" --probe
+  [ "$output" = "OK" ]
+  run "$BRIDGIE_HOME/adapters/antigravity/run.sh" --capabilities
+  [ "$output" = '{"vendor":"google","reads_repo":true}' ]
+}
