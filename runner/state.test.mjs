@@ -68,3 +68,62 @@ test('appendToSection adds under an existing heading or creates it', () => {
   const out2 = st.appendToSection('# T\n', 'Evidence tasks', '- [ ] E1: x');
   assert.match(out2, /## Evidence tasks\n\n- \[ \] E1: x\n$/);
 });
+test('decisions: add, list, answer, don\'t-know creates an evidence task, sign gates', () => {
+  const root = project();
+  st.betNew(root, 'b', { title: 'B', lane: 'engineering', risk: 'none', owner: 'tester' });
+  st.betTransition(root, 'b', 'grilling');
+  const q = st.addDecision(root, 'b', { type: 'question', context: 'Who retries today?', options: ['yes', 'no', "don't know"], raised_by: { seat: 'grill', run: 'grill-1' } });
+  assert.equal(q.id, 'D1');
+  st.betTransition(root, 'b', 'evidence');
+  const s = st.ensureSignDecision(root, 'b');
+  assert.equal(s.id, 'D2');
+  assert.equal(st.ensureSignDecision(root, 'b').id, 'D2');           // idempotent
+  assert.equal(st.listDecisions(root, null, { pending: true }).length, 2);
+
+  // pending question blocks signing
+  assert.throws(() => st.answerDecision(root, 'b', 'D2', 'sign', { by: 'tester' }), /pending/);
+  // invalid answer rejected
+  assert.throws(() => st.answerDecision(root, 'b', 'D1', 'maybe'), /not one of/);
+  // don't know → evidence task, question answered
+  const a = st.answerDecision(root, 'b', 'D1', "don't know", { by: 'tester' });
+  assert.equal(a.status, 'answered');
+  assert.match(a.effect, /evidence task E1/);
+  const body = st.readFm(st.betPath(root, 'b')).body;
+  assert.match(body, /## Evidence tasks[\s\S]*- \[ \] E1: Who retries today\? \(from D1\)/);
+  assert.match(body, /## Decision log[\s\S]*D1 \(question\): don't know/);
+  // now sign succeeds (confidence opinion >= none-risk minimum 'opinion' from default policy)
+  const signed = st.answerDecision(root, 'b', 'D2', 'sign', { by: 'tester' });
+  assert.equal(signed.effect, 'bet signed');
+  assert.equal(st.readFm(st.betPath(root, 'b')).data.status, 'signed');
+  assert.throws(() => st.answerDecision(root, 'b', 'D2', 'sign', { by: 'tester' }), /already answered/);
+});
+
+test('decisions: defer keeps it in the inbox; kill and need-more-evidence effects', () => {
+  const root = project();
+  st.betNew(root, 'c', { title: 'C', lane: 'engineering', risk: 'none', owner: 'tester' });
+  st.betTransition(root, 'c', 'grilling');
+  const q = st.addDecision(root, 'c', { type: 'question', context: 'q', options: ['a'] });
+  const d = st.answerDecision(root, 'c', q.id, 'defer');
+  assert.equal(d.status, 'deferred');
+  assert.equal(st.listDecisions(root, 'c', { pending: true }).length, 1);
+  st.betTransition(root, 'c', 'evidence');
+  const s = st.ensureSignDecision(root, 'c');
+  st.answerDecision(root, 'c', s.id, 'need more evidence', { by: 'tester' });
+  assert.equal(st.readFm(st.betPath(root, 'c')).data.status, 'evidence');
+  const s2 = st.ensureSignDecision(root, 'c');                         // a fresh sign decision after the last was answered
+  assert.notEqual(s2.id, s.id);
+  st.answerDecision(root, 'c', s2.id, 'kill', { by: 'tester' });
+  assert.equal(st.readFm(st.betPath(root, 'c')).data.status, 'killed');
+});
+
+test('ingestQuestions turns a seat output into decisions and lists them in the bet', () => {
+  const root = project();
+  st.betNew(root, 'd', { title: 'D', lane: 'engineering', risk: 'none', owner: 'tester' });
+  st.betTransition(root, 'd', 'grilling');
+  const out = join(root, 'out.json');
+  writeFileSync(out, JSON.stringify({ seat: 'grill', summary_md: 'two gaps', questions: [{ context: 'Q one?', options: ['y', 'n'] }, { context: 'Q two?', options: ['a'], allow_free_text: true }] }));
+  const ids = st.ingestQuestions(root, 'd', out, 'grill-1');
+  assert.deepEqual(ids, ['D1', 'D2']);
+  assert.match(st.readFm(st.betPath(root, 'd')).body, /## Open questions[\s\S]*- D1: Q one\?[\s\S]*- D2: Q two\?/);
+  assert.equal(st.loadDecisions(root, 'd').decisions[1].allow_free_text, true);
+});

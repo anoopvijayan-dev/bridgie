@@ -134,6 +134,104 @@ export function betTransition(root, slug, to, opts = {}) {
   return { from, to };
 }
 
+// ---------- decisions ----------
+export function loadDecisions(root, slug) {
+  const f = decisionsPath(root, slug);
+  return existsSync(f) ? readJson(f) : { bet: slug, next_id: 1, decisions: [] };
+}
+export function saveDecisions(root, slug, doc) { return writeJsonAtomic(decisionsPath(root, slug), doc, 'decisions'); }
+
+export function addDecision(root, slug, d) {
+  const doc = loadDecisions(root, slug);
+  const id = `D${doc.next_id || 1}`;
+  const rec = {
+    id, type: d.type, raised_by: d.raised_by || null, context: d.context, options: d.options,
+    allow_free_text: d.allow_free_text ?? (d.type === 'question'), status: 'pending',
+    answer: null, free_text: null, decided_by: null, decided_at: null, effect: null, created_at: now(),
+  };
+  doc.decisions.push(rec);
+  doc.next_id = (doc.next_id || 1) + 1;
+  saveDecisions(root, slug, doc);
+  return rec;
+}
+
+export function listDecisions(root, slug, opts = {}) {
+  const slugs = slug ? [slug] : listBets(root);
+  const all = [];
+  for (const s of slugs) for (const d of loadDecisions(root, s).decisions) all.push({ ...d, bet: s });
+  const filtered = opts.pending ? all.filter(d => d.status !== 'answered') : all;
+  return filtered.sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
+}
+
+export function ensureSignDecision(root, slug) {
+  const doc = loadDecisions(root, slug);
+  const open = doc.decisions.find(d => d.type === 'sign' && d.status !== 'answered');
+  if (open) return open;
+  const { data } = readFm(betPath(root, slug));
+  return addDecision(root, slug, {
+    type: 'sign', allow_free_text: false,
+    context: `Sign "${data.title}"? lane ${data.lane}, risk ${data.risk}, confidence ${data.confidence}, appetite ${data.appetite?.time || '?'}.`,
+    options: ['sign', 'kill', 'need more evidence'],
+  });
+}
+
+function appendBody(root, slug, heading, line) {
+  const file = betPath(root, slug);
+  const { data, body } = readFm(file);
+  writeFm(file, data, appendToSection(body, heading, line), 'bet');
+}
+
+export function answerDecision(root, slug, id, answer, opts = {}) {
+  const doc = loadDecisions(root, slug);
+  const d = doc.decisions.find(x => x.id === id);
+  if (!d) throw new Error(`decision ${id} not found for bet "${slug}"`);
+  if (d.status === 'answered') throw new Error(`decision ${id} already answered (${d.answer})`);
+  const by = opts.by || 'unknown';
+
+  if (answer === 'defer') {
+    d.status = 'deferred'; d.effect = 'deferred'; d.decided_by = by; d.decided_at = now();
+    saveDecisions(root, slug, doc);
+    appendBody(root, slug, 'Decision log', `- ${today()} ${id} (${d.type}): deferred by ${by}`);
+    return d;
+  }
+  if (!d.options.includes(answer) && !(d.allow_free_text && opts.text)) {
+    throw new Error(`answer "${answer}" is not one of: ${d.options.join(', ')}${d.allow_free_text ? ' (or pass --text for a free-text answer)' : ''}`);
+  }
+
+  let effect = 'recorded';
+  if (d.type === 'question' && answer === "don't know") {
+    const n = doc.decisions.filter(x => x.effect && x.effect.startsWith('evidence task')).length + 1;
+    appendBody(root, slug, 'Evidence tasks', `- [ ] E${n}: ${d.context} (from ${id})`);
+    effect = `evidence task E${n} created`;
+  } else if (d.type === 'sign') {
+    const status = readFm(betPath(root, slug)).data.status;
+    if (answer === 'sign') { betTransition(root, slug, 'signed', { by }); effect = 'bet signed'; }
+    else if (answer === 'kill') { betTransition(root, slug, 'killed'); effect = 'bet killed'; }
+    else if (answer === 'need more evidence') {
+      if (status === 'grilling') betTransition(root, slug, 'evidence');
+      effect = 'bet stays in evidence; add evidence tasks or re-grill';
+    }
+  }
+  // approve_design, ack_risk, accept, unblock: recorded here; their state effects are wired by the M1 build/verify/accept commands.
+
+  d.status = 'answered'; d.answer = answer; d.free_text = opts.text || null;
+  d.decided_by = by; d.decided_at = now(); d.effect = effect;
+  saveDecisions(root, slug, doc);
+  appendBody(root, slug, 'Decision log', `- ${today()} ${id} (${d.type}): ${answer}${opts.text ? ` — ${opts.text}` : ''} → ${effect} [${by}]`);
+  return d;
+}
+
+export function ingestQuestions(root, slug, outputFile, runId) {
+  const o = assertValid(loadSchema('seat-output'), readJson(outputFile), outputFile);
+  const ids = [];
+  for (const q of o.questions || []) {
+    const d = addDecision(root, slug, { type: 'question', context: q.context, options: q.options, allow_free_text: q.allow_free_text ?? true, raised_by: { seat: o.seat, run: runId } });
+    appendBody(root, slug, 'Open questions', `- ${d.id}: ${q.context}`);
+    ids.push(d.id);
+  }
+  return ids;
+}
+
 // ---------- CLI ----------
 function out(x) { process.stdout.write((typeof x === 'string' ? x : JSON.stringify(x, null, 2)) + '\n'); }
 export async function main(argv) {
@@ -153,6 +251,16 @@ export async function main(argv) {
   }
 }
 export const EXTRA_OPS = {};   // later tasks register ops here (decisions, cost, status, route)
+Object.assign(EXTRA_OPS, {
+  'decision-add': (a, flag, out) => {
+    const src = a[2] === '-' ? readFileSync(0, 'utf8') : readFileSync(a[2], 'utf8');
+    out(addDecision(a[0], a[1], JSON.parse(src)));
+  },
+  'decision-answer': (a, flag, out) => out(answerDecision(a[0], a[1], a[2], a[3], { text: flag('text'), by: flag('by') })),
+  'decision-list': (a, flag, out) => out(listDecisions(a[0], a[1] && !a[1].startsWith('--') ? a[1] : null, { pending: a.includes('--pending') })),
+  'ensure-sign': (a, flag, out) => out(ensureSignDecision(a[0], a[1]).id),
+  'ingest-questions': (a, flag, out) => out(ingestQuestions(a[0], a[1], a[2], flag('run') || 'unknown')),
+});
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   main(process.argv.slice(2)).catch(e => { console.error(`state.mjs: ${e.message}`); process.exit(1); });
