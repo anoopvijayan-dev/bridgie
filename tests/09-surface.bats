@@ -74,3 +74,16 @@ teardown() { if [[ -n "${SERVER_PID:-}" ]]; then kill "$SERVER_PID" 2>/dev/null 
   diff <(norm "$P/.bridgie/decisions/b.json") <(norm "$Q/.bridgie/decisions/b.json")
   diff <(norm "$P/.bridgie/bets/b/bet.md") <(norm "$Q/.bridgie/bets/b/bet.md")
 }
+
+@test "approving the design from the page applies the flow effect" {
+  Q="$(make_project --git)"; signed_bet "$Q" s
+  (cd "$Q" && bridgie shape s) >/dev/null 2>&1
+  P="$Q"; start_server
+  run curl -s "$URL/bet/s"
+  [[ "$output" == *"Approve design"* ]]
+  [[ "$output" == *"Event-driven retry"* ]]
+  id="$(node "$BRIDGIE_HOME/runner/flow.mjs" pending-of-type "$Q" s approve_design)"
+  run curl -s -o /dev/null -w '%{http_code}' -X POST "$URL/decide" --data "slug=s&id=$id&answer=approve"
+  [ "$output" = "303" ]
+  [ "$(node "$BRIDGIE_HOME/runner/flow.mjs" design-approved "$Q" s)" = "true" ]
+}

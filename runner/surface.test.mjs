@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as st from './state.mjs';
 import { renderInbox, renderBet, renderAll, esc } from './surface.mjs';
+import * as fl from './flow.mjs';
 
 function project() {
   const root = mkdtempSync(join(tmpdir(), 'bridgie-ui-'));
@@ -65,4 +66,50 @@ test('bet page blocks sign when confidence is below the policy minimum for the r
   assert.match(html, /value="sign"[^>]*disabled/);
   st.setFm(st.betPath(root, 'm'), { confidence: 'data' });
   assert.ok(!/value="sign"[^>]*disabled/.test(renderBet(root, 'm')));
+});
+
+function shapedProject() {
+  const root = project();
+  st.answerDecision(root, 'b', 'D1', 'no', { by: 'tester' });
+  st.answerDecision(root, 'b', 'D2', 'sign', { by: 'tester' });
+  const spec = join(root, '.bridgie', 'specs', 'b');
+  mkdirSync(spec, { recursive: true });
+  writeFileSync(join(spec, 'requirements.md'), '# Requirements\n\n## R1 · event\nWHEN a THE SYSTEM SHALL b\n');
+  writeFileSync(join(spec, 'design.md'), '# Design\n\n## Decision\nUse an <idempotency> key.\n\n| Option | Verdict |\n|---|---|\n| A | lost |\n');
+  return root;
+}
+
+test('design approval card shows the design and requirements with its options', () => {
+  const root = shapedProject();
+  fl.ensureDecision(root, 'b', 'approve_design', 'Approve the design?', ['approve', 'request changes']);
+  const html = renderBet(root, 'b');
+  assert.ok(html.includes('Approve design'));
+  assert.ok(html.includes('Use an &lt;idempotency&gt; key.'));
+  assert.ok(html.includes('<table>'));
+  assert.ok(html.includes('WHEN a THE SYSTEM SHALL b'));
+  assert.match(html, /name="answer" value="request changes"/);
+  assert.ok(html.indexOf('Waiting for you') < html.indexOf('The bet'));
+});
+
+test('tasks table, blocked task card and acceptance card render; read-only shows CLI', () => {
+  const root = shapedProject();
+  st.writeJsonAtomic(st.tasksPath(root, 'b'), { bet: 'b', tasks: [
+    { id: 'T1', title: 'First', requirements: ['R1'], depends_on: [], status: 'blocked', attempts: 3, max_attempts: 3, branch: null, evidence: null, escalation: 'blocked after 3 attempts. Last verdict fail: R1 fail' },
+  ] }, 'tasks');
+  fl.ensureDecision(root, 'b', 'unblock', 'Task T1 is blocked', ['retry with guidance', 'take over manually', 'kill task'], { task: 'T1' });
+  let html = renderBet(root, 'b');
+  assert.ok(html.includes('Unblock T1'));
+  assert.ok(html.includes('blocked after 3 attempts'));
+  assert.match(html, /<td>T1<\/td>\s*<td>First<\/td>\s*<td>blocked<\/td>\s*<td>3 \/ 3<\/td>/);
+  st.writeJsonAtomic(st.tasksPath(root, 'b'), { bet: 'b', tasks: [
+    { id: 'T1', title: 'First', requirements: ['R1'], depends_on: [], status: 'passed', attempts: 1, max_attempts: 3, branch: null, evidence: null, escalation: null },
+  ] }, 'tasks');
+  fl.writeAcceptance(root, 'b', { body: '## Residual uncertainty\n- No load test.\n', residual: ['No load test.'], cost: {} });
+  html = renderBet(root, 'b');
+  assert.ok(html.includes('Accept'));
+  assert.ok(html.includes('No load test.'));
+  assert.match(html, /value="approve with conditions"/);
+  const ro = renderBet(root, 'b', { readonly: true });
+  assert.ok(ro.includes('bridgie accept b --approve'));
+  assert.ok(!ro.includes('<form'));
 });
