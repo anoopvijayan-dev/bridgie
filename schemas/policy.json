@@ -3,6 +3,7 @@
   "required": ["version"],
   "properties": {
     "version": { "type": "integer" },
+    "default_lane": { "type": "string", "enum": ["engineering", "product", "marketing", "sales", "platform", "security"] },
     "retries": { "type": "object", "properties": { "max_attempts": { "type": "integer" } } },
     "commit_transcripts": { "type": "boolean" },
     "lanes": {
