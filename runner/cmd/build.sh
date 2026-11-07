@@ -16,7 +16,7 @@ require_build_ack() {
   node_run flow.mjs ensure-decision "$root" "$slug" ack_risk \
     "Bet '$slug' is risk '$needs'; policy requires a human acknowledgement before agents build or verify it." '["ack","decline"]' >/dev/null
   state_commit "$root" "ack requested for $slug"
-  die "build: waiting for a human ack of risk '$needs' (bridgie ack $slug, or bridgie open $slug)"
+  wait_human "build: waiting for a human ack of risk '$needs' (bridgie ack $slug, or bridgie open $slug)"
 }
 
 # produce <root> <slug> <task> <seat> <wt> [packet]: one producer run with all guards.

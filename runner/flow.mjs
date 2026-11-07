@@ -303,6 +303,34 @@ export function answer(root, slug, id, ans, opts = {}) {
   return d;
 }
 
+// acceptancePacket: the runner's own summary for the packager — every task's verdict and rows,
+// findings, and cost totals. Returns { md, cost }.
+export function acceptancePacket(root, slug, diffStat = '') {
+  const doc = loadTasks(root, slug);
+  const lines = [`# Acceptance packet — ${slug}`, '', '## Tasks', '', '| Task | Title | Attempts | Status | Verdict |', '|---|---|---|---|---|'];
+  const details = [];
+  for (const t of doc.tasks) {
+    const ev = t.evidence && existsSync(t.evidence) ? st.readJson(t.evidence) : null;
+    lines.push(`| ${t.id} | ${t.title} | ${t.attempts} | ${t.status} | ${ev ? ev.verdict : 'no evidence'} |`);
+    if (!ev) continue;
+    details.push(`### ${t.id} evidence`, '', '| Criterion | Tier | Check | Result |', '|---|---|---|---|',
+      ...ev.criteria.map(c => `| ${c.id} | ${c.tier} | ${String(c.check).replace(/\|/g, '/')} | ${c.result} |`), '');
+    if (ev.findings.length) details.push(`Findings for ${t.id}:`, ...ev.findings.map(f => `- ${f.severity}: ${f.claim}${f.file ? ` (${f.file}:${f.line ?? '?'})` : ''}`), '');
+  }
+  let entries = 0, seconds = 0, retries = 0;
+  const d = st.runsDir(root, slug);
+  for (const run of existsSync(d) ? readdirSync(d) : []) {
+    const c = join(d, run, 'cost.json');
+    if (!existsSync(c)) continue;
+    for (const e of st.readJson(c).entries) { entries++; seconds += e.duration_s || 0; }
+  }
+  for (const t of doc.tasks) retries += Math.max(0, t.attempts - 1);
+  const cost = { seat_runs: entries, seconds, attempts_total: doc.tasks.reduce((n, t) => n + t.attempts, 0), retries, usd: null };
+  lines.push('', ...details, '## Change', '', '```', diffStat.trim() || '(no diff stat)', '```', '',
+    '## Cost', '', `${cost.seat_runs} seat runs, ${cost.seconds}s, ${cost.attempts_total} attempts (${cost.retries} retries). Token cost not reported by all adapters.`, '');
+  return { md: lines.join('\n'), cost };
+}
+
 // ---------- acceptance ----------
 export function writeAcceptance(root, slug, { body, residual = [], cost = {} }) {
   const pending = loadTasks(root, slug).tasks.filter(t => t.status !== 'passed');
@@ -362,11 +390,19 @@ const OPS = {
   'ack-declined': a => out(String(ackDeclined(a[0], a[1]))),
   'decision-answer': a => out(answer(a[0], a[1], a[2], a[3], { text: flag(a, 'text'), by: flag(a, 'by'), gitSha: flag(a, 'sha') })),
   'pending-of-type': a => out(st.listDecisions(a[0], a[1], { pending: true }).filter(d => d.type === a[2]).map(d => d.id).join('\n')),
+  'acceptance-packet': a => {
+    const diffStat = a[3] && existsSync(a[3]) ? readFileSync(a[3], 'utf8') : '';
+    const { md, cost } = acceptancePacket(a[0], a[1], diffStat);
+    writeFileSync(a[2], md);
+    out(cost);
+  },
   'write-acceptance': a => {
     const o = st.readJson(a[2]);
     const cost = JSON.parse(a[3] || '{}');
-    const residual = (o.proposals || []).filter(p => p.kind === 'gotcha').map(p => p.text);
-    out(writeAcceptance(a[0], a[1], { body: o.artifact_md || o.summary_md, residual, cost }) ?? 'ok');
+    const body = o.artifact_md || o.summary_md;
+    const sec = body.split(/^## /m).find(x => /^residual uncertainty/i.test(x)) || '';
+    const residual = sec.split('\n').filter(l => /^\s*-\s+/.test(l)).map(l => l.replace(/^\s*-\s+/, '').trim());
+    out(writeAcceptance(a[0], a[1], { body, residual, cost }) ?? 'ok');
   },
 };
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {

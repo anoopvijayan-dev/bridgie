@@ -69,7 +69,7 @@ cmd_verify() {
       node_run flow.mjs ensure-decision "$root" "$slug" ack_risk \
         "Task $task changes risk paths ($(json_get "$risk" risk)): $(json_get "$risk" paths). Policy requires a human acknowledgement before verification." '["ack","decline"]' >/dev/null
       state_commit "$root" "ack requested for $slug ($task)"
-      die "verify: $task touches $(json_get "$risk" risk) paths; waiting for a human ack (bridgie ack $slug, or bridgie open $slug)"
+      wait_human "verify: $task touches $(json_get "$risk" risk) paths; waiting for a human ack (bridgie ack $slug, or bridgie open $slug)"
     fi
   fi
 

@@ -58,6 +58,8 @@ function resolveInput(name, ctx) {
     return parts.length ? { label: 'gotchas (project, then lane)', text: parts.join('\n\n') } : null;
   }
   if (name === 'agents_md') return file(join(root, 'AGENTS.md'), 'AGENTS.md');
+  if (name === 'acceptance_packet') return file(join(runDir, 'acceptance-packet.md'), 'acceptance packet (runner-built)');
+  if (name === 'acceptance') return file(join(root, '.bridgie', 'acceptance', `${slug}.md`), `.bridgie/acceptance/${slug}.md`);
   throw new Error(`unknown seat input "${name}"`);
 }
 

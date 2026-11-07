@@ -1,0 +1,14 @@
+{
+  "seat": "retro",
+  "summary_md": "Two tasks, one retry. The first reviewer round found a missing status.",
+  "proposals": [
+    {
+      "kind": "test",
+      "text": "Add a test that a new collection starts in status pending."
+    },
+    {
+      "kind": "gotcha",
+      "text": "Collections must set status on create; reviewers caught it once."
+    }
+  ]
+}

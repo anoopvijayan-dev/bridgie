@@ -3,6 +3,8 @@
 
 die()  { printf 'bridgie: %s\n' "$*" >&2; exit 1; }
 log()  { printf '%s\n' "$*" >&2; }
+# wait_human: stop because a person must decide something (exit 3, not an error).
+wait_human() { printf 'bridgie: %s\n' "$*" >&2; exit 3; }
 need_cmd() { command -v "$1" >/dev/null 2>&1 || die "missing required command: $1"; }
 
 # find_root: walk up from $PWD to a folder containing .bridgie/. Prints it, or returns 1.
