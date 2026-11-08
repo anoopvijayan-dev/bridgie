@@ -1,0 +1,6 @@
+{
+  "seat": "researcher",
+  "summary_md": "Crowded at the lender end, empty at the broker end. Prices £49–£299/month. Loudest complaint: categorisation errors. Gap: broker-side packs. Sources seen 2026-11.",
+  "artifact_md": "## Direct competitors\n| Name | What | Price | Link |\n|---|---|---|---|\n| StatementCo | PDF statement parsing for lenders | £299/month (seen 2026-11-07) | https://example.com/statementco |\n| Cashflow Ltd | Open-banking cash-flow reports | £49/month | https://example.com/cashflow |\n\n## Indirect and substitutes\n- Excel templates shared on broker forums https://example.com/forum/templates\n\n## Prices\n- Brokers pay nothing today; the junior's time is the cost (no public figure).\n\n## What their customers complain about\n- \"it miscategorises transfers as income\" https://example.com/reviews/statementco\n\n## Not found\n- No broker-side product with public pricing.\n\n## Sources\n- https://example.com/statementco\n- https://example.com/cashflow\n- https://example.com/forum/templates\n- https://example.com/reviews/statementco",
+  "questions": [ { "context": "Which geography counts: UK only, or UK and Ireland?", "options": ["UK only", "UK and Ireland", "don't know"], "allow_free_text": true } ]
+}

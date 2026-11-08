@@ -144,6 +144,64 @@ export function addIdeaLine(root, slug, idea) {
   st.writeFm(file, data, replaceSection(body, 'Idea', idea.trim()), 'bet');
 }
 
+// ---------- research ----------
+export const RESEARCH_SECTIONS = ['Direct competitors', 'Indirect and substitutes', 'Prices', 'What their customers complain about', 'Not found', 'Sources'];
+// writeResearch: the researcher's artifact must have every section and carry links; a report with
+// fewer than three distinct links is a memory dump, not research, and is rejected.
+export function writeResearch(root, slug, outputFile) {
+  const o = loadOutput(outputFile);
+  if (!o.artifact_md) throw new Error('researcher output has no artifact_md');
+  const titles = sections(o.artifact_md).map(s => s.title);
+  const missing = RESEARCH_SECTIONS.filter(h => !titles.includes(h));
+  if (missing.length) throw new Error(`research is missing sections: ${missing.join(', ')}`);
+  const links = new Set([...o.artifact_md.matchAll(/https?:\/\/[^\s)>\]]+/g)].map(m => m[0]));
+  if (links.size < 3) throw new Error(`research cites ${links.size} link(s); every fact needs a source (at least 3 distinct links)`);
+  const f = join(betDir(root, slug), 'research.md');
+  writeFileSync(f, `# Research — ${slug}\n\nResearched ${st.today()}. ${o.summary_md.trim()}\n\n${o.artifact_md.trim()}\n`);
+  return { file: f, links: links.size };
+}
+
+// ---------- board (lenses + chair) ----------
+export const LENSES = ['offer', 'moat', 'product'];
+const VOTES = { FUND: 'fund', 'FUND IF': 'fund if', PASS: 'pass' };
+// parseMemo: first line "Score: n | Vote: FUND|FUND IF|PASS"; the runner reads these, never the chair.
+export function parseMemo(md, lens) {
+  const first = (md.trim().split('\n')[0] || '');
+  const m = first.match(/^Score:\s*(10|[1-9])\s*\|\s*Vote:\s*(FUND IF|FUND|PASS)\s*$/i);
+  if (!m) throw new Error(`${lens} memo must start with "Score: <1-10> | Vote: FUND | FUND IF | PASS" (got "${first.slice(0, 60)}")`);
+  const got = Object.fromEntries(sections(md).map(s => [s.title, s.body]));
+  for (const h of ['What is strong', 'What would kill it', 'Conditions']) if (!(h in got)) throw new Error(`${lens} memo is missing "## ${h}"`);
+  return { lens, score: Number(m[1]), vote: VOTES[m[2].toUpperCase()], kill: got['What would kill it'], conditions: got['Conditions'], md };
+}
+
+export function writeMemo(runDir, lens, outputFile) {
+  const o = loadOutput(outputFile);
+  const memo = parseMemo(o.artifact_md || '', lens);
+  mkdirSync(join(runDir, 'memos'), { recursive: true });
+  writeFileSync(join(runDir, 'memos', `${lens}.md`), memo.md.trim() + '\n');
+  return memo;
+}
+
+// writeBoard: vote line and average computed from the memos; the chair's text follows.
+export function writeBoard(root, slug, memos, chairOutputFile) {
+  const o = loadOutput(chairOutputFile);
+  const tally = {}; for (const m of memos) tally[m.vote] = (tally[m.vote] || 0) + 1;
+  const voteLine = ['fund', 'fund if', 'pass'].filter(v => tally[v]).map(v => `${tally[v]} ${v}`).join(', ');
+  const avg = Math.round(memos.reduce((n, m) => n + m.score, 0) / memos.length * 10) / 10;
+  const board = {
+    bet: slug, date: st.today(), vote: voteLine, average_score: avg,
+    members: memos.map(m => ({ lens: m.lens, score: m.score, vote: m.vote })),
+    chair_summary: o.summary_md.trim(),
+  };
+  const md = [`# Board — ${slug}`, '', `**Vote:** ${voteLine} · **average score:** ${avg}/10 · ${st.today()}`, '',
+    '| Lens | Score | Vote |', '|---|---|---|', ...memos.map(m => `| ${m.lens} | ${m.score} | ${m.vote} |`), '',
+    '## Chair', '', o.summary_md.trim(), '', (o.artifact_md || '').trim(), '',
+    ...memos.flatMap(m => [`## Memo · ${m.lens} lens`, '', m.md.trim(), ''])].join('\n');
+  writeFileSync(join(betDir(root, slug), 'board.md'), md);
+  writeFileSync(join(betDir(root, slug), 'board.json'), JSON.stringify(board, null, 2) + '\n');
+  return board;
+}
+
 // ---------- CLI ----------
 function flag(a, n) { const i = a.indexOf(`--${n}`); return i >= 0 ? a[i + 1] : undefined; }
 const out = x => process.stdout.write((typeof x === 'string' ? x : JSON.stringify(x, null, 2)) + '\n');
@@ -154,6 +212,9 @@ export const OPS = {
   'seed-bet': a => out(seedBetFromOpportunity(a[0], a[1], a[2]).id),
   'apply-frame': a => out(applyFrame(a[0], a[1], a[2]).join(', ')),
   'add-idea': a => { addIdeaLine(a[0], a[1], a[2]); out('ok'); },
+  'write-research': a => out(writeResearch(a[0], a[1], a[2])),
+  'write-memo': a => out(writeMemo(a[0], a[1], a[2])),
+  'write-board': a => { const memos = LENSES.map(l => parseMemo(readFileSync(join(a[2], 'memos', `${l}.md`), 'utf8'), l)); out(writeBoard(a[0], a[1], memos, a[3])); },
 };
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   const [op, ...a] = process.argv.slice(2);
