@@ -156,7 +156,7 @@ setup() {
   [[ "$output" == *"-name .snapshot -prune -exec rm -rf"* ]]
 }
 
-@test "a project reached through a symlink is not mistaken for tampering (macOS /var → /private/var)" {
+@test "a project reached through a symlink is not mistaken for tampering (macOS /var is /private/var)" {
   on_windows && skip "Git Bash symlinks are copies"
   L="$(mktemp -d)/link"; ln -s "$P" "$L"
   run bash -c "cd '$L' && BRIDGIE_RUNS_DIR='$L/.bridgie/runs/b/swarm-01' bridgie seat-run b decide/grill --exclude '$L/.bridgie/runs/b/swarm-01'"

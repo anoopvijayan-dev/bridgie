@@ -45,7 +45,7 @@ setup() {
   grep -q '"result": "not_proven"' "$P/.bridgie/runs/b/verify-01/evidence.json"
 }
 
-@test "fail → retry gets the findings → blocked after max attempts with an unblock decision (R5)" {
+@test "fail, then retry gets the findings, then blocked after max attempts with an unblock decision (R5)" {
   F="$BRIDGIE_HOME/tests/fixtures/fake/reviewer-fail.json"
   run bash -c "cd '$P' && BRIDGIE_FAKE_OUTPUT='$F' bridgie verify b"
   [ "$status" -ne 0 ]
