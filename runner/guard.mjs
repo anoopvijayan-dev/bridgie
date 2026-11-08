@@ -4,7 +4,8 @@
 //   guard.mjs check    <root> <snapdir> [--exclude <rel>]...  → {"added":[],"removed":[],"changed":[]}
 //   guard.mjs restore  <root> <snapdir> [--exclude <rel>]...
 // Paths are relative to <root> with forward slashes. Always excluded: worktrees (seats work there),
-// rendered pages, the fake adapter's scratch state and the seat lock.
+// rendered pages, the fake adapter's scratch state, the seat lock, and other runs' .snapshot dirs
+// (otherwise every snapshot would copy every earlier snapshot and grow without bound).
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, statSync, copyFileSync, rmSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { join, dirname, resolve, relative, sep } from 'node:path';
@@ -21,7 +22,7 @@ function walk(root, excludes) {
     for (const name of readdirSync(dir)) {
       const p = join(dir, name), r = rel(root, p);
       const st = statSync(p);
-      if (st.isDirectory()) { if (!ex.some(e => `${r}/`.startsWith(e))) visit(p); }
+      if (st.isDirectory()) { if (name !== '.snapshot' && !ex.some(e => `${r}/`.startsWith(e))) visit(p); }   // never snapshot a snapshot
       else if (st.isFile() && !ex.some(e => r.startsWith(e))) out.push(r);
     }
   };
