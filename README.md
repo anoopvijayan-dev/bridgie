@@ -22,6 +22,27 @@ Requires bash, git and Node ≥ 20. Tests need `npm i -g bats`. On Windows, run 
 (Copilot CLI with Claude for judgment and review, Antigravity for production work). Edit it to taste;
 `bridgie doctor` probes every adapter.
 
+## Finding and testing an idea (the decide loop)
+
+```bash
+mkdir ~/ideas && cd ~/ideas && git init
+bridgie init --lane product
+bridgie scout --from ~/Downloads/broker-emails        # ranks the problems people describe, by independent sources
+bridgie bet new packs --from broker-emails/O1 --risk money
+bridgie frame packs                                    # drafts who / problem / why now / today / outcome; assumptions → questions
+bridgie research packs                                 # competitors, prices, complaints, every fact linked (needs web access)
+bridgie grill packs --lenses                           # adversarial grill + a three-lens board (offer, moat, product) and a chair
+bridgie panel packs                                    # drafts customer.yaml and pitch.md; you correct them; run again for 20 simulated buyers
+bridgie numbers packs --template && $EDITOR .bridgie/bets/packs/numbers.yaml && bridgie numbers packs
+bridgie evidence packs                                 # interview guides; drop notes in .bridgie/bets/packs/evidence/ and run again
+bridgie open packs                                     # answer, accept the confidence proposal, sign
+```
+
+Every verdict is computed by the runner, never written by a model: the board's vote and average, the
+panel's buy rate and Van Westendorp price range, the unit-economics checks. Simulated buyers are an
+upper bound and never change a bet's confidence; only `bridgie evidence` (real interviews, data, tests)
+proposes a tier, and you accept it. A money bet cannot be signed without positive unit economics.
+
 ## The loop
 
 ```bash
@@ -66,7 +87,8 @@ In an agent harness, say `/bridgie` (the installed skill drives the CLI and leav
 |---|---|
 | `bin/bridgie` | the command |
 | `runner/` | bash commands and dependency-free Node modules (state, context, surface, doctor) |
-| `seats/<loop>/<seat>/SKILL.md` | what each agent seat is for, its inputs, what it may write |
+| `seats/<loop>/<seat>/SKILL.md` | what each agent seat is for, its inputs, what it may write (decide: scout, framer, researcher, three lenses, chair, profiler, buyer, grill, evidence) |
+| `runner/panel.mjs`, `runner/numbers.mjs` | the computed parts of the decide loop: persona cards, tallies, price range; unit economics |
 | `lanes/<lane>/` | risk paths, attack lists, checklists, verifiers per domain |
 | `adapters/` | claude-code, copilot, codex, antigravity, fake: how a seat is launched on a model runtime |
 | `skills/bridgie/` | the skill agent harnesses use to drive bridgie |
@@ -76,13 +98,16 @@ In an agent harness, say `/bridgie` (the installed skill drives the CLI and leav
 
 ## Status
 
-v0.3.0 (M2 hardening): enforcement gaps from an external review closed (acceptance binding, evidence
+v0.4.0 (M3 decide loop): scout, frame, research, lenses, panel, numbers, evidence; swarm seats and web
+capability in the runner; confidence decisions. Borrowed with thanks from
+[founder-skill](https://github.com/Jakeschincariol/founder-skill) (MIT): the three-lens board, the
+runner-dealt buyer panel, Van Westendorp pricing and computed unit economics. v0.3.0 (M2 hardening): enforcement gaps from an external review closed (acceptance binding, evidence
 reconciliation, effective risk and mandatory tiers, state guard and seat lock, authenticated decision
 server, reviewer works from runner-run test results). v0.2.0 (M1): the whole loop runs end to end on the
 fake adapter and is covered by tests for spec requirements R1–R14 and properties P1–P3. Real adapters are verified against stub CLIs with the
 flags of Claude Code 2.1, Codex 0.167 and Copilot CLI 1.0; Antigravity follows the v1 notes and its
-write mode is unverified (see `adapters/antigravity/gotchas.md`). Next (M3): marketing and sales lane
-content, seeded-bug evals for the reviewer, learn promotion.
+write mode is unverified (see `adapters/antigravity/gotchas.md`). Next: a first real run of the decide loop on live
+models, recovery for interrupted runs, seeded-bug evals for the reviewer, marketing and sales lanes.
 
 ## Tests
 
