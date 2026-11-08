@@ -64,7 +64,8 @@ Build    shape | plan | build | run
 Verify   verify
 Accept   accept
 Learn    learn
-Tool     init [--lane L]  status  open [slug] [--invite NAME]  doctor  version  help
+Tool     new <folder> [--lane L]   new project in one step        next (or just: bridgie)   what to do next
+         init [--lane L]  status  open [slug] [--invite NAME]  doctor  version  help
 USAGE
 }
 

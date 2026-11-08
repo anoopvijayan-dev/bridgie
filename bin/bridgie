@@ -10,7 +10,7 @@ export BRIDGIE_HOME
 # shellcheck source=../runner/lib/common.sh
 source "$BRIDGIE_HOME/runner/lib/common.sh"
 
-cmd="${1:-help}"
+cmd="${1:-next}"          # plain `bridgie` says what to do next
 shift || true
 
 case "$cmd" in
