@@ -6,6 +6,7 @@ import { pathToFileURL } from 'node:url';
 import { splitFrontmatter, parse as yparse } from './yaml.mjs';
 import { validate } from './schema.mjs';
 import * as st from './state.mjs';
+import { leftoverSnapshots } from './guard.mjs';
 
 export function doctor(root) {
   const r = [];
@@ -64,6 +65,11 @@ export function doctor(root) {
     n > 120 ? warn(`AGENTS.md is ${n} lines; it is a map, aim for ~100`) : ok(`AGENTS.md ${n} lines`);
     for (const m of txt.matchAll(/\]\(([^)#:]+)\)/g)) if (!existsSync(join(root, m[1]))) fail(`AGENTS.md link does not resolve: ${m[1]}`);
   } else warn('no AGENTS.md in project; copy templates/AGENTS.md once the project has code');
+  const left = leftoverSnapshots(root);
+  if (left.length) {
+    const mb = Math.round(left.reduce((n, x) => n + x.bytes, 0) / 1048576);
+    warn(`${left.length} leftover state snapshot(s) under .bridgie/runs (${mb} MB) from an older Bridgie; safe to delete (not committed): find .bridgie/runs -type d -name .snapshot -prune -exec rm -rf {} +`);
+  } else ok('no leftover state snapshots');
   return r;
 }
 

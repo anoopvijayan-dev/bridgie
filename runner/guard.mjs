@@ -6,6 +6,12 @@
 // Paths are relative to <root> with forward slashes. Always excluded: worktrees (seats work there),
 // rendered pages, the fake adapter's scratch state, the seat lock, and other runs' .snapshot dirs
 // (otherwise every snapshot would copy every earlier snapshot and grow without bound).
+//
+// Size: run history (.bridgie/runs/) is append-only and can be large (prompts, logs, diffs), so it is
+// hashed but never copied. Tampering there is still detected and fails the run; it is reported as
+// unrestorable rather than rolled back (acceptance digests bind the evidence anyway). Everything else —
+// bets, decisions, specs, acceptance, policy — is small and copied for an exact restore. A copy larger
+// than BRIDGIE_SNAPSHOT_MAX_MB (default 50) is refused: a guard must never fill a disk.
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, statSync, copyFileSync, rmSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { join, dirname, resolve, relative, sep } from 'node:path';
@@ -31,11 +37,21 @@ function walk(root, excludes) {
   return out.sort();
 }
 const hash = f => createHash('sha256').update(readFileSync(f)).digest('hex');
+const HASH_ONLY = '.bridgie/runs/';
+const maxBytes = () => Number(process.env.BRIDGIE_SNAPSHOT_MAX_MB || 50) * 1024 * 1024;
 
 export function snapshot(root, snap, excludes = []) {
+  const files = walk(root, excludes);
+  const copied = files.filter(r => !r.startsWith(HASH_ONLY));
+  const bytes = copied.reduce((n, r) => n + statSync(join(root, r)).size, 0);
+  if (bytes > maxBytes()) {
+    const big = copied.map(r => [r, statSync(join(root, r)).size]).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([r, n]) => `${r} (${Math.round(n / 1048576)} MB)`);
+    throw new Error(`state snapshot would copy ${Math.round(bytes / 1048576)} MB (limit ${Math.round(maxBytes() / 1048576)} MB, BRIDGIE_SNAPSHOT_MAX_MB). Largest: ${big.join(', ')}. Bridgie state should be small; move large files out of .bridgie/`);
+  }
   const manifest = {};
-  for (const r of walk(root, excludes)) {
+  for (const r of files) {
     manifest[r] = hash(join(root, r));
+    if (r.startsWith(HASH_ONLY)) continue;
     mkdirSync(dirname(join(snap, 'files', r)), { recursive: true });
     copyFileSync(join(root, r), join(snap, 'files', r));
   }
@@ -56,11 +72,29 @@ export function check(root, snap, excludes = []) {
 export function restore(root, snap, excludes = []) {
   const d = check(root, snap, excludes);
   for (const r of d.added) rmSync(join(root, r), { force: true });
+  const unrestorable = [];
   for (const r of [...d.removed, ...d.changed]) {
+    if (!existsSync(join(snap, 'files', r))) { unrestorable.push(r); continue; }   // run history is hash-only
     mkdirSync(dirname(join(root, r)), { recursive: true });
     copyFileSync(join(snap, 'files', r), join(root, r));
   }
-  return d;
+  return { ...d, unrestorable };
+}
+
+// leftoverSnapshots: .snapshot dirs under runs/ that no VIOLATION explains (left by older versions).
+export function leftoverSnapshots(root) {
+  const out = []; const runs = join(root, '.bridgie', 'runs');
+  const size = d => { let n = 0; for (const x of readdirSync(d)) { const p = join(d, x), s = statSync(p); n += s.isDirectory() ? size(p) : s.size; } return n; };
+  const visit = dir => {
+    for (const name of readdirSync(dir)) {
+      const p = join(dir, name);
+      if (!statSync(p).isDirectory()) continue;
+      if (name === '.snapshot') { if (!existsSync(join(dir, 'VIOLATION'))) out.push({ path: rel(root, p), bytes: size(p) }); continue; }
+      visit(p);
+    }
+  };
+  if (existsSync(runs)) visit(runs);
+  return out;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
