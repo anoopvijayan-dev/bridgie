@@ -1,0 +1,11 @@
+{
+  "name": "bridgie",
+  "version": "0.5.0",
+  "description": "A file-based operating system for running a company's work through AI agents: decide, build, verify, accept, learn.",
+  "type": "module",
+  "bin": { "bridgie": "bin/bridgie.mjs" },
+  "engines": { "node": ">=20" },
+  "scripts": { "test": "node --test", "test:cli": "bash tests/run.sh" },
+  "license": "UNLICENSED",
+  "private": true
+}

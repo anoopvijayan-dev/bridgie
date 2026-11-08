@@ -17,7 +17,7 @@ export function doctor(root) {
   const git = spawnSync('git', ['--version'], { encoding: 'utf8' });
   git.status === 0 ? ok(git.stdout.trim()) : fail('git not found');
   const bats = spawnSync('bats', ['--version'], { encoding: 'utf8' });
-  bats.status === 0 ? ok(bats.stdout.trim()) : warn('bats not found (npm i -g bats); CLI tests will not run');
+  if (bats.status === 0) ok(`${bats.stdout.trim()} (for Bridgie's own CLI tests)`);   // users do not need bats
 
   let bad = 0;
   for (const f of readdirSync(join(st.HOME, 'schemas'))) { try { JSON.parse(readFileSync(join(st.HOME, 'schemas', f), 'utf8')); } catch (e) { bad++; fail(`schema ${f}: ${e.message}`); } }
@@ -45,9 +45,9 @@ export function doctor(root) {
   if (!r.some(([k, m]) => k === 'fail' && /template missing/.test(m))) ok('templates present');
 
   for (const a of readdirSync(join(st.HOME, 'adapters'))) {
-    const run = join(st.HOME, 'adapters', a, 'run.sh');
+    const run = join(st.HOME, 'adapters', a, 'run.mjs');
     if (!existsSync(run)) continue;
-    const p = spawnSync('bash', [run, '--probe'], { encoding: 'utf8', timeout: 30000 });
+    const p = spawnSync(process.execPath, [run, '--probe'], { encoding: 'utf8', timeout: 30000 });
     p.status === 0 && /OK/.test(p.stdout || '') ? ok(`adapter ${a}: probe OK`) : warn(`adapter ${a}: probe failed: ${((p.stderr || p.stdout || p.error?.message || '').trim().split('\n')[0]) || 'no output'}`);
   }
 

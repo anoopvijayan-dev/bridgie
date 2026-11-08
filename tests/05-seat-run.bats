@@ -12,7 +12,10 @@ setup() {
   run bash -c "cd '$P' && bridgie seat-run b decide/grill"
   [ "$status" -eq 0 ]
   dir="$output"
-  [ -f "$dir/prompt.md" ] && [ -f "$dir/seat-output.json" ] && [ -f "$dir/cost.json" ] && [ -f "$dir/inputs.json" ]
+  [ -f "$dir/prompt.md" ]
+  [ -f "$dir/seat-output.json" ]
+  [ -f "$dir/cost.json" ]
+  [ -f "$dir/inputs.json" ]
   grep -q 'UNIQUE-BET-TITLE' "$dir/prompt.md"
   ! grep -q 'DECOY-DESIGN-MARKER' "$dir/prompt.md"
   grep -q '"inputs": \[' "$dir/inputs.json"
@@ -21,7 +24,7 @@ setup() {
 @test "second run of the same seat gets the next number" {
   bash -c "cd '$P' && bridgie seat-run b decide/grill" >/dev/null
   run bash -c "cd '$P' && bridgie seat-run b decide/grill"
-  [[ "$output" == *"/grill-02" ]]
+  [[ "$output" == *grill-02 ]]
 }
 
 @test "a seat that writes state directly fails the run and state is restored (P1)" {
@@ -76,7 +79,7 @@ setup() {
 
 @test "a human change during an agent run is refused with a clear message, not rolled back as tampering" {
   printf 'bridgie bet new other > "$0.log" 2>&1 || echo refused > "$0.refused"\n' > "$P/.git/human.sh"
-  sed -i "s|\$0|$P/.git/human|g" "$P/.git/human.sh"
+  node -e 'const f=process.argv[1];const fs=require("fs");fs.writeFileSync(f,fs.readFileSync(f,"utf8").split("$0").join(process.argv[2]))' "$P/.git/human.sh" "$P/.git/human"
   run bash -c "cd '$P' && BRIDGIE_FAKE_SCRIPT='$P/.git/human.sh' bridgie seat-run b decide/grill"
   [ "$status" -eq 0 ]
   [ -f "$P/.git/human.refused" ]
@@ -109,7 +112,7 @@ setup() {
   mkdir -p "$BRIDGIE_HOME/seats/decide/_cardtest"
   printf -- '---\nname: cardtest\nloop: decide\ntier: scout\ninputs: [card]\nwrites: run_dir\ntools: [read]\noutput: seat-output.json\n---\nSay hi.\n' > "$BRIDGIE_HOME/seats/decide/_cardtest/SKILL.md"
   mkdir -p "$P/.bridgie/runs/b/swarm-01/other-run"; echo x > "$P/.bridgie/runs/b/swarm-01/other-run/sibling.txt"
-  run bash -c "cd '$P' && BRIDGIE_RUNS_DIR='$P/.bridgie/runs/b/swarm-01' BRIDGIE_FAKE_OUTPUT='$BRIDGIE_HOME/tests/fixtures/fake/grill.json' bridgie seat-run b decide/_cardtest --packet '$pk' --vars '$pk/card.json' --exclude '$P/.bridgie/runs/b/swarm-01' --no-lock"
+  run bash -c "cd '$P' && BRIDGIE_RUNS_DIR='$(native "$P/.bridgie/runs/b/swarm-01")' BRIDGIE_FAKE_OUTPUT='$BRIDGIE_HOME/tests/fixtures/fake/grill.json' bridgie seat-run b decide/_cardtest --packet '$pk' --vars '$pk/card.json' --exclude '$P/.bridgie/runs/b/swarm-01' --no-lock"
   rm -rf "$BRIDGIE_HOME/seats/decide/_cardtest"
   [ "$status" -eq 0 ]
   [ -f "$output/signals/t1.txt" ]
@@ -151,4 +154,12 @@ setup() {
   run bash -c "cd '$P' && bridgie doctor"
   [[ "$output" == *"1 leftover state snapshot(s) under .bridgie/runs (1 MB)"* ]]
   [[ "$output" == *"-name .snapshot -prune -exec rm -rf"* ]]
+}
+
+@test "a project reached through a symlink is not mistaken for tampering (macOS /var is /private/var)" {
+  on_windows && skip "Git Bash symlinks are copies"
+  L="$(mktemp -d)/link"; ln -s "$P" "$L"
+  run bash -c "cd '$L' && BRIDGIE_RUNS_DIR='$L/.bridgie/runs/b/swarm-01' bridgie seat-run b decide/grill --exclude '$L/.bridgie/runs/b/swarm-01'"
+  [ "$status" -eq 0 ]
+  [ ! -f "$output/VIOLATION" ]
 }
