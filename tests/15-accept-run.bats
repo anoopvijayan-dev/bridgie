@@ -24,7 +24,8 @@ setup() {
   [[ "$output" == *"waiting for your acceptance"* ]]
   [ "$(task_field "$P" b T1 status)" = '"passed"' ]
   [ "$(task_field "$P" b T2 status)" = '"passed"' ]
-  [ -f "$P/feature-1.txt" ] && [ -f "$P/feature-2.txt" ]
+  [ -f "$P/feature-1.txt" ]
+  [ -f "$P/feature-2.txt" ]
   grep -q 'No load test was run' "$P/.bridgie/acceptance/b.md"
   grep -q '| T2 |' "$P/.bridgie/runs/b/packager-01/acceptance-packet.md"
   head="$(git -C "$P" rev-parse bridgie/b)"

@@ -11,7 +11,8 @@ setup() {
   run bash -c "cd '$P' && bridgie panel b --n 6"
   [ "$status" -eq 3 ]
   [[ "$output" == *"Review and correct them"* ]]
-  [ -f "$P/.bridgie/bets/b/customer.yaml" ] && [ -f "$P/.bridgie/bets/b/pitch.md" ]
+  [ -f "$P/.bridgie/bets/b/customer.yaml" ]
+  [ -f "$P/.bridgie/bets/b/pitch.md" ]
   grep -q 'solo broker' "$P/.bridgie/bets/b/customer.yaml"
   [ "$(fm "$P/.bridgie/bets/b/bet.md" confidence)" = '"opinion"' ]   # the profiler's confidence proposal is ignored
   [ ! -d "$P/.bridgie/runs/b/panel-01" ]

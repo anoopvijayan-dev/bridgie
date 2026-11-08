@@ -15,7 +15,8 @@ start_server() {   # start_server [open args] → sets URL, TOKEN, JAR (signed-i
   URL="$(grep LISTENING "$LOG" | head -1 | awk '{print $2}')"
   OPEN="$(grep '^OPEN ' "$LOG" | head -1 | awk '{print $2}')"
   TOKEN="${OPEN##*t=}"
-  [ -n "$URL" ] && [ -n "$TOKEN" ]
+  [ -n "$URL" ]
+  [ -n "$TOKEN" ]
   curl -s -o /dev/null -c "$JAR" "$OPEN"
 }
 get() { curl -s -b "$JAR" "$URL$1"; }
@@ -25,7 +26,8 @@ teardown() { if [[ -n "${SERVER_PID:-}" ]]; then kill "$SERVER_PID" 2>/dev/null 
 @test "static render writes read-only pages" {
   run bash -c "cd '$P' && bridgie open --static"
   [ "$status" -eq 0 ]
-  [ -f "$P/.bridgie/ui/index.html" ] && [ -f "$P/.bridgie/ui/bet-b.html" ]
+  [ -f "$P/.bridgie/ui/index.html" ]
+  [ -f "$P/.bridgie/ui/bet-b.html" ]
   grep -q 'bridgie decide b D1' "$P/.bridgie/ui/bet-b.html"
 }
 

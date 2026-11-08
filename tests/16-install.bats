@@ -5,7 +5,8 @@ load helpers
   run node "$BRIDGIE_HOME/runner/state.mjs" fm-get "$BRIDGIE_HOME/skills/bridgie/SKILL.md" name
   [ "$output" = '"bridgie"' ]
   d="$(node "$BRIDGIE_HOME/runner/state.mjs" fm-get "$BRIDGIE_HOME/skills/bridgie/SKILL.md" description)"
-  [ "${#d}" -gt 50 ] && [ "${#d}" -lt 1024 ]
+  [ "${#d}" -gt 50 ]
+  [ "${#d}" -lt 1024 ]
   [[ "$d" != *"<"* ]]
 }
 
@@ -14,16 +15,17 @@ load helpers
   printf 'require("fs").appendFileSync(process.argv[2], process.argv.slice(3).join(" ") + "\\n")\n' > "$H/npm.cjs"
   if on_windows; then printf '@node "%s" "%s" %%*\r\n' "$(native "$H/npm.cjs")" "$(native "$H/npm.log")" > "$H/stub/npm.cmd"
   else printf '#!/bin/sh\nexec node "%s" "%s" "$@"\n' "$H/npm.cjs" "$H/npm.log" > "$H/stub/npm"; chmod +x "$H/stub/npm"; fi
-  run env HOME="$H" PATH="$H/stub:$PATH" node "$BRIDGIE_HOME/bin/bridgie.mjs" setup
+  run env HOME="$H" USERPROFILE="$(native "$H")" PATH="$H/stub:$PATH" node "$BRIDGIE_HOME/bin/bridgie.mjs" setup
   [ "$status" -eq 0 ]
-  [ -f "$H/.claude/skills/bridgie/SKILL.md" ] && [ -f "$H/.agents/skills/bridgie/SKILL.md" ]
+  [ -f "$H/.claude/skills/bridgie/SKILL.md" ]
+  [ -f "$H/.agents/skills/bridgie/SKILL.md" ]
   cat "$H/npm.log"; has_path_line "$H/npm.log" "install -g " "$BRIDGIE_HOME"
   [[ "$output" == *"works in PowerShell, cmd, Git Bash, macOS and Linux"* ]]
   grep -q 'adapter: copilot' "$H/.bridgie/policy.yaml"
-  run env HOME="$H" PATH="$H/stub:$PATH" "$BRIDGIE_HOME/bin/install.sh"      # old entry point still works
+  run env HOME="$H" USERPROFILE="$(native "$H")" PATH="$H/stub:$PATH" "$BRIDGIE_HOME/bin/install.sh"      # old entry point still works
   [ "$status" -eq 0 ]
   [[ "$output" == *"already exists"* ]]
-  run env HOME="$H" node "$BRIDGIE_HOME/bin/bridgie.mjs" setup --no-link --no-policy
+  run env HOME="$H" USERPROFILE="$(native "$H")" node "$BRIDGIE_HOME/bin/bridgie.mjs" setup --no-link --no-policy
   [ "$status" -eq 0 ]
   [ "$(wc -l < "$H/npm.log")" -eq 2 ]
 }
@@ -32,9 +34,10 @@ load helpers
   H="$(mktemp -d)"; W="$H/AppData/Local/Microsoft/WindowsApps"; mkdir -p "$W"
   printf '@echo off\r\n"C:\\Git\\usr\\bin\\bash.exe" "/c/Users/x/bridgie/bin/bridgie" %%*\r\n' > "$W/bridgie.cmd"
   echo 'something else' > "$W/other.cmd"
-  run env HOME="$H" LOCALAPPDATA="$H/AppData/Local" node "$BRIDGIE_HOME/bin/bridgie.mjs" setup --no-link --no-policy
+  run env HOME="$H" USERPROFILE="$(native "$H")" LOCALAPPDATA="$(native "$H/AppData/Local")" node "$BRIDGIE_HOME/bin/bridgie.mjs" setup --no-link --no-policy
   [ "$status" -eq 0 ]
-  [ ! -e "$W/bridgie.cmd" ] && [ -f "$W/other.cmd" ]
+  [ ! -e "$W/bridgie.cmd" ]
+  [ -f "$W/other.cmd" ]
   [[ "$output" == *"removed the old bash shim"* ]]
 }
 
@@ -42,7 +45,8 @@ load helpers
   W="$(mktemp -d)"
   run bash -c "cd '$W' && bridgie new my-idea --lane product"
   [ "$status" -eq 0 ]
-  [ -d "$W/my-idea/.git" ] && [ -f "$W/my-idea/.bridgie/policy.yaml" ]
+  [ -d "$W/my-idea/.git" ]
+  [ -f "$W/my-idea/.bridgie/policy.yaml" ]
   grep -q 'default_lane: product' "$W/my-idea/.bridgie/policy.yaml"
   [[ "$output" == *"bridgie bet new"* ]]
   run bash -c "cd '$W' && bridgie"
@@ -51,7 +55,8 @@ load helpers
   [[ "$output" == *"no bets yet"* ]]
   bash -c "cd '$W/my-idea' && bridgie bet new b --title T" >/dev/null
   run bash -c "cd '$W/my-idea' && bridgie"
-  [[ "$output" == *"b: T — draft"* ]] && [[ "$output" == *"bridgie grill b --lenses"* ]]
+  [[ "$output" == *"b: T — draft"* ]]
+  [[ "$output" == *"bridgie grill b --lenses"* ]]
   run bash -c "cd '$W' && bridgie new my-idea"
   [ "$status" -ne 0 ]
 }
@@ -70,9 +75,9 @@ load helpers
 
 @test "a folder under the home directory is not a project just because ~/.bridgie holds the machine policy" {
   H="$(mktemp -d)"; mkdir -p "$H/.bridgie" "$H/Downloads"; echo 'version: 1' > "$H/.bridgie/policy.yaml"
-  run env HOME="$H" bash -c "cd '$H/Downloads' && bridgie"
+  run env HOME="$H" USERPROFILE="$(native "$H")" bash -c "cd '$H/Downloads' && bridgie"
   [[ "$output" == *"not inside a Bridgie project"* ]]
-  run env HOME="$H" bash -c "cd '$H/Downloads' && bridgie status"
+  run env HOME="$H" USERPROFILE="$(native "$H")" bash -c "cd '$H/Downloads' && bridgie status"
   [ "$status" -ne 0 ]
   [[ "$output" == *"not inside a bridgie project"* ]]
 }

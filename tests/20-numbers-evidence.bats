@@ -33,7 +33,8 @@ setup() {
   node -e 'const f=process.argv[1];const fs=require("fs");fs.writeFileSync(f,fs.readFileSync(f,"utf8").replace(/^variable_cost: .*$/m,"variable_cost: 50"))' "$P/.bridgie/bets/b/numbers.yaml"
   run bash -c "cd '$P' && bridgie numbers b"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"not yet"* ]] && [[ "$output" == *"unit_positive"* ]]
+  [[ "$output" == *"not yet"* ]]
+  [[ "$output" == *"unit_positive"* ]]
   run bash -c "cd '$P' && bridgie sign b"
   [ "$status" -ne 0 ]
   [[ "$output" == *"loses money"* ]]

@@ -12,7 +12,10 @@ setup() {
   run bash -c "cd '$P' && bridgie seat-run b decide/grill"
   [ "$status" -eq 0 ]
   dir="$output"
-  [ -f "$dir/prompt.md" ] && [ -f "$dir/seat-output.json" ] && [ -f "$dir/cost.json" ] && [ -f "$dir/inputs.json" ]
+  [ -f "$dir/prompt.md" ]
+  [ -f "$dir/seat-output.json" ]
+  [ -f "$dir/cost.json" ]
+  [ -f "$dir/inputs.json" ]
   grep -q 'UNIQUE-BET-TITLE' "$dir/prompt.md"
   ! grep -q 'DECOY-DESIGN-MARKER' "$dir/prompt.md"
   grep -q '"inputs": \[' "$dir/inputs.json"
