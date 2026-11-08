@@ -1,17 +1,84 @@
 {
   "type": "object",
-  "required": ["name", "loop", "tier", "inputs", "writes", "tools", "output"],
+  "required": [
+    "name",
+    "loop",
+    "tier",
+    "inputs",
+    "writes",
+    "tools",
+    "output"
+  ],
   "additionalProperties": false,
   "properties": {
-    "name": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
-    "description": { "type": "string" },
-    "loop": { "type": "string", "enum": ["decide", "build", "verify", "accept", "learn"] },
-    "tier": { "type": "string", "enum": ["judgment", "production", "scout", "mechanical"] },
-    "inputs": { "type": "array", "items": { "type": "string" } },
-    "writes": { "type": "string", "enum": ["none", "run_dir", "worktree"] },
-    "tools": { "type": "array", "items": { "type": "string" } },
-    "output": { "type": "string", "enum": ["seat-output.json", "claim.json", "evidence.json", "acceptance.json", "none"] },
-    "stop_when": { "type": "array", "items": { "type": "string" } },
-    "references": { "type": "array", "items": { "type": "string" } }
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$"
+    },
+    "description": {
+      "type": "string"
+    },
+    "loop": {
+      "type": "string",
+      "enum": [
+        "decide",
+        "build",
+        "verify",
+        "accept",
+        "learn"
+      ]
+    },
+    "tier": {
+      "type": "string",
+      "enum": [
+        "judgment",
+        "production",
+        "scout",
+        "mechanical"
+      ]
+    },
+    "inputs": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "writes": {
+      "type": "string",
+      "enum": [
+        "none",
+        "run_dir",
+        "worktree"
+      ]
+    },
+    "tools": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "output": {
+      "type": "string",
+      "enum": [
+        "seat-output.json",
+        "claim.json",
+        "evidence.json",
+        "acceptance.json",
+        "none",
+        "buyer-answer.json"
+      ]
+    },
+    "stop_when": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "references": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
   }
 }

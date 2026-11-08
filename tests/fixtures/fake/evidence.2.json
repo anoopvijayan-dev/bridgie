@@ -1,0 +1,6 @@
+{
+  "seat": "evidence",
+  "summary_md": "Three brokers interviewed; all three spend half a day per application; none measured it.",
+  "artifact_md": "## What the material shows\n- 3 of 3 brokers say a pack takes 4–6 hours (notes-broker-1.md, notes-broker-2.md, notes-broker-3.md)\n\n## What it does not show\n- No timesheet; the hours are recalled, not measured.\n\n## Sources\n- 3 interview notes, 3 independent firms",
+  "proposals": [ { "kind": "confidence", "text": "anecdote: three independent brokers, recalled not measured" } ]
+}

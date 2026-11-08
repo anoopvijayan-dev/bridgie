@@ -53,6 +53,9 @@ test('betTransition enforces the status machine and sign gates', () => {
   assert.throws(() => st.betTransition(root, 'b', 'signed', { by: 'tester' }), /confidence/);
   st.setFm(st.betPath(root, 'b'), { confidence: 'test' });
   assert.throws(() => st.betTransition(root, 'b', 'signed', { by: 'someone-else' }), /owner/);
+  // money needs unit economics (require_numbers)
+  assert.throws(() => st.betTransition(root, 'b', 'signed', { by: 'tester' }), /unit economics/);
+  writeFileSync(join(root, '.bridgie', 'bets', 'b', 'numbers.json'), JSON.stringify({ contribution_per_unit: 3, checks: { unit_positive: true } }));
   st.betTransition(root, 'b', 'signed', { by: 'tester' });
   const { data } = st.readFm(st.betPath(root, 'b'));
   assert.equal(data.status, 'signed');

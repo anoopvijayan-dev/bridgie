@@ -1,32 +1,97 @@
 {
   "type": "object",
-  "required": ["version"],
+  "required": [
+    "version"
+  ],
   "properties": {
-    "version": { "type": "integer" },
-    "default_lane": { "type": "string", "enum": ["engineering", "product", "marketing", "sales", "platform", "security"] },
-    "retries": { "type": "object", "properties": { "max_attempts": { "type": "integer" } } },
-    "commit_transcripts": { "type": "boolean" },
+    "version": {
+      "type": "integer"
+    },
+    "default_lane": {
+      "type": "string",
+      "enum": [
+        "engineering",
+        "product",
+        "marketing",
+        "sales",
+        "platform",
+        "security"
+      ]
+    },
+    "retries": {
+      "type": "object",
+      "properties": {
+        "max_attempts": {
+          "type": "integer"
+        }
+      }
+    },
+    "commit_transcripts": {
+      "type": "boolean"
+    },
     "lanes": {
       "type": "object",
       "additionalProperties": {
         "type": "object",
         "properties": {
-          "tiers_default": { "type": "array", "items": { "type": "string" } },
-          "approvers": { "type": "integer" },
-          "cross_family": { "type": "boolean" },
-          "min_confidence_to_sign": { "type": "string", "enum": ["opinion", "anecdote", "data", "test"] },
+          "tiers_default": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "approvers": {
+            "type": "integer"
+          },
+          "cross_family": {
+            "type": "boolean"
+          },
+          "min_confidence_to_sign": {
+            "type": "string",
+            "enum": [
+              "opinion",
+              "anecdote",
+              "data",
+              "test"
+            ]
+          },
           "by_risk": {
             "type": "object",
             "additionalProperties": {
               "type": "object",
               "properties": {
-                "tiers": { "type": "array", "items": { "type": "string" } },
-                "approvers": { "type": "integer" },
-                "auto_accept": { "type": "boolean" },
-                "min_confidence_to_sign": { "type": "string", "enum": ["opinion", "anecdote", "data", "test"] },
-                "human_ack_before_build": { "type": "boolean" }
+                "tiers": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "approvers": {
+                  "type": "integer"
+                },
+                "auto_accept": {
+                  "type": "boolean"
+                },
+                "min_confidence_to_sign": {
+                  "type": "string",
+                  "enum": [
+                    "opinion",
+                    "anecdote",
+                    "data",
+                    "test"
+                  ]
+                },
+                "human_ack_before_build": {
+                  "type": "boolean"
+                },
+                "require_numbers": {
+                  "type": "boolean"
+                }
               }
             }
+          },
+          "require_numbers": {
+            "type": "boolean"
           }
         }
       }
@@ -34,12 +99,52 @@
     "routing": {
       "type": "object",
       "properties": {
-        "tiers": { "type": "object", "additionalProperties": { "$ref": "#/$defs/route" } },
-        "seats": { "type": "object", "additionalProperties": { "$ref": "#/$defs/route" } }
+        "tiers": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/route"
+          }
+        },
+        "seats": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/route"
+          }
+        }
+      }
+    },
+    "swarm": {
+      "type": "object",
+      "properties": {
+        "parallel": {
+          "type": "integer"
+        },
+        "default_n": {
+          "type": "integer"
+        },
+        "max_n": {
+          "type": "integer"
+        }
       }
     }
   },
   "$defs": {
-    "route": { "type": "object", "required": ["adapter"], "properties": { "adapter": { "type": "string" }, "model": { "type": "string" }, "effort": { "type": "string" } } }
+    "route": {
+      "type": "object",
+      "required": [
+        "adapter"
+      ],
+      "properties": {
+        "adapter": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "effort": {
+          "type": "string"
+        }
+      }
+    }
   }
 }

@@ -1,0 +1,9 @@
+{
+  "seat": "profiler",
+  "summary_md": "Guesses: segment shares, the income ranges. Check: whether solo brokers exist in volume.",
+  "files": {
+    "customer.yaml": "business: Statement pack builder for brokers\ntarget: UK commercial finance broker, 2–5 staff, at month-end\nsegments:\n  - { name: solo broker, share: 0.5, income: [40000, 60000] }\n  - { name: small firm, share: 0.5, income: [60000, 120000] }\nbehaviours:\n  - { name: deadline buyer, share: 0.6, how: buys when a deal is stuck }\n  - { name: tool sceptic, share: 0.4, how: has been burned by software before }\nobjections:\n  - lenders will not accept it\n  - my junior is cheaper\nhabits:\n  - works Saturdays in Q4\n",
+    "pitch.md": "A pack builder that reads a year of bank statements and produces the lender's own template.\n£39 per application, pay as you go.\nUpload PDFs or connect open banking; the pack is ready in ten minutes.\nFirst three applications free.\n"
+  },
+  "proposals": [ { "kind": "confidence", "text": "data: the panel will tell us" } ]
+}

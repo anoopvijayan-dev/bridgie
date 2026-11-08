@@ -41,7 +41,7 @@ find_project() {
 }
 
 if [[ "$probe" == "1" ]]; then find_agy >/dev/null && { echo OK; exit 0; }; echo "agy not found (PATH or %LOCALAPPDATA%/agy/bin)" >&2; exit 1; fi
-if [[ "$caps" == "1" ]]; then echo '{"vendor":"google","reads_repo":true}'; exit 0; fi
+if [[ "$caps" == "1" ]]; then echo '{"vendor":"google","reads_repo":true,"reads_web":false}'; exit 0; fi
 adapter_require_run_args
 AGY="$(find_agy)" || { echo "agy not found" >&2; exit 1; }
 project="$(find_project "$cwd")" || { echo "no Antigravity project covers $cwd; open it in Antigravity once or set BRIDGIE_AGY_PROJECT" >&2; exit 1; }

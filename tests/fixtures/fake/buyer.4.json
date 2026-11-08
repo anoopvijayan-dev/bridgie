@@ -1,0 +1,1 @@
+{ "card": "CARD", "buys": true, "purchases_first_month": 1, "reason_code": "need", "reason": "worth a try on the next stuck deal", "objection": "setup time", "would_flip": "n/a", "prices": { "too_cheap": 8, "bargain": 20, "getting_expensive": 60, "too_expensive": 100 } }

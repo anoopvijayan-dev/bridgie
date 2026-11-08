@@ -6,7 +6,7 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../lib/common.sh"
 adapter_parse "$@"
 CLI="${BRIDGIE_CLAUDE_BIN:-claude}"
 if [[ "$probe" == "1" ]]; then command -v "$CLI" >/dev/null 2>&1 && { echo OK; exit 0; }; echo "claude CLI not found on PATH" >&2; exit 1; fi
-if [[ "$caps" == "1" ]]; then echo '{"vendor":"anthropic","reads_repo":true}'; exit 0; fi
+if [[ "$caps" == "1" ]]; then echo '{"vendor":"anthropic","reads_repo":true,"reads_web":true}'; exit 0; fi
 adapter_require_run_args
 reply="$(dirname "$out")/reply.txt"
 args=(-p --output-format text --add-dir "$(dirname "$out")")
@@ -15,7 +15,7 @@ args=(-p --output-format text --add-dir "$(dirname "$out")")
 if [[ "$mode" == "readonly" ]]; then
   # Read and inspect only; everything not allowed is refused without prompting.
   args+=(--permission-mode dontAsk
-         --allowedTools "Read" "Grep" "Glob" "LS" "Bash(git diff:*)" "Bash(git log:*)" "Bash(git show:*)" "Bash(git status:*)"
+         --allowedTools "Read" "Grep" "Glob" "LS" "WebSearch" "WebFetch" "Bash(git diff:*)" "Bash(git log:*)" "Bash(git show:*)" "Bash(git status:*)"
          --disallowedTools "Edit" "Write" "MultiEdit" "NotebookEdit")
 else
   args+=(--permission-mode acceptEdits

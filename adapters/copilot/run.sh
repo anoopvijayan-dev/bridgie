@@ -18,7 +18,7 @@ vendor_of() {
 }
 
 if [[ "$probe" == "1" ]]; then command -v "$CLI" >/dev/null 2>&1 && { echo OK; exit 0; }; echo "copilot CLI not found on PATH" >&2; exit 1; fi
-if [[ "$caps" == "1" ]]; then printf '{"vendor":"%s","reads_repo":true}\n' "$(vendor_of "$model")"; exit 0; fi
+if [[ "$caps" == "1" ]]; then printf '{"vendor":"%s","reads_repo":true,"reads_web":%s}\n' "$(vendor_of "$model")" "$([[ "${BRIDGIE_COPILOT_WEB:-0}" == "1" ]] && echo true || echo false)"; exit 0; fi
 adapter_require_run_args
 reply="$(dirname "$out")/reply.txt"
 instruction="Read $(winpath "$prompt") in full. It contains your role, inputs and output contract. Do the work now in $(winpath "$cwd"), then end your reply with the fenced json block it asks for."

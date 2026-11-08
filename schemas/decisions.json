@@ -37,7 +37,8 @@
               "approve_design",
               "ack_risk",
               "accept",
-              "unblock"
+              "unblock",
+              "confidence"
             ]
           },
           "raised_by": {

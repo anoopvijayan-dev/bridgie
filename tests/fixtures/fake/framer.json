@@ -1,0 +1,9 @@
+{
+  "seat": "framer",
+  "summary_md": "Assumed: brokers pay per deal; the junior's time is the cost; lenders will accept a standard pack.",
+  "artifact_md": "## Who\nA UK commercial finance broker with two to five staff, preparing a lending application at month-end.\n\n## Problem in their words\n\"I spend most of Tuesday on statements for one client.\" (assumption: typical, from one broker)\n\n## Why now\nOpen banking data is now available for most SME accounts (changed 2025).\n\n## What they do today\nSpreadsheets and a junior who keys the numbers in.\n\n## Expected outcome\nStatement analysis per application from ~6 hours to under 1 hour, read from broker timesheets by 2027-03. Baseline unknown.",
+  "questions": [
+    { "context": "Who pays: the broker per deal, or the lender?", "options": ["broker per deal", "broker subscription", "lender", "don't know"], "allow_free_text": true },
+    { "context": "Is 6 hours per application measured or a guess?", "options": ["measured", "guess", "don't know"], "allow_free_text": true }
+  ]
+}

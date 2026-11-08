@@ -129,3 +129,31 @@ test('acceptance uses the raised risk for the approver count', () => {
   fl.answer(root, 'b', d.id, 'approve', { by: 'tester' });
   assert.equal(st.readFm(fl.acceptancePath(root, 'b')).data.decision, 'pending', 'money needs two approvers');
 });
+
+// ---------- M3: numbers gate and confidence decisions ----------
+test('a money bet cannot be signed without positive unit economics', () => {
+  const root = mkdtempSync(join(tmpdir(), 'bridgie-nums-'));
+  for (const d of ['bets', 'specs', 'runs', 'acceptance', 'decisions', 'learn']) mkdirSync(join(root, '.bridgie', d), { recursive: true });
+  writeFileSync(join(root, '.bridgie', 'policy.yaml'), 'version: 1\n');
+  st.betNew(root, 'm', { title: 'M', lane: 'product', risk: 'money', owner: 'tester' });
+  for (const s of ['grilling', 'evidence']) st.betTransition(root, 'm', s);
+  st.setFm(st.betPath(root, 'm'), { confidence: 'data' });
+  assert.throws(() => st.betTransition(root, 'm', 'signed', { by: 'tester' }), /requires unit economics/);
+  writeFileSync(join(root, '.bridgie', 'bets', 'm', 'numbers.json'), JSON.stringify({ contribution_per_unit: -2, checks: { unit_positive: false } }));
+  assert.throws(() => st.betTransition(root, 'm', 'signed', { by: 'tester' }), /loses money/);
+  writeFileSync(join(root, '.bridgie', 'bets', 'm', 'numbers.json'), JSON.stringify({ contribution_per_unit: 5, checks: { unit_positive: true } }));
+  st.betTransition(root, 'm', 'signed', { by: 'tester' });
+  assert.equal(st.readFm(st.betPath(root, 'm')).data.status, 'signed');
+});
+
+test('a confidence proposal becomes a decision; accepting sets the tier, keeping leaves it', () => {
+  const root = project();
+  assert.equal(fl.proposeConfidence(root, 'b', 'test: nothing new'), null);          // project() signs at confidence test
+  const d = fl.proposeConfidence(root, 'b', 'anecdote: three brokers said the same thing', { seat: 'evidence', run: 'evidence-01' });
+  assert.deepEqual(d.options, ['accept anecdote', 'keep test']);
+  fl.answer(root, 'b', d.id, 'keep test', { by: 'tester' });
+  assert.equal(st.readFm(st.betPath(root, 'b')).data.confidence, 'test');
+  const d2 = fl.proposeConfidence(root, 'b', 'data: 40 timesheets measured');
+  fl.answer(root, 'b', d2.id, 'accept data', { by: 'tester' });
+  assert.equal(st.readFm(st.betPath(root, 'b')).data.confidence, 'data');
+});

@@ -1,0 +1,1 @@
+{ "card": "CARD", "buys": false, "purchases_first_month": 0, "reason_code": "price", "reason": "no", "objection": "price", "would_flip": "free tier", "prices": { "too_cheap": 20, "bargain": 10, "getting_expensive": 30, "too_expensive": 60 } }

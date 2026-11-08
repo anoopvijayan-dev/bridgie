@@ -4,7 +4,7 @@ import { basename, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { splitFrontmatter } from './yaml.mjs';
 import { assertValid } from './schema.mjs';
-import { HOME, loadSchema, betPath, readFm, readJson, tasksPath, runsDir } from './state.mjs';
+import { HOME, loadSchema, loadPolicy, betPath, readFm, readJson, tasksPath, runsDir } from './state.mjs';
 
 const REQUIRED = new Set(['bet', 'requirements', 'design', 'task']);
 
@@ -35,6 +35,35 @@ function resolveInput(name, ctx) {
   const { root, slug, lane, runDir, cwd, task } = ctx;
   const file = (p, label) => existsSync(p) ? { label, text: readFileSync(p, 'utf8'), path: p } : null;
   if (name === 'bet') return file(betPath(root, slug), '.bridgie/bets/' + slug + '/bet.md');
+  const betFile = (f, label) => file(join(root, '.bridgie', 'bets', slug, f), label || `.bridgie/bets/${slug}/${f}`);
+  if (name === 'opportunity') return betFile('opportunity.md', 'the scouted opportunity this bet came from');
+  if (name === 'research') return betFile('research.md');
+  if (name === 'board') return betFile('board.md');
+  if (name === 'panel') return betFile('panel.md');
+  if (name === 'numbers') return betFile('numbers.md');
+  if (name === 'pitch') return betFile('pitch.md', 'the pitch, exactly as every buyer sees it');
+  if (name === 'signals' || name === 'evidence_material') {
+    // Text files the runner copied into the run directory (scout) or the owner dropped beside the bet (evidence).
+    const dir = name === 'signals' ? join(runDir, 'signals') : join(root, '.bridgie', 'bets', slug, 'evidence');
+    if (!existsSync(dir)) return null;
+    const files = readdirSync(dir).filter(f => !f.startsWith('_') && statSync(join(dir, f)).isFile()).sort();
+    if (!files.length) return null;
+    let total = 0;
+    const parts = files.map(f => {
+      let t = readFileSync(join(dir, f), 'utf8');
+      if (t.length > 40 * 1024) t = t.slice(0, 40 * 1024) + '\n…[truncated]';
+      total += t.length;
+      return total > 400 * 1024 ? `### ${f}\n(omitted: total cap reached)` : `### ${f}\n\n${t.trim()}`;
+    });
+    const label = name === 'signals' ? `signal files (${files.length}); the runner copied them, nothing else is in scope` : `evidence material the owner collected (${files.length} files)`;
+    return { label, text: parts.join('\n\n'), path: dir };
+  }
+  if (name === 'lens_memos') {
+    const dir = join(runDir, 'memos');
+    if (!existsSync(dir)) return null;
+    const files = readdirSync(dir).filter(f => f.endsWith('.md')).sort();
+    return files.length ? { label: `the three lens memos`, text: files.map(f => `### ${f.replace(/\.md$/, '')}\n\n${readFileSync(join(dir, f), 'utf8').trim()}`).join('\n\n'), path: dir } : null;
+  }
   if (name === 'requirements') return file(join(root, '.bridgie', 'specs', slug, 'requirements.md'), `.bridgie/specs/${slug}/requirements.md`);
   if (name === 'design') return file(join(root, '.bridgie', 'specs', slug, 'design.md'), `.bridgie/specs/${slug}/design.md`);
   if (name === 'task') {
@@ -46,6 +75,12 @@ function resolveInput(name, ctx) {
     return { label: `task ${task}`, text: '```json\n' + JSON.stringify(t, null, 2) + '\n```', path: tp };
   }
   if (name === 'diff') return file(join(runDir, 'diff.patch'), 'diff.patch');
+  if (name === 'card') {
+    // One swarm member's variables (a buyer persona card), copied by run_seat --vars.
+    const f = join(runDir, 'vars.json');
+    if (!existsSync(f)) throw new Error('seat input "card" needs run_seat --vars <json>');
+    return { label: 'your card (this run only)', text: '```json\n' + JSON.stringify(readJson(f), null, 2) + '\n```', path: f };
+  }
   if (name === 'mechanical_results') {
     // The runner ran these commands in the task worktree before the review (finding 6: the
     // reviewer cannot run anything itself). Each row with the tail of its log.
@@ -77,8 +112,10 @@ function resolveInput(name, ctx) {
 
 export function assemble(root, slug, seatRel, opts = {}) {
   const { manifest, body, dir } = loadSeat(seatRel);
-  const bet = readFm(betPath(root, slug)).data;
-  const ctx = { root, slug, lane: bet.lane, runDir: opts.runDir, cwd: opts.cwd || root, task: opts.task };
+  // A bet-less run (bridgie scout) uses the project's default lane.
+  const hasBet = existsSync(betPath(root, slug));
+  const lane = hasBet ? readFm(betPath(root, slug)).data.lane : (loadPolicy(root).default_lane || 'engineering');
+  const ctx = { root, slug, lane, runDir: opts.runDir, cwd: opts.cwd || root, task: opts.task };
   const sections = [], inputs = [], missing = [];
   for (const raw of manifest.inputs) {
     const optional = raw.endsWith('?');

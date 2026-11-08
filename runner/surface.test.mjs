@@ -65,6 +65,8 @@ test('bet page blocks sign when confidence is below the policy minimum for the r
   assert.ok(html.includes('confidence &quot;opinion&quot; is below &quot;data&quot;'));
   assert.match(html, /value="sign"[^>]*disabled/);
   st.setFm(st.betPath(root, 'm'), { confidence: 'data' });
+  assert.ok(renderBet(root, 'm').includes('requires unit economics'));          // money also needs numbers
+  writeFileSync(join(root, '.bridgie', 'bets', 'm', 'numbers.json'), JSON.stringify({ contribution_per_unit: 3, checks: { unit_positive: true } }));
   assert.ok(!/value="sign"[^>]*disabled/.test(renderBet(root, 'm')));
 });
 

@@ -1,6 +1,7 @@
 # Bridgie default policy. Projects override keys in <project>/.bridgie/policy.yaml.
 version: 1
 retries: { max_attempts: 3 }
+swarm: { parallel: 4, default_n: 20, max_n: 100 }   # simulated buyer panel: agents at once, default and ceiling per panel
 commit_transcripts: false
 lanes:
   engineering:
@@ -9,7 +10,7 @@ lanes:
     cross_family: true
     min_confidence_to_sign: anecdote
     by_risk:
-      money: { tiers: [mechanical, specified, contracts, invariants, adversarial, behavioural, dual_run], approvers: 2, auto_accept: false, min_confidence_to_sign: data, human_ack_before_build: true }
+      money: { tiers: [mechanical, specified, contracts, invariants, adversarial, behavioural, dual_run], approvers: 2, auto_accept: false, min_confidence_to_sign: data, human_ack_before_build: true, require_numbers: true }
       data: { tiers: [mechanical, specified, contracts, adversarial, behavioural], approvers: 1, auto_accept: false, min_confidence_to_sign: anecdote, human_ack_before_build: true }
       security: { tiers: [mechanical, specified, adversarial, behavioural], approvers: 1, auto_accept: false, min_confidence_to_sign: anecdote, human_ack_before_build: true }
       infra: { tiers: [mechanical, adversarial], approvers: 1, auto_accept: false, min_confidence_to_sign: anecdote, human_ack_before_build: true }
@@ -19,6 +20,8 @@ lanes:
     tiers_default: [adversarial]
     approvers: 1
     min_confidence_to_sign: anecdote
+    by_risk:
+      money: { approvers: 1, min_confidence_to_sign: data, require_numbers: true }
   marketing:
     tiers_default: [mechanical, adversarial]
     approvers: 1

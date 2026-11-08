@@ -1,10 +1,14 @@
 # shellcheck shell=bash
-# bridgie grill <slug> — stress-test the bet's why; questions become decisions.
+# bridgie grill <slug> [--lenses] — stress-test the bet's why; questions become decisions.
+# --lenses runs the three-lens board and chair as well (bridgie lenses <slug>).
 # shellcheck source=../lib/seat.sh
 source "$BRIDGIE_HOME/runner/lib/seat.sh"
 
 cmd_grill() {
-  local slug="${1:-}"; [[ -n "$slug" ]] || die "usage: bridgie grill <slug>"
+  local slug="${1:-}"; shift || true
+  [[ -n "$slug" ]] || die "usage: bridgie grill <slug> [--lenses]"
+  local lenses=0
+  while [[ $# -gt 0 ]]; do case "$1" in --lenses) lenses=1; shift ;; *) die "grill: unknown argument $1" ;; esac; done
   local root; root="$(project_root)"
   local bet="$root/.bridgie/bets/$slug/bet.md"
   [[ -f "$bet" ]] || die "no bet '$slug' (bridgie bet new $slug)"
@@ -26,4 +30,9 @@ cmd_grill() {
   state_commit "$root" "grill $slug ($(basename "$run_dir"))"
   local count; count="$(printf '%s' "$ids" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>process.stdout.write(String(JSON.parse(s||"[]").length)))')"
   log "grill $slug: $count question(s) raised, sign decision ready. Answer them with: bridgie open $slug   (or: bridgie decide $slug <id> <answer>)"
+  if [[ "$lenses" == "1" ]]; then
+    # shellcheck source=./lenses.sh
+    source "$BRIDGIE_HOME/runner/cmd/lenses.sh"
+    cmd_lenses "$slug"
+  fi
 }

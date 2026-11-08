@@ -159,6 +159,8 @@ export function betTransition(root, slug, to, opts = {}) {
     if (!opts.by || opts.by !== data.owner) throw new Error(`bet "${slug}": only the owner "${data.owner}" can sign (acting as "${opts.by || 'nobody'}")`);
     const pending = existsSync(decisionsPath(root, slug)) ? readJson(decisionsPath(root, slug)).decisions.filter(d => d.type === 'question' && d.status === 'pending') : [];
     if (pending.length) throw new Error(`bet "${slug}": ${pending.length} question(s) still pending (${pending.map(d => d.id).join(', ')}); answer or defer them first`);
+    const nums = numbersGate(root, slug, pol);
+    if (nums) throw new Error(`bet "${slug}": ${nums}`);
     patch.signed_at = now(); patch.signed_by = opts.by;
   }
   setFm(file, patch, 'bet');
@@ -173,6 +175,16 @@ export function raiseRisk(root, slug, risk, reason) {
   if (RISK_ORDER.indexOf(risk) <= RISK_ORDER.indexOf(data.risk)) return { from: data.risk, to: data.risk, changed: false };
   writeFm(file, { ...data, risk }, appendToSection(body, 'Risk log', `- ${today()} risk ${data.risk} → ${risk}: ${reason}`), 'bet');
   return { from: data.risk, to: risk, changed: true };
+}
+
+// numbersGate: why a bet whose policy requires numbers cannot be signed yet, or null.
+export function numbersGate(root, slug, pol) {
+  if (!pol.require_numbers) return null;
+  const f = join(root, '.bridgie', 'bets', slug, 'numbers.json');
+  if (!existsSync(f)) return `policy requires unit economics for this risk; run bridgie numbers ${slug} --template, fill it in, then bridgie numbers ${slug}`;
+  const n = readJson(f);
+  if (!n.checks?.unit_positive) return `unit economics show each unit loses money (contribution ${n.contribution_per_unit}); fix the numbers or kill the bet`;
+  return null;
 }
 
 // ---------- decisions ----------

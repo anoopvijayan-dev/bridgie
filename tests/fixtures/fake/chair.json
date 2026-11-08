@@ -1,0 +1,8 @@
+{
+  "seat": "chair",
+  "summary_md": "Vote: one fund, one fund if, one pass. Shared risk: lenders refuse a standard pack. Disagreement: the moat lens sees no defensibility; the product lens sees a whole product. Strongest version: broker-side pack builder sold per deal. First: ask three brokers what Tuesday costs them.",
+  "artifact_md": "## Shared risks\n- Lenders refuse a standard pack (offer, moat)\n\n## Conditions\n- [ ] Three brokers confirm the Tuesday cost (evidence)\n- [ ] Two lenders accept a standard pack (evidence)\n\n## Where the board disagrees\n- Moat: nothing stops a lender copying it. Product: the broker relationship is the product.\n\n## The strongest version\nA pack builder brokers pay for per deal, starting with the two lenders brokers use most.",
+  "questions": [
+    { "context": "How many applications a month does a typical target broker handle?", "options": ["under 5", "5–20", "over 20", "don't know"], "allow_free_text": true }
+  ]
+}

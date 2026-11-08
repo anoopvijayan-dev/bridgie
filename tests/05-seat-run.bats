@@ -101,3 +101,27 @@ setup() {
   run bash -c "cd '$P' && bridgie seat-run b decide/grill"
   [ "$status" -eq 0 ]
 }
+
+@test "packets copy directories, --vars becomes the card input, --exclude hides sibling runs from the guard" {
+  pk="$(mktemp -d)"; mkdir -p "$pk/signals"; echo 'ticket 1: refunds take a week' > "$pk/signals/t1.txt"
+  echo '{"id":"B01","segment":"owner"}' > "$pk/card.json"
+  # a seat that declares the card input, for this test only
+  mkdir -p "$BRIDGIE_HOME/seats/decide/_cardtest"
+  printf -- '---\nname: cardtest\nloop: decide\ntier: scout\ninputs: [card]\nwrites: run_dir\ntools: [read]\noutput: seat-output.json\n---\nSay hi.\n' > "$BRIDGIE_HOME/seats/decide/_cardtest/SKILL.md"
+  mkdir -p "$P/.bridgie/runs/b/swarm-01/other-run"; echo x > "$P/.bridgie/runs/b/swarm-01/other-run/sibling.txt"
+  run bash -c "cd '$P' && BRIDGIE_RUNS_DIR='$P/.bridgie/runs/b/swarm-01' BRIDGIE_FAKE_OUTPUT='$BRIDGIE_HOME/tests/fixtures/fake/grill.json' bridgie seat-run b decide/_cardtest --packet '$pk' --vars '$pk/card.json' --exclude '$P/.bridgie/runs/b/swarm-01' --no-lock"
+  rm -rf "$BRIDGIE_HOME/seats/decide/_cardtest"
+  [ "$status" -eq 0 ]
+  [ -f "$output/signals/t1.txt" ]
+  grep -q '"segment": "owner"' "$output/prompt.md"
+  [ ! -f "$output/VIOLATION" ]
+}
+
+@test "a seat that needs the web is refused on an adapter without it" {
+  mkdir -p "$BRIDGIE_HOME/seats/decide/_webtest"
+  printf -- '---\nname: webtest\nloop: decide\ntier: scout\ninputs: [bet]\nwrites: run_dir\ntools: [read, web]\noutput: seat-output.json\n---\nSearch.\n' > "$BRIDGIE_HOME/seats/decide/_webtest/SKILL.md"
+  run bash -c "cd '$P' && BRIDGIE_FAKE_READS_WEB=0 BRIDGIE_FAKE_OUTPUT='$BRIDGIE_HOME/tests/fixtures/fake/grill.json' bridgie seat-run b decide/_webtest"
+  rm -rf "$BRIDGIE_HOME/seats/decide/_webtest"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"needs web access"* ]]
+}
