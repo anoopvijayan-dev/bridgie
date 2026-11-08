@@ -9,38 +9,31 @@ load helpers
   [[ "$d" != *"<"* ]]
 }
 
-@test "install copies the skill, adds PATH once, and creates a routing policy once" {
-  H="$(mktemp -d)"; mkdir -p "$H/.claude" "$H/.agents"
-  run env HOME="$H" "$BRIDGIE_HOME/bin/install.sh"
+@test "setup copies the skill, links with npm, creates a routing policy once, and is safe to re-run" {
+  H="$(mktemp -d)"; mkdir -p "$H/.claude" "$H/.agents" "$H/stub"
+  printf '#!/bin/sh\necho "$@" >> "%s/npm.log"\n' "$H" > "$H/stub/npm"; chmod +x "$H/stub/npm"
+  run env HOME="$H" PATH="$H/stub:$PATH" node "$BRIDGIE_HOME/bin/bridgie.mjs" setup
   [ "$status" -eq 0 ]
   [ -f "$H/.claude/skills/bridgie/SKILL.md" ] && [ -f "$H/.agents/skills/bridgie/SKILL.md" ]
-  grep -qF "$BRIDGIE_HOME/bin" "$H/.bashrc"
-  grep -qF "$BRIDGIE_HOME/bin" "$H/.bash_profile"     # Git Bash and macOS login shells read this one
+  [ "$(cat "$H/npm.log")" = "install -g $BRIDGIE_HOME" ]
+  [[ "$output" == *"works in PowerShell, cmd, Git Bash, macOS and Linux"* ]]
   grep -q 'adapter: copilot' "$H/.bridgie/policy.yaml"
-  BRIDGIE_USER_POLICY="$H/.bridgie/policy.yaml" node "$BRIDGIE_HOME/runner/state.mjs" policy "$(make_project)" >/dev/null 2>&1 || {
-    P="$(make_project)"; (cd "$P" && bridgie init) >/dev/null 2>&1
-    BRIDGIE_USER_POLICY="$H/.bridgie/policy.yaml" node "$BRIDGIE_HOME/runner/state.mjs" policy "$P" >/dev/null
-  }
-  run env HOME="$H" "$BRIDGIE_HOME/bin/install.sh" --path --policy     # old flags still accepted
-  [ "$(grep -cF "$BRIDGIE_HOME/bin" "$H/.bashrc")" -eq 1 ]
-  [ "$(grep -cF "$BRIDGIE_HOME/bin" "$H/.bash_profile")" -eq 1 ]
+  run env HOME="$H" PATH="$H/stub:$PATH" "$BRIDGIE_HOME/bin/install.sh"      # old entry point still works
+  [ "$status" -eq 0 ]
   [[ "$output" == *"already exists"* ]]
+  run env HOME="$H" node "$BRIDGIE_HOME/bin/bridgie.mjs" setup --no-link --no-policy
+  [ "$status" -eq 0 ]
+  [ "$(wc -l < "$H/npm.log")" -eq 2 ]
 }
 
-@test "on Windows the installer drops a bridgie.cmd shim where PowerShell and cmd already look" {
-  H="$(mktemp -d)"; mkdir -p "$H/AppData/Local/Microsoft/WindowsApps" "$H/bin"
-  cat > "$H/bin/cygpath" <<'SH'
-#!/usr/bin/env bash
-case "$1" in -w) echo "C:\\fake$2" ;; -u) echo "$2" ;; esac
-SH
-  chmod +x "$H/bin/cygpath"
-  run env HOME="$H" MSYSTEM=MINGW64 LOCALAPPDATA="$H/AppData/Local" PATH="$H/bin:$PATH" "$BRIDGIE_HOME/bin/install.sh" --no-policy
+@test "setup removes the old bash-era Windows shim, and leaves other files alone" {
+  H="$(mktemp -d)"; W="$H/AppData/Local/Microsoft/WindowsApps"; mkdir -p "$W"
+  printf '@echo off\r\n"C:\\Git\\usr\\bin\\bash.exe" "/c/Users/x/bridgie/bin/bridgie" %%*\r\n' > "$W/bridgie.cmd"
+  echo 'something else' > "$W/other.cmd"
+  run env HOME="$H" LOCALAPPDATA="$H/AppData/Local" node "$BRIDGIE_HOME/bin/bridgie.mjs" setup --no-link --no-policy
   [ "$status" -eq 0 ]
-  [ -f "$H/AppData/Local/Microsoft/WindowsApps/bridgie.cmd" ]
-  grep -q '@echo off' "$H/AppData/Local/Microsoft/WindowsApps/bridgie.cmd"
-  grep -qF "\"$BRIDGIE_HOME/bin/bridgie\" %*" "$H/AppData/Local/Microsoft/WindowsApps/bridgie.cmd"   # forward-slash path: bash resolves its home from it
-  grep -q '^set "PATH=C:.*;%PATH%"' "$H/AppData/Local/Microsoft/WindowsApps/bridgie.cmd"   # Git tools first
-  [[ "$output" == *"works from PowerShell and cmd too"* ]]
+  [ ! -e "$W/bridgie.cmd" ] && [ -f "$W/other.cmd" ]
+  [[ "$output" == *"removed the old bash shim"* ]]
 }
 
 @test "bridgie new makes the folder, the git repo and the state in one step; plain bridgie says what to do next" {
@@ -61,9 +54,13 @@ SH
   [ "$status" -ne 0 ]
 }
 
-@test "bin/bridgie starts without dirname on PATH (as from a Windows shim)" {
-  T="$(mktemp -d)"; ln -s "$(command -v node)" "$T/node"; for c in tr cat; do ln -s "$(command -v $c)" "$T/$c"; done
-  run env -i HOME="$HOME" PATH="$T" "$BASH" "$BRIDGIE_HOME/bin/bridgie" version
+@test "bridgie runs with nothing but node on PATH (no bash tools needed)" {
+  T="$(mktemp -d)"; ln -s "$(command -v node)" "$T/node"; ln -s "$(command -v git)" "$T/git"
+  run env -i HOME="$HOME" PATH="$T" "$T/node" "$BRIDGIE_HOME/bin/bridgie.mjs" version
   [ "$status" -eq 0 ]
   [[ "$output" == bridgie\ 0.* ]]
+  W="$(mktemp -d)"
+  run env -i HOME="$HOME" PATH="$T" BRIDGIE_USER=t "$BASH" -c "cd '$W' && '$T/node' '$BRIDGIE_HOME/bin/bridgie.mjs' new p --lane product"
+  [ "$status" -eq 0 ]
+  [ -f "$W/p/.bridgie/policy.yaml" ]
 }

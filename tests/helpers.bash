@@ -30,7 +30,7 @@ signed_bet() {
     cd "$p" || exit 1
     if [[ ! -d .bridgie ]]; then
       bridgie init >/dev/null 2>&1
-      printf "verify:\n  commands:\n    mechanical: ['true']\n    specified: ['true']\n" >> .bridgie/policy.yaml   # tiers required at risk none
+      printf "verify:\n  commands:\n    mechanical: ['node -e 0']\n    specified: ['node -e 0']\n" >> .bridgie/policy.yaml   # tiers required at risk none
     fi
     bridgie bet new "$slug" --title "Net collection" --risk "$risk" >/dev/null 2>&1
     bridgie grill "$slug" >/dev/null 2>&1
@@ -58,5 +58,5 @@ task_field() { node -e 'const t=JSON.parse(require("fs").readFileSync(process.ar
 # all_tiers <project>: give every verification tier a trivially passing command (risky bets need them).
 all_tiers() {
   printf "verify:\n  commands:\n" >> "$1/.bridgie/policy.yaml"
-  for t in mechanical specified contracts invariants behavioural dual_run; do printf "    %s: ['true']\n" "$t" >> "$1/.bridgie/policy.yaml"; done
+  for t in mechanical specified contracts invariants behavioural dual_run; do printf "    %s: ['node -e 0']\n" "$t" >> "$1/.bridgie/policy.yaml"; done
 }

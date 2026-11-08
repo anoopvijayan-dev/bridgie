@@ -241,7 +241,7 @@ function commitState(root, msg) {
   } catch { /* not a git repository: nothing to commit */ }
 }
 
-const LOOPBACK = new Set(['127.0.0.1', 'localhost', '::1', '[::1]']);
+export const LOOPBACK = new Set(['127.0.0.1', 'localhost', '::1', '[::1]']);
 const sameToken = (a, b) => typeof a === 'string' && typeof b === 'string' && a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
 const cookies = req => Object.fromEntries((req.headers.cookie || '').split(';').map(c => c.trim().split('=')).filter(p => p.length === 2));
 
@@ -315,7 +315,7 @@ export function serve(root, { port = 0, host = '127.0.0.1', by = 'unknown', invi
   }));
 }
 
-function openBrowser(url) {
+export function openBrowser(url) {
   const cmd = process.platform === 'win32' ? ['cmd.exe', ['/c', 'start', '', url]]
     : process.platform === 'darwin' ? ['open', [url]] : ['xdg-open', [url]];
   try { spawn(cmd[0], cmd[1], { detached: true, stdio: 'ignore' }).unref(); } catch { /* no browser available; the URL is printed */ }

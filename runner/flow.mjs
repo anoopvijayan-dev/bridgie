@@ -55,7 +55,7 @@ export function loadTasks(root, slug) {
 }
 const saveTasks = (root, slug, doc) => st.writeJsonAtomic(st.tasksPath(root, slug), doc, 'tasks');
 
-function getTask(doc, id) {
+export function getTask(doc, id) {
   const t = doc.tasks.find(x => x.id === id);
   if (!t) throw new Error(`task ${id} not found`);
   return t;

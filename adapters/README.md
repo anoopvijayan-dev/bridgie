@@ -1,11 +1,12 @@
 # Adapters
+Each adapter is `adapters/<name>/run.mjs`, run with the same `node` as Bridgie (run.mjs is plain Node, so adapters behave the same on Windows, macOS and Linux). A legacy `run.sh` is still launched with bash if no run.mjs exists.
 
 An adapter launches one seat invocation on one model runtime. Contract:
 
-    run.sh --seat <seat dir> --prompt <prompt file> --out <output file> --cwd <dir> \
+    run.mjs --seat <seat dir> --prompt <prompt file> --out <output file> --cwd <dir> \
            --mode readonly|write --model <name> [--effort <level>]
-    run.sh --capabilities --seat <seat dir>   # prints {"vendor": "...", "reads_repo": true|false, "reads_web": true|false}
-    run.sh --probe                            # prints OK when the CLI is installed (no model call)
+    run.mjs --capabilities --seat <seat dir>   # prints {"vendor": "...", "reads_repo": true|false, "reads_web": true|false}
+    run.mjs --probe                            # prints OK when the CLI is installed (no model call)
 
 Rules:
 - Read the prompt from the file; never pass it inline (Windows argument limits).

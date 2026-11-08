@@ -10,16 +10,17 @@ rendered page and is written back to files you can diff.
 
 ## Install
 
-Needs git and Node 20+. On Windows, run the install line in **Git Bash** once; after that `bridgie` works
-in Git Bash, PowerShell and cmd.
+Needs **git** and **Node 20+**. Works the same in PowerShell, cmd, Git Bash, macOS and Linux terminals.
 
-```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/anoopvijayan-dev/bridge/main/bin/get.sh)
+```
+git clone https://github.com/anoopvijayan-dev/bridge.git ~/bridgie
+node ~/bridgie/bin/bridgie.mjs setup
 ```
 
-That clones Bridgie to `~/bridgie`, installs the agent skill, puts `bridgie` on your PATH in every shell,
-and writes `~/.bridgie/policy.yaml` (which model runtime each seat uses on this machine). Already cloned?
-Run `bin/install.sh` from the clone instead. Then open a **new** terminal.
+(On Windows PowerShell use `$HOME\bridgie` for `~/bridgie`.) `setup` links the `bridgie` command with npm, so
+npm writes the right launcher for your shell; installs the agent skill for Claude Code and other agents; and
+writes `~/.bridgie/policy.yaml` (which model runtime each seat uses on this machine). Open a **new** terminal
+afterwards. To update later: `git pull` in the clone; re-run `setup` only if it says so.
 
 ## Start
 
@@ -95,7 +96,8 @@ In an agent harness, say `/bridgie` (the installed skill drives the CLI and leav
 | Path | What |
 |---|---|
 | `bin/bridgie` | the command |
-| `runner/` | bash commands and dependency-free Node modules (state, context, surface, doctor) |
+| `bin/bridgie.mjs`, `runner/cmd/` | the CLI: one Node module per command, no bash anywhere |
+| `runner/` | dependency-free Node modules (state, context, surface, guard, doctor) |
 | `seats/<loop>/<seat>/SKILL.md` | what each agent seat is for, its inputs, what it may write (decide: scout, framer, researcher, three lenses, chair, profiler, buyer, grill, evidence) |
 | `runner/panel.mjs`, `runner/numbers.mjs` | the computed parts of the decide loop: persona cards, tallies, price range; unit economics |
 | `lanes/<lane>/` | risk paths, attack lists, checklists, verifiers per domain |
@@ -120,4 +122,4 @@ models, recovery for interrupted runs, seeded-bug evals for the reviewer, market
 
 ## Tests
 
-`tests/run.sh` (shellcheck if installed, `node --test runner/*.test.mjs`, `bats tests/`, `bridgie doctor`). Tests ignore `~/.bridgie`.
+`npm test` runs the unit tests; `tests/run.sh` runs everything (unit, `bats tests/` for the CLI, doctor). CI runs both on Linux, macOS and Windows with Node 20 and 22, and checks that `bridgie` launches from PowerShell and cmd after `setup`. Tests ignore `~/.bridgie`.

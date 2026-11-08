@@ -1,28 +1,4 @@
-#!/usr/bin/env bash
-set -euo pipefail
-
-# Resolve the tool root even when invoked through a symlink.
-# No external tools here: on Windows this may start before Git's usr/bin is on PATH.
-_self="${BASH_SOURCE[0]//\\//}"      # a Windows shim may pass C:\...\bin\bridgie: use forward slashes
-while [[ -L "$_self" ]] && command -v readlink >/dev/null; do _self="$(readlink "$_self")"; done
-_dir="${_self%/*}"; [[ "$_dir" == "$_self" ]] && _dir="."
-BRIDGIE_HOME="${BRIDGIE_HOME:-$(cd "$_dir/.." && pwd)}"
-export BRIDGIE_HOME
-
-# shellcheck source=../runner/lib/common.sh
-source "$BRIDGIE_HOME/runner/lib/common.sh"
-
-cmd="${1:-next}"          # plain `bridgie` says what to do next
-shift || true
-
-case "$cmd" in
-  help|-h|--help) usage ;;
-  version|--version) printf 'bridgie %s\n' "$(tr -d '[:space:]' < "$BRIDGIE_HOME/VERSION")" ;;
-  *)
-    f="$BRIDGIE_HOME/runner/cmd/$cmd.sh"
-    [[ -f "$f" ]] || die "unknown command: $cmd (try 'bridgie help')"
-    # shellcheck source=/dev/null
-    source "$f"
-    "cmd_${cmd//-/_}" "$@"
-    ;;
-esac
+#!/bin/sh
+# POSIX launcher for PATH-based installs; `bridgie setup` (npm) is the normal way on every OS.
+d=${0%/*}; [ "$d" = "$0" ] && d=.
+exec node "$d/bridgie.mjs" "$@"

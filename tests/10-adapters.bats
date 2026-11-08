@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
 load helpers
 
-FAKE() { "$BRIDGIE_HOME/adapters/fake/run.sh" "$@"; }
+FAKE() { node "$BRIDGIE_HOME/adapters/fake/run.mjs" "$@"; }
 
 @test "fake capabilities: producer vs verifier vendors, overrides" {
   run FAKE --capabilities --seat "$BRIDGIE_HOME/seats/build/implementer"
@@ -65,7 +65,7 @@ STUB
   export PATH="$S:$PATH"
   W="$(mktemp -d)"; mkdir -p "$W/run"; echo "PROMPT-BODY" > "$W/run/prompt.md"
 }
-run_adapter() { "$BRIDGIE_HOME/adapters/$1/run.sh" --seat "$BRIDGIE_HOME/seats/decide/grill" --prompt "$W/run/prompt.md" --out "$W/run/seat-output.json" --cwd "$W" "${@:2}"; }
+run_adapter() { node "$BRIDGIE_HOME/adapters/$1/run.mjs" --seat "$BRIDGIE_HOME/seats/decide/grill" --prompt "$W/run/prompt.md" --out "$W/run/seat-output.json" --cwd "$W" "${@:2}"; }
 
 @test "claude-code: readonly uses dontAsk with no edit tools; prompt on stdin; JSON extracted" {
   stub_env
@@ -123,11 +123,11 @@ run_adapter() { "$BRIDGIE_HOME/adapters/$1/run.sh" --seat "$BRIDGIE_HOME/seats/d
   run run_adapter claude-code --mode readonly --model default
   [ "$status" -ne 0 ]
   [[ "$output" == *"no JSON block"* ]]
-  run "$BRIDGIE_HOME/adapters/codex/run.sh" --probe
+  run node "$BRIDGIE_HOME/adapters/codex/run.mjs" --probe
   [ "$output" = "OK" ]
-  run "$BRIDGIE_HOME/adapters/antigravity/run.sh" --capabilities
+  run node "$BRIDGIE_HOME/adapters/antigravity/run.mjs" --capabilities
   [ "$output" = '{"vendor":"google","reads_repo":true,"reads_web":false}' ]
-  run "$BRIDGIE_HOME/adapters/claude-code/run.sh" --capabilities
+  run node "$BRIDGIE_HOME/adapters/claude-code/run.mjs" --capabilities
   [ "$output" = '{"vendor":"anthropic","reads_repo":true,"reads_web":true}' ]
 }
 
@@ -139,9 +139,9 @@ run_adapter() { "$BRIDGIE_HOME/adapters/$1/run.sh" --seat "$BRIDGIE_HOME/seats/d
   grep -qx 'claude-opus-5.5' "$STUB_LOG"; grep -qx 'high' "$STUB_LOG"; grep -qx 'write' "$STUB_LOG"
   [ "$(grep -n -- '--deny-tool' "$STUB_LOG" | wc -l)" -ge 1 ]
   [ "$(tail -3 "$STUB_LOG" | head -1)" = "-p" ]
-  run "$BRIDGIE_HOME/adapters/copilot/run.sh" --capabilities --model claude-opus-5.5
+  run node "$BRIDGIE_HOME/adapters/copilot/run.mjs" --capabilities --model claude-opus-5.5
   [ "$output" = '{"vendor":"anthropic","reads_repo":true,"reads_web":false}' ]
-  BRIDGIE_COPILOT_WEB=1 run "$BRIDGIE_HOME/adapters/copilot/run.sh" --capabilities --model gpt-5.6
+  BRIDGIE_COPILOT_WEB=1 run node "$BRIDGIE_HOME/adapters/copilot/run.mjs" --capabilities --model gpt-5.6
   [ "$output" = '{"vendor":"openai","reads_repo":true,"reads_web":true}' ]
 }
 

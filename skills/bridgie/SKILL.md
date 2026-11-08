@@ -13,7 +13,7 @@ Never answer a Bridgie decision yourself: grill questions, sign, design approval
 
 ## Starting
 
-- Check the tool: `bridgie doctor`. If `bridgie` is not on PATH, tell the person to run `~/source/repos/bridgie/bin/install.sh`.
+- Check the tool: `bridgie doctor`. If `bridgie` is not on PATH, tell the person to run `node <their bridgie clone>/bin/bridgie.mjs setup` and open a new terminal.
 - No `.bridgie/` folder yet: `bridgie init --lane <engineering|product|marketing|sales|platform|security>`. An empty folder is fine for a new company; Build needs a git repository.
 
 ## Find: from signals to opportunities
@@ -51,4 +51,4 @@ After each command, tell the person in two or three sentences what happened, wha
 
 - Do not edit anything under `.bridgie/` except a bet's markdown body and `.bridgie/learn/gotchas.md`; the runner refuses state changes it did not make and restores them.
 - Model routing is per machine in `~/.bridgie/policy.yaml` (`routing.tiers` and `routing.seats`); per project overrides go in `.bridgie/policy.yaml`. `BRIDGIE_ADAPTER=fake` runs the loop without models, for demos.
-- On Windows, run Bridgie from Git Bash.
+- Bridgie runs the same in PowerShell, cmd, Git Bash, macOS and Linux terminals.

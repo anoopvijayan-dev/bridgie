@@ -75,7 +75,7 @@ setup() {
 }
 
 @test "a required tier with no command is not_proven and the task cannot pass" {
-  printf 'version: 1\nverify:\n  commands:\n    mechanical: ["true"]\n' > "$P/.bridgie/policy.yaml"
+  printf 'version: 1\nverify:\n  commands:\n    mechanical: ["node -e 0"]\n' > "$P/.bridgie/policy.yaml"
   run bash -c "cd '$P' && bridgie verify b"
   [ "$status" -ne 0 ]
   [[ "$output" == *"specified: no command configured"* ]]

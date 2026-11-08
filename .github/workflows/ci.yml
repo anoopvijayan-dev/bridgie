@@ -1,0 +1,65 @@
+name: ci
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    name: ${{ matrix.os }} · node ${{ matrix.node }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        node: [20, 22]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: git identity for test repos
+        run: |
+          git config --global user.name ci
+          git config --global user.email ci@example.com
+          git config --global init.defaultBranch main
+      - name: unit tests
+        run: node --test
+      - name: CLI tests (bats)
+        shell: bash
+        run: |
+          npm i -g bats
+          bats tests/
+        env:
+          BRIDGIE_USER_POLICY: /nonexistent/bridgie-user-policy.yaml
+      - name: install, then run bridgie from the native shells
+        shell: bash
+        run: node bin/bridgie.mjs setup --no-policy
+      - name: bridgie from PowerShell
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          bridgie version
+          Set-Location $env:RUNNER_TEMP
+          bridgie new ps-project --lane product
+          Set-Location ps-project
+          bridgie
+          bridgie doctor
+      - name: bridgie from cmd
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: |
+          bridgie version
+          cd /d %RUNNER_TEMP%
+          bridgie new cmd-project --lane product
+      - name: bridgie from the default shell
+        if: runner.os != 'Windows'
+        run: |
+          bridgie version
+          cd "$RUNNER_TEMP" && bridgie new sh-project --lane product && cd sh-project && bridgie && bridgie doctor
+
+  shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: shellcheck -x -S warning bin/bridgie bin/install.sh bin/get.sh tests/*.bash tests/run.sh
