@@ -1,0 +1,8 @@
+{
+  "seat": "scout",
+  "summary_md": "Sample: 3 support exports and 2 broker emails, Sept–Oct 2026. Over-represents brokers who already complain. Small.",
+  "artifact_md": "## O1 · Reading a year of bank statements by hand takes a day per application\nSources: 4 (tickets__t1.txt, tickets__t2.txt, emails__broker-a.txt, emails__broker-b.txt)\nSeverity: high — a day of a broker's time per deal, deals lost to faster lenders\nQuote: \"I spend most of Tuesday on statements for one client\" (emails__broker-a.txt)\nToday: spreadsheets and a junior who keys the numbers in\nSymptom or cause: symptom; the cause is that lenders each want a different pack\n\n## O2 · Lenders ask for the same documents in different formats\nSources: 2 (emails__broker-b.txt, tickets__t3.txt)\nSeverity: medium — rework, not lost deals\nQuote: \"every lender has its own template\" (tickets__t3.txt)\nToday: not said\nSymptom or cause: cause of O1",
+  "questions": [
+    { "context": "Are the two broker emails from the same firm?", "options": ["same firm", "different firms", "don't know"], "allow_free_text": true }
+  ]
+}
