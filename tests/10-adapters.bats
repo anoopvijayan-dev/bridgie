@@ -5,11 +5,11 @@ FAKE() { "$BRIDGIE_HOME/adapters/fake/run.sh" "$@"; }
 
 @test "fake capabilities: producer vs verifier vendors, overrides" {
   run FAKE --capabilities --seat "$BRIDGIE_HOME/seats/build/implementer"
-  [ "$output" = '{"vendor":"fake-producer","reads_repo":true}' ]
+  [ "$output" = '{"vendor":"fake-producer","reads_repo":true,"reads_web":true}' ]
   run FAKE --capabilities --seat "$BRIDGIE_HOME/seats/verify/reviewer"
-  [ "$output" = '{"vendor":"fake-verifier","reads_repo":true}' ]
-  BRIDGIE_FAKE_SAME_VENDOR=1 BRIDGIE_FAKE_READS_REPO=0 run FAKE --capabilities --seat "$BRIDGIE_HOME/seats/verify/reviewer"
-  [ "$output" = '{"vendor":"fake","reads_repo":false}' ]
+  [ "$output" = '{"vendor":"fake-verifier","reads_repo":true,"reads_web":true}' ]
+  BRIDGIE_FAKE_SAME_VENDOR=1 BRIDGIE_FAKE_READS_REPO=0 BRIDGIE_FAKE_READS_WEB=0 run FAKE --capabilities --seat "$BRIDGIE_HOME/seats/verify/reviewer"
+  [ "$output" = '{"vendor":"fake","reads_repo":false,"reads_web":false}' ]
 }
 
 @test "fake returns the n-th fixture per seat, then falls back" {
@@ -126,7 +126,9 @@ run_adapter() { "$BRIDGIE_HOME/adapters/$1/run.sh" --seat "$BRIDGIE_HOME/seats/d
   run "$BRIDGIE_HOME/adapters/codex/run.sh" --probe
   [ "$output" = "OK" ]
   run "$BRIDGIE_HOME/adapters/antigravity/run.sh" --capabilities
-  [ "$output" = '{"vendor":"google","reads_repo":true}' ]
+  [ "$output" = '{"vendor":"google","reads_repo":true,"reads_web":false}' ]
+  run "$BRIDGIE_HOME/adapters/claude-code/run.sh" --capabilities
+  [ "$output" = '{"vendor":"anthropic","reads_repo":true,"reads_web":true}' ]
 }
 
 @test "copilot: -p instruction last, read-only denies write, vendor follows the model" {
@@ -138,7 +140,18 @@ run_adapter() { "$BRIDGIE_HOME/adapters/$1/run.sh" --seat "$BRIDGIE_HOME/seats/d
   [ "$(grep -n -- '--deny-tool' "$STUB_LOG" | wc -l)" -ge 1 ]
   [ "$(tail -3 "$STUB_LOG" | head -1)" = "-p" ]
   run "$BRIDGIE_HOME/adapters/copilot/run.sh" --capabilities --model claude-opus-5.5
-  [ "$output" = '{"vendor":"anthropic","reads_repo":true}' ]
-  run "$BRIDGIE_HOME/adapters/copilot/run.sh" --capabilities --model gpt-5.6
-  [ "$output" = '{"vendor":"openai","reads_repo":true}' ]
+  [ "$output" = '{"vendor":"anthropic","reads_repo":true,"reads_web":false}' ]
+  BRIDGIE_COPILOT_WEB=1 run "$BRIDGIE_HOME/adapters/copilot/run.sh" --capabilities --model gpt-5.6
+  [ "$output" = '{"vendor":"openai","reads_repo":true,"reads_web":true}' ]
+}
+
+@test "web tools: claude-code allows WebSearch read-only; codex passes --search" {
+  stub_env
+  run run_adapter claude-code --mode readonly --model default
+  [ "$status" -eq 0 ]
+  grep -qx 'WebSearch' "$STUB_LOG"; grep -qx 'WebFetch' "$STUB_LOG"
+  stub_env
+  run run_adapter codex --mode readonly --model default
+  [ "$status" -eq 0 ]
+  grep -qx -- '--search' "$STUB_LOG"
 }

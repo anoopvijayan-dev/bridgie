@@ -2,7 +2,7 @@
 # Fake adapter for tests. Returns fixtures instead of calling a model.
 #   --capabilities            prints {"vendor","reads_repo"}; vendor is fake-verifier for verify/* seats,
 #                             fake-producer otherwise (BRIDGIE_FAKE_SAME_VENDOR=1 → "fake" for all;
-#                             BRIDGIE_FAKE_READS_REPO=0 → reads_repo false)
+#                             BRIDGIE_FAKE_READS_REPO=0 → reads_repo false; BRIDGIE_FAKE_READS_WEB=0 → reads_web false)
 #   BRIDGIE_FAKE_DIR          fixture dir (default tests/fixtures/fake); the n-th call of a seat uses
 #                             <seat>.<n>.json if present, else <seat>.json (counter in BRIDGIE_FAKE_STATE, default <project>/.bridgie/.fake-state)
 #   BRIDGIE_FAKE_OUTPUT       one fixture path for every seat (overrides the dir)
@@ -27,7 +27,8 @@ if [[ "$caps" == "1" ]]; then
   vendor="fake-producer"; [[ "$loop" == "verify" ]] && vendor="fake-verifier"
   [[ "${BRIDGIE_FAKE_SAME_VENDOR:-0}" == "1" ]] && vendor="fake"
   reads=true; [[ "${BRIDGIE_FAKE_READS_REPO:-1}" == "0" ]] && reads=false
-  printf '{"vendor":"%s","reads_repo":%s}\n' "$vendor" "$reads"; exit 0
+  web=true; [[ "${BRIDGIE_FAKE_READS_WEB:-1}" == "0" ]] && web=false
+  printf '{"vendor":"%s","reads_repo":%s,"reads_web":%s}\n' "$vendor" "$reads" "$web"; exit 0
 fi
 [[ -f "$prompt" ]] || { echo "fake: prompt file missing: $prompt" >&2; exit 2; }
 dir="${BRIDGIE_FAKE_DIR:-$here/../../tests/fixtures/fake}"

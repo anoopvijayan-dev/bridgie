@@ -46,6 +46,12 @@ function resolveInput(name, ctx) {
     return { label: `task ${task}`, text: '```json\n' + JSON.stringify(t, null, 2) + '\n```', path: tp };
   }
   if (name === 'diff') return file(join(runDir, 'diff.patch'), 'diff.patch');
+  if (name === 'card') {
+    // One swarm member's variables (a buyer persona card), copied by run_seat --vars.
+    const f = join(runDir, 'vars.json');
+    if (!existsSync(f)) throw new Error('seat input "card" needs run_seat --vars <json>');
+    return { label: 'your card (this run only)', text: '```json\n' + JSON.stringify(readJson(f), null, 2) + '\n```', path: f };
+  }
   if (name === 'mechanical_results') {
     // The runner ran these commands in the task worktree before the review (finding 6: the
     // reviewer cannot run anything itself). Each row with the tail of its log.
