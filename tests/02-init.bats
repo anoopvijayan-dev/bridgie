@@ -36,3 +36,10 @@ load helpers
   [ "$status" -eq 0 ]
   [[ "$output" == *'"marketing"'* ]]
 }
+
+@test "init pins Bridgie state to LF line endings" {
+  P="$(make_project --git)"
+  bash -c "cd '$P' && bridgie init" >/dev/null
+  [ "$(cat "$P/.bridgie/.gitattributes")" = '* text eol=lf' ]
+  [ "$(git -C "$P" check-attr eol -- .bridgie/policy.yaml | awk '{print $3}')" = "lf" ]
+}

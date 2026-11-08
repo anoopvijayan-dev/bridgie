@@ -15,6 +15,8 @@ cmd_init() {
   mkdir -p "$st"/{bets,specs,runs,acceptance,decisions,learn}
   sed "s/{{lane}}/$lane/" "$BRIDGIE_HOME/templates/project-policy.yaml" > "$st/policy.yaml"
   cp "$BRIDGIE_HOME/templates/bridgie-gitignore" "$st/.gitignore"
+  # Keep state LF on every OS: Windows autocrlf would otherwise rewrite it (and change acceptance digests).
+  printf '* text eol=lf\n' > "$st/.gitattributes"
   printf '# Gotchas\n\nDated one-line corrections learned in this project.\n' > "$st/learn/gotchas.md"
   node_run state.mjs policy "$root" >/dev/null || die "init: generated policy does not validate"
   state_commit "$root" "init (lane $lane)"
