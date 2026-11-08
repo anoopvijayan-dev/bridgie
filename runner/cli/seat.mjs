@@ -1,7 +1,7 @@
 // runSeat: the only place an adapter is launched. Guards: fresh context from declared inputs, a
 // project-wide seat lock, a full state manifest before/after (P1), output schema validation, cost.
 // runSwarm: one fresh seat run per card, `swarm.parallel` at a time, under one lock.
-import { existsSync, mkdirSync, readdirSync, writeFileSync, cpSync, copyFileSync, rmSync, renameSync, openSync, closeSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, writeFileSync, cpSync, copyFileSync, rmSync, renameSync, openSync, closeSync, statSync, realpathSync } from 'node:fs';
 import { join, basename, relative } from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import * as st from '../state.mjs';
@@ -10,7 +10,10 @@ import { snapshot, check, restore } from '../guard.mjs';
 import { validate } from '../schema.mjs';
 import { HOME, die, projectRoot } from './core.mjs';
 
-const relTo = (root, p) => relative(root, p).split('\\').join('/');
+// relTo: path relative to the project root with forward slashes. Both sides are resolved through
+// symlinks first (macOS /var → /private/var), or a run folder looks like it lives outside the project.
+const real = p => { try { return realpathSync.native(p); } catch { return p; } };
+const relTo = (root, p) => relative(real(root), real(p)).split('\\').join('/');
 
 // adapterCommand: how to launch an adapter — run.mjs with this node, or a legacy run.sh with bash.
 export function adapterCommand(adapter) {

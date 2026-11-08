@@ -11,11 +11,13 @@ load helpers
 
 @test "setup copies the skill, links with npm, creates a routing policy once, and is safe to re-run" {
   H="$(mktemp -d)"; mkdir -p "$H/.claude" "$H/.agents" "$H/stub"
-  printf '#!/bin/sh\necho "$@" >> "%s/npm.log"\n' "$H" > "$H/stub/npm"; chmod +x "$H/stub/npm"
+  printf 'require("fs").appendFileSync(process.argv[2], process.argv.slice(3).join(" ") + "\\n")\n' > "$H/npm.cjs"
+  if on_windows; then printf '@node "%s" "%s" %%*\r\n' "$(native "$H/npm.cjs")" "$(native "$H/npm.log")" > "$H/stub/npm.cmd"
+  else printf '#!/bin/sh\nexec node "%s" "%s" "$@"\n' "$H/npm.cjs" "$H/npm.log" > "$H/stub/npm"; chmod +x "$H/stub/npm"; fi
   run env HOME="$H" PATH="$H/stub:$PATH" node "$BRIDGIE_HOME/bin/bridgie.mjs" setup
   [ "$status" -eq 0 ]
   [ -f "$H/.claude/skills/bridgie/SKILL.md" ] && [ -f "$H/.agents/skills/bridgie/SKILL.md" ]
-  [ "$(cat "$H/npm.log")" = "install -g $BRIDGIE_HOME" ]
+  [ "$(cat "$H/npm.log" | tr -d '\r')" = "install -g $(native "$BRIDGIE_HOME")" ]
   [[ "$output" == *"works in PowerShell, cmd, Git Bash, macOS and Linux"* ]]
   grep -q 'adapter: copilot' "$H/.bridgie/policy.yaml"
   run env HOME="$H" PATH="$H/stub:$PATH" "$BRIDGIE_HOME/bin/install.sh"      # old entry point still works
@@ -55,6 +57,7 @@ load helpers
 }
 
 @test "bridgie runs with nothing but node on PATH (no bash tools needed)" {
+  on_windows && skip "covered by the PowerShell and cmd CI steps"
   T="$(mktemp -d)"; ln -s "$(command -v node)" "$T/node"; ln -s "$(command -v git)" "$T/git"
   run env -i HOME="$HOME" PATH="$T" "$T/node" "$BRIDGIE_HOME/bin/bridgie.mjs" version
   [ "$status" -eq 0 ]
@@ -63,4 +66,13 @@ load helpers
   run env -i HOME="$HOME" PATH="$T" BRIDGIE_USER=t "$BASH" -c "cd '$W' && '$T/node' '$BRIDGIE_HOME/bin/bridgie.mjs' new p --lane product"
   [ "$status" -eq 0 ]
   [ -f "$W/p/.bridgie/policy.yaml" ]
+}
+
+@test "a folder under the home directory is not a project just because ~/.bridgie holds the machine policy" {
+  H="$(mktemp -d)"; mkdir -p "$H/.bridgie" "$H/Downloads"; echo 'version: 1' > "$H/.bridgie/policy.yaml"
+  run env HOME="$H" bash -c "cd '$H/Downloads' && bridgie"
+  [[ "$output" == *"not inside a Bridgie project"* ]]
+  run env HOME="$H" bash -c "cd '$H/Downloads' && bridgie status"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"not inside a bridgie project"* ]]
 }

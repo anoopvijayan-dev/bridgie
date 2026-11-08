@@ -15,7 +15,7 @@ setup() {
   [ -f "$wt/feature-1.txt" ]
   [ "$(git -C "$wt" branch --show-current)" = "bridgie-task/b/T1" ]
   [ -z "$(git -C "$wt" status --porcelain)" ]
-  grep -q "Repository\|$wt" "$P/.bridgie/runs/b/implementer-01/prompt.md"
+  node -e 'process.exit(require("fs").readFileSync(process.argv[1], "utf8").replace(/\\/g, "/").includes(".bridgie/worktrees/b/T1") ? 0 : 1)' "$P/.bridgie/runs/b/implementer-01/prompt.md"
   node -e 'const i=require(process.argv[1]).inputs; const allowed=["task","requirements","design","evidence","gotchas","agents_md"]; if(!i.every(x=>allowed.includes(x))) process.exit(1)' "$P/.bridgie/runs/b/implementer-01/inputs.json"
   [ "$(task_field "$P" b T1 status)" = '"verify"' ]
   [ "$(task_field "$P" b T1 attempts)" = '1' ]

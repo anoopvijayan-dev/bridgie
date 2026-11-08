@@ -37,8 +37,18 @@ export function which(cmd) {
   return null;
 }
 
-// winQuote: one argument for cmd.exe (used only to launch .cmd/.bat shims, which Node cannot spawn directly).
-const winQuote = a => `"${String(a).replace(/"/g, '""')}"`;
+// winQuote: one argument, quoted the way Windows programs parse their command line (backslashes
+// before a quote are doubled, quotes are backslash-escaped). Used only to launch .cmd/.bat shims
+// (npm-installed CLIs), which Node can start only through cmd.exe.
+export function winQuote(a) {
+  let out = '"', bs = 0;
+  for (const ch of String(a)) {
+    if (ch === '\\') { bs++; continue; }
+    if (ch === '"') { out += '\\'.repeat(bs * 2 + 1) + '"'; bs = 0; continue; }
+    out += '\\'.repeat(bs) + ch; bs = 0;
+  }
+  return `${out}${'\\'.repeat(bs * 2)}"`;
+}
 
 // run: launch a CLI with arguments, an optional stdin file and stdout/stderr files. Never uses a shell
 // except to start a Windows .cmd/.bat shim, where every argument is quoted.

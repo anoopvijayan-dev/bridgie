@@ -9,7 +9,7 @@ export default async function newProject(argv) {
   if (!folder || folder.startsWith('--')) die('usage: bridgie new <folder> [--lane engineering|product|marketing|sales|platform|security]');
   needCmd('git');
   const abs = resolve(folder);
-  if (existsSync(join(abs, '.bridgie'))) die(`new: ${folder} already has a .bridgie folder (cd there and run: bridgie)`);
+  if (existsSync(join(abs, '.bridgie', 'bets'))) die(`new: ${folder} already has a .bridgie folder (cd there and run: bridgie)`);
   mkdirSync(abs, { recursive: true });
   if (!git(['-C', abs, 'rev-parse', '--is-inside-work-tree']).ok) {
     if (!git(['-C', abs, 'init', '-q', '-b', 'main']).ok) git(['-C', abs, 'init', '-q']);

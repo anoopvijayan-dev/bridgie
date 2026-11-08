@@ -60,3 +60,25 @@ all_tiers() {
   printf "verify:\n  commands:\n" >> "$1/.bridgie/policy.yaml"
   for t in mechanical specified contracts invariants behavioural dual_run; do printf "    %s: ['node -e 0']\n" "$t" >> "$1/.bridgie/policy.yaml"; done
 }
+
+# --- cross-platform helpers (tests also run in Git Bash on Windows and on macOS) ---------------------
+on_windows() { [[ "${OSTYPE:-}" == msys* || "${OSTYPE:-}" == cygwin* ]]; }
+native() {                  # native <path>: the form a Node process sees (C:\... on Windows)
+  if command -v cygpath >/dev/null 2>&1; then cygpath -w "$1"; else printf '%s\n' "$1"; fi
+}
+has_path_line() {           # has_path_line <file> <prefix> <path>: a line equal to prefix+path in any spelling
+  local alts=("$3")
+  command -v cygpath >/dev/null 2>&1 && alts+=("$(cygpath -m "$3")" "$(cygpath -w "$3")")
+  [[ -d "$3" ]] && alts+=("$(cd "$3" && pwd -P)")
+  node -e '
+    const [f, pre, ...ps] = process.argv.slice(1);
+    const n = s => s.replace(/\\/g, "/").toLowerCase();
+    process.exit(require("fs").readFileSync(f, "utf8").split(/\r?\n/).some(l => ps.some(p => n(l) === n(pre + p))) ? 0 : 1);' "$1" "$2" "${alts[@]}"
+}
+make_cli_stub() {           # make_cli_stub <dir> <name> <stub.mjs>: an executable <name> that runs node <stub.mjs> <name> args
+  if on_windows; then
+    printf '@node "%s" %s %%*\r\n' "$(native "$3")" "$2" > "$1/$2.cmd"
+  else
+    printf '#!/bin/sh\nexec node "%s" %s "$@"\n' "$3" "$2" > "$1/$2"; chmod +x "$1/$2"
+  fi
+}

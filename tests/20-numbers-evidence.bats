@@ -30,7 +30,7 @@ setup() {
 
 @test "numbers: a unit that loses money is 'not yet' and still blocks signing" {
   bash -c "cd '$P' && bridgie numbers b --template" >/dev/null
-  sed -i 's/^variable_cost: .*/variable_cost: 50/' "$P/.bridgie/bets/b/numbers.yaml"
+  node -e 'const f=process.argv[1];const fs=require("fs");fs.writeFileSync(f,fs.readFileSync(f,"utf8").replace(/^variable_cost: .*$/m,"variable_cost: 50"))' "$P/.bridgie/bets/b/numbers.yaml"
   run bash -c "cd '$P' && bridgie numbers b"
   [ "$status" -eq 0 ]
   [[ "$output" == *"not yet"* ]] && [[ "$output" == *"unit_positive"* ]]

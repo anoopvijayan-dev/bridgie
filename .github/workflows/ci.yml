@@ -33,10 +33,11 @@ jobs:
         env:
           BRIDGIE_USER_POLICY: /nonexistent/bridgie-user-policy.yaml
       - name: install, then run bridgie from the native shells
+        if: success() || failure()
         shell: bash
         run: node bin/bridgie.mjs setup --no-policy
       - name: bridgie from PowerShell
-        if: runner.os == 'Windows'
+        if: (success() || failure()) && runner.os == 'Windows'
         shell: pwsh
         run: |
           bridgie version
@@ -46,14 +47,14 @@ jobs:
           bridgie
           bridgie doctor
       - name: bridgie from cmd
-        if: runner.os == 'Windows'
+        if: (success() || failure()) && runner.os == 'Windows'
         shell: cmd
         run: |
           bridgie version
           cd /d %RUNNER_TEMP%
           bridgie new cmd-project --lane product
       - name: bridgie from the default shell
-        if: runner.os != 'Windows'
+        if: (success() || failure()) && runner.os != 'Windows'
         run: |
           bridgie version
           cd "$RUNNER_TEMP" && bridgie new sh-project --lane product && cd sh-project && bridgie && bridgie doctor

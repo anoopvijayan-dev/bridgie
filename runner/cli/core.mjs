@@ -1,5 +1,5 @@
 // Shared helpers for bridgie commands. Plain Node: no bash, no coreutils, same on Windows, macOS, Linux.
-import { existsSync, statSync, readFileSync } from 'node:fs';
+import { existsSync, statSync, readFileSync, realpathSync } from 'node:fs';
 import { dirname, join, resolve, delimiter, extname } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import * as st from '../state.mjs';
@@ -31,11 +31,15 @@ export function which(cmd) {
 }
 export const needCmd = cmd => which(cmd) || die(`missing required command: ${cmd}`);
 
-// findRoot: walk up from dir to a folder containing .bridgie/. Returns it, or null.
+// findRoot: walk up from dir to the nearest Bridgie project, or null. A project is a folder whose
+// .bridgie/ has a bets/ folder: ~/.bridgie (this machine's policy) is not a project, so folders
+// under the home directory are not mistaken for one.
+export const isProject = d => { try { return statSync(join(d, '.bridgie', 'bets')).isDirectory(); } catch { return false; } };
 export function findRoot(dir = process.cwd()) {
   let d = resolve(dir);
+  try { d = realpathSync.native(d); } catch { /* keep as given */ }
   for (;;) {
-    try { if (statSync(join(d, '.bridgie')).isDirectory()) return d; } catch { /* keep walking */ }
+    if (isProject(d)) return d;
     const up = dirname(d);
     if (up === d) return null;
     d = up;
