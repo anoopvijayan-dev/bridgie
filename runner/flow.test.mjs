@@ -140,6 +140,7 @@ test('acceptance: refused until all tasks pass (R6); approvals respect policy co
   assert.throws(() => fl.writeAcceptance(root, 'b', { body: 'x', residual: [], cost: {} }), /not passed: T1/);
   fl.setTask(root, 'b', 'T1', { status: 'passed' });
   for (const s of ['grilling', 'evidence']) st.betTransition(root, 'b', s);
+  writeFileSync(join(root, '.bridgie', 'bets', 'b', 'numbers.json'), JSON.stringify({ contribution_per_unit: 3, checks: { unit_positive: true } }));
   st.setFm(st.betPath(root, 'b'), { confidence: 'data' }); st.betTransition(root, 'b', 'signed', { by: 'tester' });
   fl.writeAcceptance(root, 'b', { body: '## Evidence matrix\n', residual: ['no load test'], cost: { usd: 1 } });
   let d = st.listDecisions(root, 'b', { pending: true }).find(x => x.type === 'accept');

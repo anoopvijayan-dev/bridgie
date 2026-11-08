@@ -332,6 +332,11 @@ function effectFor(root, slug, extra) {
       if (answer === 'kill task') { setTask(root, slug, id, { escalation: `killed by ${by}` }); return `task ${id} killed; re-plan the bet to continue`; }
     }
     if (d.type === 'accept') return acceptEffect(root, slug, answer, { by, text, gitSha: extra.gitSha });
+    if (d.type === 'confidence') {
+      const m = answer.match(/^accept (opinion|anecdote|data|test)$/);
+      if (m) { st.setFm(st.betPath(root, slug), { confidence: m[1] }, 'bet'); return `confidence set to ${m[1]}`; }
+      return 'confidence unchanged';
+    }
     return null;
   };
 }
@@ -374,6 +379,19 @@ export function acceptancePacket(root, slug, diffStat = '') {
   lines.push('', ...details, '## Change', '', '```', diffStat.trim() || '(no diff stat)', '```', '',
     '## Cost', '', `${cost.seat_runs} seat runs, ${cost.seconds}s, ${cost.attempts_total} attempts (${cost.retries} retries). Token cost not reported by all adapters.`, '');
   return { md: lines.join('\n'), cost };
+}
+
+// proposeConfidence: a seat's confidence proposal becomes a decision the owner answers; nothing
+// changes until they accept. Returns the decision, or null when the proposal is not a valid tier.
+export function proposeConfidence(root, slug, text, raisedBy) {
+  const m = String(text).match(/\b(opinion|anecdote|data|test)\b/i);
+  if (!m) return null;
+  const tier = m[1].toLowerCase();
+  const current = st.readFm(st.betPath(root, slug)).data.confidence;
+  if (tier === current) return null;
+  const open = st.loadDecisions(root, slug).decisions.find(d => d.type === 'confidence' && d.status !== 'answered');
+  if (open) st.supersedeDecision(root, slug, open.id, 'superseded by a newer confidence proposal');
+  return st.addDecision(root, slug, { type: 'confidence', context: `Evidence proposal: confidence ${current} → ${tier}. ${text}`, options: [`accept ${tier}`, `keep ${current}`], allow_free_text: false, raised_by: raisedBy });
 }
 
 // ---------- acceptance ----------
@@ -477,6 +495,7 @@ const OPS = {
   'mark-passed': a => out(markPassed(a[0], a[1], a[2], a[3])),
   'all-passed': a => out(String(allPassed(a[0], a[1]))),
   'ensure-decision': a => out(ensureDecision(a[0], a[1], a[2], a[3], JSON.parse(a[4]), { ...(flag(a, 'task') ? { task: flag(a, 'task') } : {}), ...(flag(a, 'risk') ? { risk: flag(a, 'risk') } : {}) }).id),
+  'propose-confidence': a => out(proposeConfidence(a[0], a[1], a[2], flag(a, 'run') ? { seat: flag(a, 'seat') || 'evidence', run: flag(a, 'run') } : null)?.id || ''),
   'raise-risk': a => out(st.raiseRisk(a[0], a[1], a[2], flag(a, 'reason') || 'raised by the runner')),
   'stale-package': a => { const f = acceptancePath(a[0], a[1]); out(existsSync(f) ? stalePackage(a[0], a[1], st.readFm(f).data) || '' : 'no package'); },
   'invalidate-acceptance': a => { invalidateAcceptance(a[0], a[1], a[2] || 'invalidated'); out('ok'); },

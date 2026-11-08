@@ -1,0 +1,17 @@
+{
+  "type": "object",
+  "required": ["currency", "price", "variable_cost", "fixed_costs_monthly", "units_per_day_plan", "days_per_month", "startup_spend"],
+  "additionalProperties": false,
+  "properties": {
+    "currency": { "type": "string" },
+    "price": { "type": "number" },
+    "variable_cost": { "type": "number" },
+    "fixed_costs_monthly": { "type": "number" },
+    "units_per_day_plan": { "type": "number" },
+    "days_per_month": { "type": "number" },
+    "startup_spend": { "type": "number" },
+    "ramp_months": { "type": "number" },
+    "capacity_units_per_day": { "type": ["number", "null"] },
+    "what_ifs": { "type": ["array", "null"], "items": { "type": "object", "required": ["name"], "properties": { "name": { "type": "string" } } } }
+  }
+}

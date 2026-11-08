@@ -37,6 +37,9 @@ signed_bet() {
     bridgie decide "$slug" D1 no >/dev/null 2>&1
     bridgie decide "$slug" D2 measured >/dev/null 2>&1
     node "$BRIDGIE_HOME/runner/state.mjs" fm-set ".bridgie/bets/$slug/bet.md" confidence '"test"' --schema bet
+    if [[ "$risk" == "money" ]]; then   # money bets need unit economics before signing
+      bridgie numbers "$slug" --template >/dev/null 2>&1 && bridgie numbers "$slug" >/dev/null 2>&1
+    fi
     bridgie sign "$slug" >/dev/null 2>&1
   )
   [[ "$(fm "$p/.bridgie/bets/$slug/bet.md" status)" == '"signed"' ]]
