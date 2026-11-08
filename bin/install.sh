@@ -41,8 +41,13 @@ if [[ "$add_path" == "1" ]]; then
     # Windows: %LOCALAPPDATA%\Microsoft\WindowsApps is already on every user's PATH; drop a shim there.
     shim_dir="$(cygpath -u "${LOCALAPPDATA:-$HOME/AppData/Local}")/Microsoft/WindowsApps"
     if [[ -d "$shim_dir" ]]; then
-      bash_win="$(cygpath -w "$(command -v bash)")"
-      printf '@echo off\r\n"%s" "%s" %%*\r\n' "$bash_win" "$(cygpath -w "$HERE/bin/bridgie")" > "$shim_dir/bridgie.cmd"
+      # PowerShell and cmd start bash without Git's tools (dirname, sed, find…) on PATH, so the
+      # shim puts Git's usr/bin and mingw64/bin first, the way Git Bash itself does.
+      bash_unix="$(command -v bash)"
+      bash_win="$(cygpath -w "$bash_unix")"
+      tools="$(cygpath -w "${bash_unix%/*}")"
+      [[ -d /mingw64/bin ]] && tools="$tools;$(cygpath -w /mingw64/bin)"
+      printf '@echo off\r\nsetlocal\r\nset "PATH=%s;%%PATH%%"\r\n"%s" "%s" %%*\r\n' "$tools" "$bash_win" "$(cygpath -w "$HERE/bin/bridgie")" > "$shim_dir/bridgie.cmd"
       echo "Windows shim installed: $shim_dir\\bridgie.cmd (bridgie now works from PowerShell and cmd too)"
     fi
   fi
