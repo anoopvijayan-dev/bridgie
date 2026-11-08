@@ -1,0 +1,15 @@
+{
+  "type": "object",
+  "required": ["card", "buys", "purchases_first_month", "reason_code", "reason", "objection", "would_flip", "prices"],
+  "additionalProperties": false,
+  "properties": {
+    "card": { "type": "string" },
+    "buys": { "type": "boolean" },
+    "purchases_first_month": { "type": "integer" },
+    "reason_code": { "type": "string", "enum": ["price", "trust", "habit", "need", "access", "other"] },
+    "reason": { "type": "string" },
+    "objection": { "type": "string" },
+    "would_flip": { "type": "string" },
+    "prices": { "type": "object", "required": ["too_cheap", "bargain", "getting_expensive", "too_expensive"], "properties": { "too_cheap": { "type": "number" }, "bargain": { "type": "number" }, "getting_expensive": { "type": "number" }, "too_expensive": { "type": "number" } } }
+  }
+}

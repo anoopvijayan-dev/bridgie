@@ -10,6 +10,8 @@
 #   BRIDGIE_FAKE_STDOUT=1     print the fixture in a ```json fence and let extraction write --out
 #   BRIDGIE_FAKE_MISBEHAVE=1  tamper with a state file (tests the single-writer guard)
 #   BRIDGIE_FAKE_EXIT         exit code after writing (default 0)
+#   BRIDGIE_FAKE_FAIL_CARDS   space-separated card ids whose buyer run fails (swarm tests)
+#   swarm members             with vars.json beside --out, the card number picks <seat>.<n>.json and "CARD" in the fixture becomes the card id
 set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 [[ "${1:-}" == "--probe" ]] && { echo OK; exit 0; }
@@ -34,6 +36,12 @@ fi
 dir="${BRIDGIE_FAKE_DIR:-$here/../../tests/fixtures/fake}"
 state="${BRIDGIE_FAKE_STATE:-${out%%/.bridgie/*}/.bridgie/.fake-state}"; mkdir -p "$state"
 n=$(( $(cat "$state/$name" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$state/$name"
+# Swarm member (vars.json beside --out): the card's number picks the fixture, so parallel runs stay deterministic.
+card=""
+if [[ -f "$(dirname "$out")/vars.json" ]]; then
+  card="$(node -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).id||"")' "$(dirname "$out")/vars.json")"
+  [[ "$card" =~ ([0-9]+)$ ]] && n=$((10#${BASH_REMATCH[1]}))
+fi
 src="${BRIDGIE_FAKE_OUTPUT:-}"
 if [[ -z "$src" ]]; then src="$dir/$name.$n.json"; [[ -f "$src" ]] || src="$dir/$name.json"; fi
 [[ -f "$src" ]] || { echo "fake: no fixture for seat $name at $src" >&2; exit 3; }
@@ -45,6 +53,8 @@ if [[ "${BRIDGIE_FAKE_STDOUT:-0}" == "1" ]]; then
 else
   cp "$src" "$out"
 fi
+[[ -n "$card" ]] && sed -i "s/\"CARD\"/\"$card\"/g" "$out"
+if [[ -n "$card" && " ${BRIDGIE_FAKE_FAIL_CARDS:-} " == *" $card "* ]]; then rm -f "$out"; echo "fake: card $card fails on purpose" >&2; exit 9; fi
 if [[ "${BRIDGIE_FAKE_MISBEHAVE:-0}" == "1" ]]; then
   for f in "$cwd"/.bridgie/decisions/*.json; do [[ -f "$f" ]] && printf '{"tampered":true}\n' > "$f" && break; done
 fi

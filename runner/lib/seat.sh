@@ -117,3 +117,44 @@ run_seat() {
   node_run state.mjs validate "${output%.json}" "$run_dir/$output" || die "seat $name output does not match schemas/$output"
   printf '%s\n' "$run_dir"
 }
+
+# run_swarm <slug> <loop/seat> <cards.json> <swarm_dir>: one fresh seat run per card, `parallel` at a
+# time, all under <swarm_dir>/<card id>/. Holds the seat lock for the whole swarm; each member runs
+# with --no-lock and excludes the swarm directory from its state guard. A member that fails is retried
+# once; after that it is left out (the tally counts it). Prints "<ok> <failed>".
+run_swarm() {
+  local slug="$1" seat="$2" cards="$3" dir="$4"
+  local root; root="$(project_root)"
+  local parallel; parallel="$(node_run state.mjs policy "$root" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>process.stdout.write(String(JSON.parse(s).swarm?.parallel||4)))')"
+  mkdir -p "$dir/cards"
+  node -e 'const d=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));for(const c of d.cards)require("fs").writeFileSync(`${process.argv[2]}/cards/${c.id}.json`,JSON.stringify(c,null,2))' "$cards" "$dir"
+  seat_lock "$root" "${seat##*/}-swarm" "$dir"
+  # shellcheck disable=SC2064
+  trap "seat_unlock '$root'" EXIT
+  local id running=0 ok=0 failed=0
+  _member() {   # _member <id>: up to two attempts; the run dir is renamed to the card id
+    local id="$1" out rc=1
+    for _ in 1 2; do
+      rm -rf "${dir:?}/${id:?}"
+      if out="$(BRIDGIE_RUNS_DIR="$dir/.runs-$id" run_seat "$slug" "$seat" --vars "$dir/cards/$id.json" --exclude "$dir" --no-lock 2> "$dir/cards/$id.log")"; then
+        mv "$out" "$dir/$id"; rm -rf "$dir/.runs-$id"; rc=0; break
+      fi
+      rm -rf "$dir/.runs-$id"
+    done
+    return $rc
+  }
+  for id in $(node -e 'for(const c of JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).cards)console.log(c.id)' "$cards"); do
+    _member "$id" &
+    running=$((running + 1))
+    if [[ $running -ge $parallel ]]; then
+      if wait -n; then ok=$((ok + 1)); else failed=$((failed + 1)); fi
+      running=$((running - 1))
+    fi
+  done
+  while [[ $running -gt 0 ]]; do
+    if wait -n; then ok=$((ok + 1)); else failed=$((failed + 1)); fi
+    running=$((running - 1))
+  done
+  seat_unlock "$root"; trap - EXIT
+  printf '%s %s\n' "$ok" "$failed"
+}

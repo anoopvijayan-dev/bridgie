@@ -1,6 +1,7 @@
 # Bridgie default policy. Projects override keys in <project>/.bridgie/policy.yaml.
 version: 1
 retries: { max_attempts: 3 }
+swarm: { parallel: 4, default_n: 20, max_n: 100 }   # simulated buyer panel: agents at once, default and ceiling per panel
 commit_transcripts: false
 lanes:
   engineering:

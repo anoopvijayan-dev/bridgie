@@ -1,0 +1,1 @@
+{ "card": "CARD", "buys": false, "purchases_first_month": 0, "reason_code": "price", "reason": "£39 a deal adds up when margins are thin", "objection": "my junior is cheaper", "would_flip": "a monthly cap", "prices": { "too_cheap": 5, "bargain": 15, "getting_expensive": 30, "too_expensive": 60 } }

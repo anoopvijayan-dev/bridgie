@@ -41,6 +41,7 @@ function resolveInput(name, ctx) {
   if (name === 'board') return betFile('board.md');
   if (name === 'panel') return betFile('panel.md');
   if (name === 'numbers') return betFile('numbers.md');
+  if (name === 'pitch') return betFile('pitch.md', 'the pitch, exactly as every buyer sees it');
   if (name === 'signals' || name === 'evidence_material') {
     // Text files the runner copied into the run directory (scout) or the owner dropped beside the bet (evidence).
     const dir = name === 'signals' ? join(runDir, 'signals') : join(root, '.bridgie', 'bets', slug, 'evidence');
