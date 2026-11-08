@@ -93,7 +93,7 @@ export function renderInbox(root, opts = {}) {
   return page('Inbox', fill(T('inbox'), { rows, bets, count: String(pending.length) }), opts);
 }
 
-const LABEL = { approve_design: 'Approve design', ack_risk: 'Acknowledge risk', unblock: 'Unblock', accept: 'Accept' };
+const LABEL = { approve_design: 'Approve design', ack_risk: 'Acknowledge risk', unblock: 'Unblock', accept: 'Accept', confidence: 'Confidence proposal' };
 const TEXT_HINT = {
   'request changes': 'what should change', 'approve with conditions': 'the conditions', reject: 'the reason',
   'retry with guidance': 'guidance for the next attempt', decline: 'why (optional)',
@@ -119,6 +119,9 @@ function decisionCard(root, slug, d, opts) {
       const ru = (data.residual_uncertainty || []).map(x => `<li>${esc(x)}</li>`).join('');
       detail = `${ru ? `<p class="warn"><b>Residual uncertainty</b></p><ul>${ru}</ul>` : ''}<p>${esc(data.approvals?.length || 0)} of ${esc(data.approvers_required || 1)} approval(s) recorded.</p>${mdDoc(body, ['Evidence matrix', 'What changed and blast radius'])}`;
     }
+  } else if (d.type === 'confidence') {
+    const syn = readIf(join(root, '.bridgie', 'bets', slug, 'evidence-synthesis.md'));
+    if (syn) detail = mdDoc(syn, ['What the material shows', 'What it does not show']);
   } else if (d.type === 'unblock' && d.task) {
     try {
       const t = fl.loadTasks(root, slug).tasks.find(x => x.id === d.task);
@@ -130,6 +133,27 @@ function decisionCard(root, slug, d, opts) {
   const hint = d.options.map(o => TEXT_HINT[o]).filter(Boolean);
   const buttons = d.options.map((o, i) => `<button type="submit" name="answer" value="${esc(o)}" class="${i === 0 ? 'primary' : /reject|kill|decline/.test(o) ? 'danger' : ''}">${esc(o)}</button>`).join(' ');
   return `<section class="question" id="${esc(d.id)}">${head}<form method="post" action="/decide"><input type="hidden" name="slug" value="${esc(slug)}"><input type="hidden" name="id" value="${esc(d.id)}">${hint.length ? `<input type="text" name="text" placeholder="${esc(hint.join(' / '))}">` : ''}${buttons}</form>${detail}</section>`;
+}
+
+// decideSections: what the decide loop found — research, board, panel, numbers, evidence — as
+// collapsible sections with the computed headline of each shown on the summary line.
+function decideSections(root, slug) {
+  const dir = join(root, '.bridgie', 'bets', slug);
+  const parts = [];
+  const add = (title, file, headline, open = []) => {
+    const md = readIf(join(dir, file));
+    if (!md) return;
+    parts.push(`<details><summary><b>${esc(title)}</b>${headline ? ` <span class="pill">${esc(headline)}</span>` : ''} <small class="empty">${esc(file)}</small></summary>${mdDoc(md, open)}</details>`);
+  };
+  const json = f => { try { return st.readJson(join(dir, f)); } catch { return null; } };
+  const board = json('board.json'), panel = json('panel.json'), nums = json('numbers.json');
+  add('Research', 'research.md', '', ['Direct competitors', 'What their customers complain about']);
+  add('Board', 'board.md', board ? `${board.vote} · ${board.average_score}/10` : '', ['Chair']);
+  add('Panel (simulated buyers)', 'panel.md', panel && panel.buy_rate !== undefined ? `buy rate ${Math.round(panel.buy_rate * 100)}% of ${panel.answered} · upper bound, not evidence` : '', ['Headline', 'Why they pass', 'Limits']);
+  add('Numbers', 'numbers.md', nums ? (nums.verdict === 'profitable' ? `profitable on these inputs · margin ${Math.round((nums.margin_at_plan || 0) * 100)}%` : `not yet: ${(nums.failing || []).join(', ')}`) : '', []);
+  add('Evidence plan', 'evidence-plan.md', '', []);
+  add('Evidence synthesis', 'evidence-synthesis.md', '', ['What the material shows']);
+  return parts.length ? `<h2>What the decide loop found</h2>${parts.join('\n')}` : '';
 }
 
 function tasksTable(root, slug) {
@@ -194,8 +218,9 @@ ${d.allow_free_text ? `<label><input type="radio" name="answer" value="__text__"
   const showSign = !['signed', 'delivered', 'evaluated'].includes(data.status) || sign;
   const specs = ['requirements.md', 'design.md'].map(f => [f, readIf(join(root, '.bridgie', 'specs', slug, f))]).filter(([, t]) => t && !waitingList.some(d => d.type === 'approve_design'));
   const specHtml = specs.length ? `<h2>Design and requirements</h2>${specs.map(([f, t]) => `<details><summary>${esc(f)}</summary>${f === 'requirements.md' ? requirementsTable(t) : mdDoc(t, ['Decision'])}</details>`).join('\n')}` : '';
+  const decide = decideSections(root, slug);
   return page(data.title, fill(T('bet'), { title: esc(data.title), slug: esc(slug), cards, waiting, questions,
-    sign: showSign ? `<h2>Sign</h2><div class="signbox">${signHtml}</div>` : '', tasks: tasksTable(root, slug), specs: specHtml, sections, raw }), opts);
+    sign: showSign ? `<h2>Sign</h2><div class="signbox">${signHtml}</div>` : '', decide, tasks: tasksTable(root, slug), specs: specHtml, sections, raw }), opts);
 }
 
 export function renderAll(root, outDir) {

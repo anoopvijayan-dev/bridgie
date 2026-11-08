@@ -134,3 +134,31 @@ teardown() { if [[ -n "${SERVER_PID:-}" ]]; then kill "$SERVER_PID" 2>/dev/null 
   [[ "$output" == *"agent run is in progress"* ]]
   ! grep -q '"answer": "no"' "$P/.bridgie/decisions/b.json"
 }
+
+@test "the bet page shows what the decide loop found, with computed headlines, and the confidence card applies" {
+  Q="$(make_project --git)"
+  bash -c "cd '$Q' && bridgie init --lane product && bridgie bet new d --title 'Packs' && bridgie research d && bridgie lenses d && bridgie numbers d --template && bridgie numbers d" >/dev/null 2>&1
+  bash -c "cd '$Q' && bridgie panel d" >/dev/null 2>&1 || true
+  bash -c "cd '$Q' && bridgie panel d --n 6" >/dev/null 2>&1
+  mkdir -p "$Q/.bridgie/bets/d/evidence"; echo 'broker 1 notes' > "$Q/.bridgie/bets/d/evidence/n1.md"
+  bash -c "cd '$Q' && BRIDGIE_FAKE_OUTPUT='$BRIDGIE_HOME/tests/fixtures/fake/evidence.2.json' bridgie evidence d" >/dev/null 2>&1
+  P="$Q"; start_server
+  run get /bet/d
+  [[ "$output" == *"What the decide loop found"* ]]
+  [[ "$output" == *"1 fund, 1 fund if, 1 pass · 6.7/10"* ]]
+  [[ "$output" == *"buy rate 60% of 5 · upper bound, not evidence"* ]]
+  [[ "$output" == *"profitable on these inputs"* ]]
+  [[ "$output" == *"StatementCo"* ]]
+  [[ "$output" == *"Confidence proposal"* ]]
+  id="$(node "$BRIDGIE_HOME/runner/flow.mjs" pending-of-type "$Q" d confidence)"
+  [ "$(post "slug=d&id=$id&answer=accept%20anecdote")" = "303" ]
+  [ "$(fm "$Q/.bridgie/bets/d/bet.md" confidence)" = '"anecdote"' ]
+  run get /bet/d
+  [[ "$output" != *"Confidence proposal"* ]]
+}
+
+@test "a bet with nothing from the decide loop shows no such section" {
+  start_server
+  run get /bet/b
+  [[ "$output" != *"What the decide loop found"* ]]
+}

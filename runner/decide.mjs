@@ -202,6 +202,35 @@ export function writeBoard(root, slug, memos, chairOutputFile) {
   return board;
 }
 
+// ---------- evidence ----------
+export function openEvidenceTasks(root, slug) {
+  const { body } = st.readFm(st.betPath(root, slug));
+  const sec = sections(body).find(s => s.title === 'Evidence tasks');
+  if (!sec) return [];
+  return [...sec.body.matchAll(/^- \[ \] (E[-\w]+):\s*(.*)$/gm)].map(m => ({ id: m[1], text: m[2].trim() }));
+}
+
+// writeEvidence: plan mode → evidence-plan.md with one section per open task; synthesis mode →
+// evidence-synthesis.md and the confidence proposal text (the caller turns it into a decision).
+export function writeEvidence(root, slug, outputFile, mode) {
+  const o = loadOutput(outputFile);
+  if (!o.artifact_md) throw new Error('evidence output has no artifact_md');
+  const dir = betDir(root, slug);
+  if (mode === 'plan') {
+    const open = openEvidenceTasks(root, slug);
+    const got = o.artifact_md.match(/^### (E[-\w]+)\b/gm)?.map(h => h.replace(/^### /, '')) || [];
+    const missing = open.filter(t => !got.includes(t.id)).map(t => t.id);
+    if (missing.length) throw new Error(`evidence plan has no section for: ${missing.join(', ')}`);
+    writeFileSync(join(dir, 'evidence-plan.md'), `# Evidence plan — ${slug}\n\n${st.today()}. ${o.summary_md.trim()}\n\n${o.artifact_md.trim()}\n`);
+    return { file: 'evidence-plan.md', tasks: open.length, proposal: null };
+  }
+  const titles = sections(o.artifact_md).map(s => s.title);
+  for (const h of ['What the material shows', 'What it does not show', 'Sources']) if (!titles.includes(h)) throw new Error(`evidence synthesis is missing "## ${h}"`);
+  writeFileSync(join(dir, 'evidence-synthesis.md'), `# Evidence synthesis — ${slug}\n\n${st.today()}. ${o.summary_md.trim()}\n\n${o.artifact_md.trim()}\n`);
+  const prop = (o.proposals || []).find(p => p.kind === 'confidence');
+  return { file: 'evidence-synthesis.md', tasks: 0, proposal: prop ? prop.text : null };
+}
+
 // ---------- CLI ----------
 function flag(a, n) { const i = a.indexOf(`--${n}`); return i >= 0 ? a[i + 1] : undefined; }
 const out = x => process.stdout.write((typeof x === 'string' ? x : JSON.stringify(x, null, 2)) + '\n');
@@ -212,6 +241,8 @@ export const OPS = {
   'seed-bet': a => out(seedBetFromOpportunity(a[0], a[1], a[2]).id),
   'apply-frame': a => out(applyFrame(a[0], a[1], a[2]).join(', ')),
   'add-idea': a => { addIdeaLine(a[0], a[1], a[2]); out('ok'); },
+  'open-evidence-tasks': a => out(openEvidenceTasks(a[0], a[1])),
+  'write-evidence': a => out(writeEvidence(a[0], a[1], a[2], a[3])),
   'write-research': a => out(writeResearch(a[0], a[1], a[2])),
   'write-memo': a => out(writeMemo(a[0], a[1], a[2])),
   'write-board': a => { const memos = LENSES.map(l => parseMemo(readFileSync(join(a[2], 'memos', `${l}.md`), 'utf8'), l)); out(writeBoard(a[0], a[1], memos, a[3])); },
