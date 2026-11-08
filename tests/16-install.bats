@@ -89,5 +89,10 @@ load helpers
   run bash -c "cd '$P' && BRIDGIE_HOME='$C' node '$C/bin/bridgie.mjs' init --lane product && BRIDGIE_HOME='$C' node '$C/bin/bridgie.mjs' bet new b --title T"
   [ "$status" -eq 0 ]
   [[ "$output" != *"CRLF"* ]]
-  [ -z "$(grep -l $'\r' "$P/.bridgie/.gitignore" "$P/.bridgie/policy.yaml" "$P/.bridgie/bets/b/bet.md")" ]
+  run node -e '
+    const fs = require("fs"), bad = process.argv.slice(1).filter(f => fs.readFileSync(f, "utf8").includes("\r"));
+    for (const f of bad) console.log("CRLF:", f, JSON.stringify(fs.readFileSync(f, "utf8").split("\n").find(l => l.includes("\r"))));
+    process.exit(bad.length ? 1 : 0)' "$P/.bridgie/.gitignore" "$P/.bridgie/policy.yaml" "$P/.bridgie/bets/b/bet.md"
+  echo "$output"
+  [ "$status" -eq 0 ]
 }
