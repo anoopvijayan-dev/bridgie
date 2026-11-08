@@ -1,19 +1,22 @@
 #!/usr/bin/env bash
-# Install the bridgie skill for agent harnesses and show how to put bridgie on PATH.
-#   bin/install.sh            copy skills/bridgie to ~/.claude/skills and ~/.agents/skills (when those homes exist)
-#   bin/install.sh --path     also append the PATH line to ~/.bashrc
-#   bin/install.sh --policy   also create ~/.bridgie/policy.yaml (routing per machine) if missing
+# Install bridgie for this user: skill for agent harnesses, PATH in every shell, Windows shim, routing policy.
+#   bin/install.sh              everything below (idempotent; safe to re-run)
+#   bin/install.sh --no-path    skip the PATH and shim changes
+#   bin/install.sh --no-policy  skip creating ~/.bridgie/policy.yaml
+# After it runs, open a NEW terminal (Git Bash, PowerShell or cmd on Windows) and type: bridgie
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-add_path=0 add_policy=0
+add_path=1 add_policy=1
 for a in "$@"; do
   case "$a" in
-    --path) add_path=1 ;;
-    --policy) add_policy=1 ;;
+    --path|--policy) ;;                       # old flags: now the default
+    --no-path) add_path=0 ;;
+    --no-policy) add_policy=0 ;;
     *) echo "install: unknown argument $a" >&2; exit 2 ;;
   esac
 done
 
+# 1. the agent skill
 installed=0
 for home in "$HOME/.claude" "$HOME/.agents"; do
   [[ -d "$home" ]] || continue
@@ -24,19 +27,36 @@ for home in "$HOME/.claude" "$HOME/.agents"; do
 done
 [[ "$installed" == "1" ]] || echo "no ~/.claude or ~/.agents folder found; copy skills/bridgie/ into your agent's skills folder by hand"
 
+# 2. PATH in every shell profile bash might read, plus a Windows shim for PowerShell and cmd
 line="export PATH=\"$HERE/bin:\$PATH\""
+add_line() {   # add_line <file>: append the PATH line once
+  if grep -qxF "$line" "$1" 2>/dev/null; then echo "PATH already set in $1"; else printf '\n# bridgie\n%s\n' "$line" >> "$1"; echo "added to $1: $line"; fi
+}
 if [[ "$add_path" == "1" ]]; then
-  if grep -qxF "$line" "$HOME/.bashrc" 2>/dev/null; then echo "PATH already set in ~/.bashrc"; else printf '\n# bridgie\n%s\n' "$line" >> "$HOME/.bashrc"; echo "added to ~/.bashrc: $line"; fi
+  add_line "$HOME/.bashrc"
+  # Git Bash and macOS login shells read ~/.bash_profile (or ~/.profile) and may never read ~/.bashrc
+  if [[ -f "$HOME/.bash_profile" ]]; then add_line "$HOME/.bash_profile"; elif [[ -f "$HOME/.profile" ]]; then add_line "$HOME/.profile"; else add_line "$HOME/.bash_profile"; fi
+  [[ -f "$HOME/.zshrc" || "${SHELL:-}" == *zsh ]] && add_line "$HOME/.zshrc"
+  if [[ -n "${MSYSTEM:-}" || "$(uname -s)" == MINGW* || "$(uname -s)" == MSYS* ]]; then
+    # Windows: %LOCALAPPDATA%\Microsoft\WindowsApps is already on every user's PATH; drop a shim there.
+    shim_dir="$(cygpath -u "${LOCALAPPDATA:-$HOME/AppData/Local}")/Microsoft/WindowsApps"
+    if [[ -d "$shim_dir" ]]; then
+      bash_win="$(cygpath -w "$(command -v bash)")"
+      printf '@echo off\r\n"%s" "%s" %%*\r\n' "$bash_win" "$(cygpath -w "$HERE/bin/bridgie")" > "$shim_dir/bridgie.cmd"
+      echo "Windows shim installed: $shim_dir\\bridgie.cmd (bridgie now works from PowerShell and cmd too)"
+    fi
+  fi
 else
-  echo "to put bridgie on PATH, add to ~/.bashrc:  $line   (or re-run with --path)"
+  echo "PATH not changed (--no-path); add to your shell profile:  $line"
 fi
 
+# 3. routing policy for this machine
 if [[ "$add_policy" == "1" ]]; then
   mkdir -p "$HOME/.bridgie"
   if [[ -f "$HOME/.bridgie/policy.yaml" ]]; then
     echo "$HOME/.bridgie/policy.yaml already exists; left unchanged"
   else
-    cat > "$HOME/.bridgie/policy.yaml" <<'EOF'
+    cat > "$HOME/.bridgie/policy.yaml" <<'POLICY'
 # Bridgie routing for this machine. Projects can override in .bridgie/policy.yaml.
 # Adapters: claude-code, copilot, codex, antigravity, fake. Check them with: bridgie doctor
 version: 1
@@ -47,7 +67,10 @@ routing:
     scout: { adapter: antigravity, model: default }
   seats:
     reviewer: { adapter: copilot, model: claude-opus-5.5, effort: high }
-EOF
+POLICY
     echo "created $HOME/.bridgie/policy.yaml (judgment and review on Copilot Claude, production on Antigravity; edit to taste)"
   fi
 fi
+
+echo
+echo "Done. Open a NEW terminal and type:  bridgie        (then: bridgie new my-idea)"

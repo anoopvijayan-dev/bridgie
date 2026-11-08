@@ -10,17 +10,26 @@ rendered page and is written back to files you can diff.
 
 ## Install
 
+Needs git and Node 20+. On Windows, run the install line in **Git Bash** once; after that `bridgie` works
+in Git Bash, PowerShell and cmd.
+
 ```bash
-git clone <this repo> ~/source/repos/bridgie
-~/source/repos/bridgie/bin/install.sh --path --policy   # skill for Claude Code / agents, PATH, routing
-bridgie doctor
+bash <(curl -fsSL https://raw.githubusercontent.com/anoopvijayan-dev/bridge/main/bin/get.sh)
 ```
 
-Requires bash, git and Node ≥ 20. Tests need `npm i -g bats`. On Windows, run everything from Git Bash.
+That clones Bridgie to `~/bridgie`, installs the agent skill, puts `bridgie` on your PATH in every shell,
+and writes `~/.bridgie/policy.yaml` (which model runtime each seat uses on this machine). Already cloned?
+Run `bin/install.sh` from the clone instead. Then open a **new** terminal.
 
-`--policy` writes `~/.bridgie/policy.yaml`: which model runtime each seat tier uses on this machine
-(Copilot CLI with Claude for judgment and review, Antigravity for production work). Edit it to taste;
-`bridgie doctor` probes every adapter.
+## Start
+
+```bash
+bridgie new my-idea --lane product     # folder + git + Bridgie state, in one step
+cd my-idea
+bridgie                                # tells you exactly what to do next, at every stage
+```
+
+`bridgie doctor` checks tools and model adapters. `bridgie help` lists every command.
 
 ## Finding and testing an idea (the decide loop)
 
