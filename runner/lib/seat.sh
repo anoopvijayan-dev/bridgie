@@ -104,7 +104,8 @@ run_seat() {
   # 4. single-writer guard (P1): any added, removed or changed state file fails the run
   local diff; diff="$(guard check "$root" "$run_dir/.snapshot" "$run_dir" "$exclude")"
   if [[ "$diff" != '{"added":[],"removed":[],"changed":[]}' ]]; then
-    guard restore "$root" "$run_dir/.snapshot" "$run_dir" "$exclude" >/dev/null
+    local restored; restored="$(guard restore "$root" "$run_dir/.snapshot" "$run_dir" "$exclude")"
+    diff="$restored"
     [[ "$lock" == "1" ]] && { seat_unlock "$root"; trap - EXIT; }
     printf 'seat %s modified Bridgie state directly; state restored from snapshot\n%s\n' "$name" "$diff" > "$run_dir/VIOLATION"
     die "seat $name wrote to Bridgie state files; run failed and state restored (see $run_dir/VIOLATION)"

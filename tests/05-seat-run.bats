@@ -125,3 +125,30 @@ setup() {
   [ "$status" -ne 0 ]
   [[ "$output" == *"needs web access"* ]]
 }
+
+@test "run history is hashed, never copied; tampering with it still fails the run and is reported unrestorable" {
+  bash -c "cd '$P' && bridgie seat-run b decide/grill" >/dev/null
+  big="$P/.bridgie/runs/b/grill-01/adapter.log"; head -c 3000000 /dev/zero | tr '\0' 'x' > "$big"
+  printf 'echo tampered >> .bridgie/runs/b/grill-01/adapter.log\n' > "$P/.git/t.sh"
+  run bash -c "cd '$P' && BRIDGIE_FAKE_SCRIPT='$P/.git/t.sh' bridgie seat-run b decide/grill"
+  [ "$status" -ne 0 ]
+  [ ! -e "$P/.bridgie/runs/b/grill-02/.snapshot/files/.bridgie/runs" ]          # not copied
+  grep -q '"unrestorable":\[".bridgie/runs/b/grill-01/adapter.log"\]' "$P/.bridgie/runs/b/grill-02/VIOLATION"
+}
+
+@test "a snapshot that would copy too much is refused instead of filling the disk" {
+  head -c 2000000 /dev/zero > "$P/.bridgie/bets/b/huge.bin"
+  run bash -c "cd '$P' && BRIDGIE_SNAPSHOT_MAX_MB=1 bridgie seat-run b decide/grill"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"state snapshot would copy 2 MB (limit 1 MB"* ]]
+  [[ "$output" == *"huge.bin"* ]]
+  [ ! -d "$P/.bridgie/.seat-lock" ]
+}
+
+@test "doctor finds leftover snapshots from older versions and says how to remove them" {
+  mkdir -p "$P/.bridgie/runs/b/old-01/.snapshot/files"; head -c 1048576 /dev/zero > "$P/.bridgie/runs/b/old-01/.snapshot/files/x"
+  mkdir -p "$P/.bridgie/runs/b/bad-01/.snapshot"; touch "$P/.bridgie/runs/b/bad-01/VIOLATION"
+  run bash -c "cd '$P' && bridgie doctor"
+  [[ "$output" == *"1 leftover state snapshot(s) under .bridgie/runs (1 MB)"* ]]
+  [[ "$output" == *"-name .snapshot -prune -exec rm -rf"* ]]
+}
