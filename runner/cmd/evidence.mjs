@@ -7,7 +7,7 @@ import * as fl from '../flow.mjs';
 import { openEvidenceTasks, writeEvidence } from '../decide.mjs';
 import { runSeat } from '../cli/seat.mjs';
 import { die, log, projectRoot, stateCommit } from '../cli/core.mjs';
-import { decideStatusOk } from './research.mjs';
+import { decideStatusOk, stopIfAsked } from './research.mjs';
 
 export default async function evidence(argv) {
   const slug = argv[0];
@@ -18,6 +18,7 @@ export default async function evidence(argv) {
   const mode = existsSync(mat) && readdirSync(mat).some(f => !f.startsWith('_') && statSync(join(mat, f)).isFile()) ? 'synthesis' : 'plan';
   if (mode === 'plan' && !openEvidenceTasks(root, slug).length) die(`evidence: '${slug}' has no open evidence tasks (answer a question with "don't know", or run bridgie panel) and no material in .bridgie/bets/${slug}/evidence/`);
   const runDir = await runSeat(slug, 'decide/evidence', { root });
+  stopIfAsked(root, slug, runDir, 'evidence');
   let res;
   try { res = writeEvidence(root, slug, join(runDir, 'seat-output.json'), mode); } catch (e) { die(`${e.message}\nevidence: output rejected (see ${runDir})`); }
   st.ingestQuestions(root, slug, join(runDir, 'seat-output.json'), basename(runDir));

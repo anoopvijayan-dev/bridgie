@@ -19,6 +19,7 @@ Rules:
 - `vendor` drives cross-family checks; `reads_repo: false` makes the runner refuse to use the
   adapter as a reviewer.
 - Exit 0 only when `--out` exists. Any other exit code with a reason on stderr.
+- Exit 6 when the CLI itself failed (signed out, over its usage limit, crashed) and left no JSON; put the CLI's last words on stderr. Exit 4 means no reply at all, exit 5 a reply with no valid JSON block.
 - Keep the traps you learn in `gotchas.md` next to the adapter.
 
 Adapters: `fake` (tests), `claude-code` (anthropic), `codex` (openai), `antigravity` (google).

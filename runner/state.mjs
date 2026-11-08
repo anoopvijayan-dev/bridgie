@@ -125,7 +125,7 @@ export function betNew(root, slug, opts = {}) {
   if (!SLUG.test(slug)) throw new Error(`invalid slug "${slug}": lowercase letters, digits, hyphens`);
   const file = betPath(root, slug);
   if (existsSync(file)) throw new Error(`bet "${slug}" already exists at ${file}`);
-  const tpl = readFileSync(join(HOME, 'templates', 'bet.md'), 'utf8');
+  const tpl = readFileSync(join(HOME, 'templates', 'bet.md'), 'utf8').replace(/\r\n/g, '\n');   // LF even from a CRLF checkout
   const { body } = splitFrontmatter(tpl);
   const data = {
     id: slug, title: opts.title || slug, lane: opts.lane || 'engineering', risk: opts.risk || 'none',

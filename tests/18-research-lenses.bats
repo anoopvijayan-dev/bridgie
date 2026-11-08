@@ -26,6 +26,19 @@ setup() {
   [ ! -e "$P/.bridgie/bets/b/research.md" ]
 }
 
+@test "a seat that stops to ask (no artifact, one question) raises the question and waits for the owner (exit 3)" {
+  printf '{"seat":"researcher","summary_md":"stopped","artifact_md":null,"questions":[{"context":"STOP: which one person should the research cover?","options":["finance owner","agent builder"]}]}' > "$P/stop.json"
+  run bash -c "cd '$P' && BRIDGIE_FAKE_OUTPUT='$P/stop.json' bridgie research b"
+  [ "$status" -eq 3 ]
+  [[ "$output" == *"stopped to ask first"* ]]
+  [[ "$output" != *"output rejected"* ]]
+  grep -q 'which one person' "$P/.bridgie/decisions/b.json"
+  grep -q 'which one person' "$P/.bridgie/bets/b/bet.md"
+  [ ! -e "$P/.bridgie/bets/b/research.md" ]
+  run bash -c "cd '$P' && bridgie research b"                    # once answered, the next run writes the report
+  [ "$status" -eq 0 ]
+}
+
 @test "lenses: three memos and a chair; the vote and average are computed by the runner" {
   run bash -c "cd '$P' && bridgie lenses b"
   [ "$status" -eq 0 ]

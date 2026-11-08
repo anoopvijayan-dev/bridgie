@@ -25,3 +25,4 @@ Two modes, decided by your inputs. With no evidence material: you design how eac
 
 ## Stop conditions
 Stop and raise a question if an evidence task needs access or budget you were not given.
+When you stop, set `artifact_md` to null and put the question(s) in `questions`; Bridgie raises them for the owner and you run again once they are answered.

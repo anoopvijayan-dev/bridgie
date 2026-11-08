@@ -1,0 +1,4 @@
+# Keep Bridgie LF on every OS (Windows autocrlf would otherwise hand CRLF templates to new projects).
+* text=auto eol=lf
+*.cmd text eol=crlf
+*.bat text eol=crlf

@@ -15,12 +15,12 @@ if (o.mode === 'readonly') {
   // Read and inspect only; everything not allowed is refused without prompting.
   args.push('--permission-mode', 'dontAsk',
     '--allowedTools', 'Read', 'Grep', 'Glob', 'LS', 'WebSearch', 'WebFetch', 'Bash(git diff:*)', 'Bash(git log:*)', 'Bash(git show:*)', 'Bash(git status:*)',
-    '--disallowedTools', 'Edit', 'Write', 'MultiEdit', 'NotebookEdit');
+    '--disallowedTools', 'Edit', 'Write', 'NotebookEdit');
 } else {
   args.push('--permission-mode', 'acceptEdits',
-    '--allowedTools', 'Read', 'Grep', 'Glob', 'LS', 'Edit', 'Write', 'MultiEdit', 'Bash',
+    '--allowedTools', 'Read', 'Grep', 'Glob', 'LS', 'Edit', 'Write', 'Bash',
     '--disallowedTools', 'Bash(git push:*)', 'Bash(git remote:*)', 'Bash(git checkout:*)', 'Bash(git switch:*)');
 }
 const reply = A.replyPath(o);
-A.run(bin, args, { cwd: o.cwd, stdin: o.prompt, stdout: reply });
-A.finish(o, reply);
+const rc = A.run(bin, args, { cwd: o.cwd, stdin: o.prompt, stdout: reply });
+A.finish(o, reply, rc);

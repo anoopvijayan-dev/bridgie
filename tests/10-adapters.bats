@@ -49,6 +49,7 @@ if (name === 'claude' || name === 'copilot') lines.push(`cwd=${process.cwd()}`);
 writeFileSync(log, lines.join('\n') + '\n');
 if (name === 'claude' || name === 'codex') writeFileSync(log + '.stdin', readFileSync(0));
 const json = s => '```json\n{"seat":"grill","summary_md":"from ' + s + '"}\n```\n';
+if (process.env.STUB_FAIL) { process.stdout.write(process.env.STUB_FAIL + '\n'); process.exit(1); }
 if (process.env.STUB_NOJSON === '1') process.stdout.write('no json here\n');
 else if (name === 'codex') writeFileSync(args[args.indexOf('-o') + 1], json('codex'));
 else process.stdout.write((name === 'claude' ? 'Done.\n' : name === 'copilot' ? 'ok\n' : '') + json(name));
@@ -120,6 +121,14 @@ run_adapter() { node "$BRIDGIE_HOME/adapters/$1/run.mjs" --seat "$BRIDGIE_HOME/s
   [ "$output" = '{"vendor":"google","reads_repo":true,"reads_web":false}' ]
   run node "$BRIDGIE_HOME/adapters/claude-code/run.mjs" --capabilities
   [ "$output" = '{"vendor":"anthropic","reads_repo":true,"reads_web":true}' ]
+}
+
+@test "a CLI that fails (e.g. signed out) is reported as a CLI failure with its message, not as a bad reply" {
+  stub_env
+  STUB_FAIL="Failed to authenticate: OAuth session expired" run run_adapter claude-code --mode readonly --model default
+  [ "$status" -eq 6 ]
+  [[ "$output" == *"the CLI failed (exit 1)"* ]]
+  [[ "$output" == *"OAuth session expired"* ]]
 }
 
 @test "copilot: -p instruction last, read-only denies write, vendor follows the model" {

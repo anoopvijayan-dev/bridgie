@@ -28,5 +28,5 @@ if (o.mode === 'readonly') {
 }
 args.push('-p', instruction);
 const reply = A.replyPath(o);
-A.run(bin, args, { cwd: o.cwd, stdout: reply, stderr: join(dirname(o.out), 'copilot.log') });
-A.finish(o, reply);
+const rc = A.run(bin, args, { cwd: o.cwd, stdout: reply, stderr: join(dirname(o.out), 'copilot.log') });
+A.finish(o, reply, rc);

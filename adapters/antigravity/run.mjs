@@ -45,5 +45,5 @@ const args = ['--project', project, '--mode', mode, '--effort', o.effort || 'hig
 if (o.model !== 'default') args.push('--model', o.model);
 args.push('--print', instruction);   // --print takes the prompt as its VALUE and must come last
 const reply = A.replyPath(o);
-A.run(bin, args, { cwd: o.cwd, stdout: reply, stderr: join(dirname(o.out), 'agy.log') });
-A.finish(o, reply);
+const rc = A.run(bin, args, { cwd: o.cwd, stdout: reply, stderr: join(dirname(o.out), 'agy.log') });
+A.finish(o, reply, rc);
