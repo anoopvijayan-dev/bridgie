@@ -14,5 +14,5 @@ const args = ['exec', '--search', '-s', o.mode === 'write' ? 'workspace-write' :
 if (o.model !== 'default') args.push('-m', o.model);
 if (o.effort) args.push('-c', `model_reasoning_effort="${o.effort}"`);
 const log = join(dirname(o.out), 'codex.log');
-A.run(bin, args, { stdin: o.prompt, stdout: log, stderr: log + '.err' });
-A.finish(o, reply);
+const rc = A.run(bin, args, { stdin: o.prompt, stdout: log, stderr: log + '.err' });
+A.finish(o, reply, rc);

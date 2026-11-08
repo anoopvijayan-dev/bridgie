@@ -29,3 +29,4 @@ You turn a one-line idea (the bet's `## Idea` section or its title) and, when pr
 
 ## Stop conditions
 Stop if the idea is a technology looking for a problem; return the single question "who has this problem today, and what does it cost them?".
+When you stop, set `artifact_md` to null and put the question(s) in `questions`; Bridgie raises them for the owner and you run again once they are answered.

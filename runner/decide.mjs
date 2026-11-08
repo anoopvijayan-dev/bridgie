@@ -8,6 +8,14 @@ import * as st from './state.mjs';
 import { assertValid } from './schema.mjs';
 
 export const betDir = (root, slug) => join(root, '.bridgie', 'bets', slug);
+
+// stopped: a seat that hit one of its stop conditions returns no artifact, only the question(s) the
+// owner must answer first. That is a valid outcome, not a malformed output: the questions are raised
+// and the command waits for the owner (exit 3) instead of rejecting the run.
+export function stopped(outputFile) {
+  const o = JSON.parse(readFileSync(outputFile, 'utf8'));
+  return !(o.artifact_md || '').trim() && (o.questions || []).length > 0;
+}
 export const scoutDir = (root, name) => join(root, '.bridgie', 'scout', name);
 const SCOUT_NAME = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const TEXT_EXT = new Set(['.md', '.txt', '.csv', '.json', '.yaml', '.yml', '.eml', '.log', '.tsv', '.html', '.htm']);

@@ -81,3 +81,13 @@ load helpers
   [ "$status" -ne 0 ]
   [[ "$output" == *"not inside a bridgie project"* ]]
 }
+
+@test "init writes LF files even when Bridgie itself was checked out with CRLF (Windows autocrlf)" {
+  C="$(mktemp -d)"; cp -R "$BRIDGIE_HOME/." "$C/"
+  for f in "$C/templates/"*; do node -e 'const fs=require("fs"),f=process.argv[1]; fs.writeFileSync(f, fs.readFileSync(f,"utf8").replace(/\r?\n/g,"\r\n"))' "$f"; done
+  P="$(mktemp -d)"; git -C "$P" init -q
+  run bash -c "cd '$P' && BRIDGIE_HOME='$C' node '$C/bin/bridgie.mjs' init --lane product && BRIDGIE_HOME='$C' node '$C/bin/bridgie.mjs' bet new b --title T"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"CRLF"* ]]
+  [ -z "$(grep -l $'\r' "$P/.bridgie/.gitignore" "$P/.bridgie/policy.yaml" "$P/.bridgie/bets/b/bet.md")" ]
+}

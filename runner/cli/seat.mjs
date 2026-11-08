@@ -1,7 +1,7 @@
 // runSeat: the only place an adapter is launched. Guards: fresh context from declared inputs, a
 // project-wide seat lock, a full state manifest before/after (P1), output schema validation, cost.
 // runSwarm: one fresh seat run per card, `swarm.parallel` at a time, under one lock.
-import { existsSync, mkdirSync, readdirSync, writeFileSync, cpSync, copyFileSync, rmSync, renameSync, openSync, closeSync, statSync, realpathSync } from 'node:fs';
+import { readFileSync, existsSync, mkdirSync, readdirSync, writeFileSync, cpSync, copyFileSync, rmSync, renameSync, openSync, closeSync, statSync, realpathSync } from 'node:fs';
 import { join, basename, relative } from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import * as st from '../state.mjs';
@@ -112,7 +112,11 @@ export async function runSeat(slug, seat, opts = {}) {
       die(`seat ${name} wrote to Bridgie state files; run failed and state restored (see ${join(runDir, 'VIOLATION')})`);
     }
     rmSync(join(runDir, '.snapshot'), { recursive: true, force: true });   // kept only beside a VIOLATION
-    if (rc !== 0) die(`adapter ${adapter} exited ${rc} for seat ${name}; see ${join(runDir, 'adapter.log')}`);
+    if (rc !== 0) {
+      let why = '';
+      try { why = readFileSync(join(runDir, 'adapter.log'), 'utf8').trim().split(/\r?\n/).filter(l => /^(adapter|extract-json):|not found/.test(l)).pop() || ''; } catch {}
+      die(`adapter ${adapter} exited ${rc} for seat ${name}${why ? `: ${why}` : ''}; see ${join(runDir, 'adapter.log')}`);
+    }
   } finally {
     if (locked) seatUnlock(root);
   }

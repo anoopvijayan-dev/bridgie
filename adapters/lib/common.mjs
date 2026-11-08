@@ -65,12 +65,20 @@ export function run(bin, args, { cwd, stdin, stdout, stderr } = {}) {
 }
 
 // finish: keep a model-written --out, else extract the last JSON block from the reply.
-export function finish(o, reply) {
+// cliStatus is the CLI's own exit code: when the CLI failed (signed out, over its limit, crashed) and
+// left no JSON, say so with the CLI's message (exit 6) rather than blaming the model's reply.
+export function finish(o, reply, cliStatus = 0) {
   if (existsSync(o.out) && statSync(o.out).size > 0) process.exit(0);
-  if (!existsSync(reply) || statSync(reply).size === 0) { process.stderr.write(`adapter: model produced no reply (see ${reply})\n`); process.exit(4); }
-  try { writeFileSync(o.out, JSON.stringify(extractLastJson(readFileSync(reply, 'utf8')), null, 2) + '\n'); }
-  catch (e) { process.stderr.write(`extract-json: ${e.message}\n`); process.exit(5); }
-  process.exit(0);
+  const text = existsSync(reply) ? readFileSync(reply, 'utf8') : '';
+  try { writeFileSync(o.out, JSON.stringify(extractLastJson(text), null, 2) + '\n'); process.exit(0); }
+  catch (e) {
+    if (cliStatus !== 0) {
+      const said = text.trim().split(/\r?\n/).filter(Boolean).slice(-3).join(' | ').slice(0, 400);
+      process.stderr.write(`adapter: the CLI failed (exit ${cliStatus})${said ? `: ${said}` : ''}\n`); process.exit(6);
+    }
+    if (!text.trim()) { process.stderr.write(`adapter: model produced no reply (see ${reply})\n`); process.exit(4); }
+    process.stderr.write(`extract-json: ${e.message}\n`); process.exit(5);
+  }
 }
 
 export const replyPath = o => join(dirname(o.out), 'reply.txt');
