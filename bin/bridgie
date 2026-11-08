@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Resolve the tool root even when invoked through a symlink.
 # No external tools here: on Windows this may start before Git's usr/bin is on PATH.
-_self="${BASH_SOURCE[0]}"
+_self="${BASH_SOURCE[0]//\\//}"      # a Windows shim may pass C:\...\bin\bridgie: use forward slashes
 while [[ -L "$_self" ]] && command -v readlink >/dev/null; do _self="$(readlink "$_self")"; done
 _dir="${_self%/*}"; [[ "$_dir" == "$_self" ]] && _dir="."
 BRIDGIE_HOME="${BRIDGIE_HOME:-$(cd "$_dir/.." && pwd)}"

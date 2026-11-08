@@ -38,7 +38,7 @@ SH
   [ "$status" -eq 0 ]
   [ -f "$H/AppData/Local/Microsoft/WindowsApps/bridgie.cmd" ]
   grep -q '@echo off' "$H/AppData/Local/Microsoft/WindowsApps/bridgie.cmd"
-  grep -qF 'bin/bridgie" %*' "$H/AppData/Local/Microsoft/WindowsApps/bridgie.cmd"
+  grep -qF "\"$BRIDGIE_HOME/bin/bridgie\" %*" "$H/AppData/Local/Microsoft/WindowsApps/bridgie.cmd"   # forward-slash path: bash resolves its home from it
   grep -q '^set "PATH=C:.*;%PATH%"' "$H/AppData/Local/Microsoft/WindowsApps/bridgie.cmd"   # Git tools first
   [[ "$output" == *"works from PowerShell and cmd too"* ]]
 }
