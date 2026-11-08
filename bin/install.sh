@@ -47,7 +47,7 @@ if [[ "$add_path" == "1" ]]; then
       bash_win="$(cygpath -w "$bash_unix")"
       tools="$(cygpath -w "${bash_unix%/*}")"
       [[ -d /mingw64/bin ]] && tools="$tools;$(cygpath -w /mingw64/bin)"
-      printf '@echo off\r\nsetlocal\r\nset "PATH=%s;%%PATH%%"\r\n"%s" "%s" %%*\r\n' "$tools" "$bash_win" "$(cygpath -w "$HERE/bin/bridgie")" > "$shim_dir/bridgie.cmd"
+      printf '@echo off\r\nsetlocal\r\nset "PATH=%s;%%PATH%%"\r\n"%s" "%s" %%*\r\n' "$tools" "$bash_win" "$HERE/bin/bridgie" > "$shim_dir/bridgie.cmd"   # bash takes the /c/... path
       echo "Windows shim installed: $shim_dir\\bridgie.cmd (bridgie now works from PowerShell and cmd too)"
     fi
   fi
