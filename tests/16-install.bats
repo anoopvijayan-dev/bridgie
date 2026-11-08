@@ -17,7 +17,7 @@ load helpers
   run env HOME="$H" PATH="$H/stub:$PATH" node "$BRIDGIE_HOME/bin/bridgie.mjs" setup
   [ "$status" -eq 0 ]
   [ -f "$H/.claude/skills/bridgie/SKILL.md" ] && [ -f "$H/.agents/skills/bridgie/SKILL.md" ]
-  [ "$(cat "$H/npm.log" | tr -d '\r')" = "install -g $(native "$BRIDGIE_HOME")" ]
+  cat "$H/npm.log"; has_path_line "$H/npm.log" "install -g " "$BRIDGIE_HOME"
   [[ "$output" == *"works in PowerShell, cmd, Git Bash, macOS and Linux"* ]]
   grep -q 'adapter: copilot' "$H/.bridgie/policy.yaml"
   run env HOME="$H" PATH="$H/stub:$PATH" "$BRIDGIE_HOME/bin/install.sh"      # old entry point still works
