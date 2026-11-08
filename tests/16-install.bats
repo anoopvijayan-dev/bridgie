@@ -39,6 +39,7 @@ SH
   [ -f "$H/AppData/Local/Microsoft/WindowsApps/bridgie.cmd" ]
   grep -q '@echo off' "$H/AppData/Local/Microsoft/WindowsApps/bridgie.cmd"
   grep -qF 'bin/bridgie" %*' "$H/AppData/Local/Microsoft/WindowsApps/bridgie.cmd"
+  grep -q '^set "PATH=C:.*;%PATH%"' "$H/AppData/Local/Microsoft/WindowsApps/bridgie.cmd"   # Git tools first
   [[ "$output" == *"works from PowerShell and cmd too"* ]]
 }
 
@@ -58,4 +59,11 @@ SH
   [[ "$output" == *"b: T — draft"* ]] && [[ "$output" == *"bridgie grill b --lenses"* ]]
   run bash -c "cd '$W' && bridgie new my-idea"
   [ "$status" -ne 0 ]
+}
+
+@test "bin/bridgie starts without dirname on PATH (as from a Windows shim)" {
+  T="$(mktemp -d)"; ln -s "$(command -v node)" "$T/node"; for c in tr cat; do ln -s "$(command -v $c)" "$T/$c"; done
+  run env -i HOME="$HOME" PATH="$T" "$BASH" "$BRIDGIE_HOME/bin/bridgie" version
+  [ "$status" -eq 0 ]
+  [[ "$output" == bridgie\ 0.* ]]
 }
