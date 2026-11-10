@@ -154,19 +154,77 @@ export function addIdeaLine(root, slug, idea) {
 
 // ---------- research ----------
 export const RESEARCH_SECTIONS = ['Direct competitors', 'Indirect and substitutes', 'Prices', 'What their customers complain about', 'Not found', 'Sources'];
+const LINK = /https?:\/\/[^\s)>\]]+/g;
+const linksIn = md => [...new Set([...md.matchAll(LINK)].map(m => m[0]))];
+
+// researchLinks: every distinct link in the researcher's artifact.
+export const researchLinks = outputFile => linksIn(loadOutput(outputFile).artifact_md || '');
+
+// checkLinks: ask each link once. 404 and 410 mean the page does not exist (dead); any other
+// answer below 400 is live; a refusal, a timeout or no network means it could not be checked,
+// which is never held against the research (many sites refuse scripts; some networks block them).
+export async function checkLinks(links, fetcher = fetchStatus, parallel = 8) {
+  const res = { live: [], dead: [], unchecked: [] };
+  const verdicts = new Array(links.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < links.length) {
+      const i = next++;
+      try { const r = await fetcher(links[i]); verdicts[i] = r.status === 404 || r.status === 410 ? 'dead' : r.ok ? 'live' : 'unchecked'; }
+      catch { verdicts[i] = 'unchecked'; }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(parallel, links.length) }, worker));
+  links.forEach((l, i) => res[verdicts[i]].push(l));
+  return res;
+}
+async function fetchStatus(url) {
+  const r = await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(8000), headers: { 'user-agent': 'Mozilla/5.0 (compatible; link-check)' } });
+  r.body?.cancel().catch(() => {});
+  return { status: r.status, ok: r.ok };
+}
+
+// unlinkedFacts: the two sections whose every entry is a claim about someone else's product.
+// A competitor row or a complaint with no link is the model's memory, not research.
+function unlinkedFacts(md) {
+  const bad = [];
+  for (const s of sections(md)) {
+    const lines = s.body.split('\n').map(l => l.trim());
+    let facts = [];
+    if (s.title === 'Direct competitors') facts = lines.filter(l => l.startsWith('|') && !/^\|[\s:|-]+\|?$/.test(l)).slice(1);   // table rows after the header
+    if (s.title === 'What their customers complain about') facts = lines.filter(l => /^([-*]|\d+\.)\s/.test(l));
+    for (const l of facts) if (!l.match(LINK)) bad.push(`${s.title}: no link on "${l.slice(0, 80)}"`);
+  }
+  return bad;
+}
+
 // writeResearch: the researcher's artifact must have every section and carry links; a report with
-// fewer than three distinct links is a memory dump, not research, and is rejected.
-export function writeResearch(root, slug, outputFile) {
+// fewer than three distinct links is a memory dump, not research, and is rejected. `linkCheck`
+// (from checkLinks) is the runner's own finding: dead links do not count and are listed on the page.
+export function writeResearch(root, slug, outputFile, linkCheck = null) {
   const o = loadOutput(outputFile);
   if (!o.artifact_md) throw new Error('researcher output has no artifact_md');
   const titles = sections(o.artifact_md).map(s => s.title);
   const missing = RESEARCH_SECTIONS.filter(h => !titles.includes(h));
   if (missing.length) throw new Error(`research is missing sections: ${missing.join(', ')}`);
-  const links = new Set([...o.artifact_md.matchAll(/https?:\/\/[^\s)>\]]+/g)].map(m => m[0]));
-  if (links.size < 3) throw new Error(`research cites ${links.size} link(s); every fact needs a source (at least 3 distinct links)`);
+  const unlinked = unlinkedFacts(o.artifact_md);
+  if (unlinked.length) throw new Error(`research has facts with no source:\n  ${unlinked.join('\n  ')}`);
+  const links = linksIn(o.artifact_md);
+  const dead = linkCheck ? links.filter(l => linkCheck.dead.includes(l)) : [];
+  const usable = links.length - dead.length;
+  if (usable < 3) throw new Error(dead.length
+    ? `research cites ${usable} link(s) that answer; every fact needs a source (at least 3 distinct links). dead: ${dead.join(', ')}`
+    : `research cites ${links.length} link(s); every fact needs a source (at least 3 distinct links)`);
+  let check = '';
+  if (linkCheck) {
+    const unchecked = links.filter(l => linkCheck.unchecked.includes(l));
+    check = [`\n## Link check`, '', `Checked by Bridgie, not by the model: ${links.length - dead.length - unchecked.length} answered, ${dead.length} dead, ${unchecked.length} could not be checked.`,
+      ...(dead.length ? ['', 'Dead (the page does not exist; treat what cites it as unproven):', ...dead.map(l => `- ${l}`)] : []),
+      ...(unchecked.length ? ['', 'Could not be checked (refused, timed out or no network):', ...unchecked.map(l => `- ${l}`)] : []), ''].join('\n');
+  }
   const f = join(betDir(root, slug), 'research.md');
-  writeFileSync(f, `# Research — ${slug}\n\nResearched ${st.today()}. ${o.summary_md.trim()}\n\n${o.artifact_md.trim()}\n`);
-  return { file: f, links: links.size };
+  writeFileSync(f, `# Research — ${slug}\n\nResearched ${st.today()}. ${o.summary_md.trim()}\n\n${o.artifact_md.trim()}\n${check}`);
+  return { file: f, links: links.length, dead: dead.length };
 }
 
 // ---------- board (lenses + chair) ----------

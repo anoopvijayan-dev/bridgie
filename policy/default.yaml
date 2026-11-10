@@ -10,9 +10,9 @@ lanes:
     cross_family: true
     min_confidence_to_sign: anecdote
     by_risk:
-      money: { tiers: [mechanical, specified, contracts, invariants, adversarial, behavioural, dual_run], approvers: 2, auto_accept: false, min_confidence_to_sign: data, human_ack_before_build: true, require_numbers: true }
+      money: { tiers: [mechanical, specified, contracts, invariants, mutation, adversarial, behavioural, dual_run], approvers: 2, auto_accept: false, min_confidence_to_sign: data, human_ack_before_build: true, require_numbers: true }
       data: { tiers: [mechanical, specified, contracts, adversarial, behavioural], approvers: 1, auto_accept: false, min_confidence_to_sign: anecdote, human_ack_before_build: true }
-      security: { tiers: [mechanical, specified, adversarial, behavioural], approvers: 1, auto_accept: false, min_confidence_to_sign: anecdote, human_ack_before_build: true }
+      security: { tiers: [mechanical, specified, mutation, adversarial, behavioural], approvers: 1, auto_accept: false, min_confidence_to_sign: anecdote, human_ack_before_build: true }
       infra: { tiers: [mechanical, adversarial], approvers: 1, auto_accept: false, min_confidence_to_sign: anecdote, human_ack_before_build: true }
       ux: { tiers: [mechanical, specified, adversarial], approvers: 1, auto_accept: false, min_confidence_to_sign: opinion, human_ack_before_build: false }
       none: { tiers: [mechanical, specified, adversarial], approvers: 1, auto_accept: false, min_confidence_to_sign: opinion, human_ack_before_build: false }

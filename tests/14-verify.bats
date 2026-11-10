@@ -112,3 +112,47 @@ setup() {
   grep -q '"id": "mechanical:1"' "$P/.bridgie/runs/b/verify-01/evidence.json"
   node -e 'const e=require(process.argv[1]); const r=Object.fromEntries(e.criteria.map(c=>[c.id,c.result])); if(r["mechanical:1"]!=="pass"||r["mechanical:2"]!=="fail") process.exit(1)' "$P/.bridgie/runs/b/verify-01/evidence.json"
 }
+
+@test "{base} in a command is the commit the task started from" {
+  printf 'version: 1\nverify:\n  commands:\n    mechanical: ["git diff --quiet {base} HEAD -- README.md"]\n    specified: ["git cat-file -e {base}"]\n' > "$P/.bridgie/policy.yaml"
+  run bash -c "cd '$P' && bridgie verify b"
+  [ "$status" -eq 0 ]
+  grep -Eq '"check": "git cat-file -e [0-9a-f]{40}"' "$P/.bridgie/runs/b/verify-01/evidence.json"
+}
+
+@test "a lane scanner that is not installed stops verify before anything runs; the task keeps its attempts" {
+  command -v semgrep >/dev/null 2>&1 && command -v gitleaks >/dev/null 2>&1 && skip "semgrep and gitleaks are installed here"
+  printf 'version: 1\n' > "$P/.bridgie/policy.yaml"   # no verify.commands: the lane's own commands apply
+  run bash -c "cd '$P' && bridgie verify b"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"not installed"* ]]
+  [[ "$output" == *"verify.commands"* ]]
+  [ "$(task_field "$P" b T1 status)" = '"verify"' ]
+  [ "$(task_field "$P" b T1 attempts)" = '1' ]
+  [ ! -d "$P/.bridgie/runs/b/reviewer-01" ]
+}
+
+@test "a review whose finding points at a file that does not exist is rejected and nothing is recorded" {
+  printf '{"task":"T1","criteria":[{"id":"R1","tier":"adversarial","check":"read it","result":"fail","artifact":null}],"findings":[{"severity":"major","file":"src/Invented.cs","line":88,"claim":"missing check","repro":"call it twice"}],"verdict":"fail","verifier":{"seat":"reviewer","adapter":"fake","model":"m"}}' > "$P/.git/invented.json"
+  run bash -c "cd '$P' && BRIDGIE_FAKE_OUTPUT='$P/.git/invented.json' bridgie verify b"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"review of T1 was rejected"* ]]
+  [[ "$output" == *"src/Invented.cs, which is not in the repository"* ]]
+  [ "$(task_field "$P" b T1 status)" = '"verify"' ]
+  [ ! -e "$P/.bridgie/runs/b/verify-01/evidence.json" ]
+}
+
+@test "the lane's scanners run first, on the task's own commits, and a finding fails the task" {
+  on_windows && skip "the stand-in scanners are shell scripts"
+  S="$(mktemp -d)"   # stand-ins that record how they were called; semgrep reports a finding
+  printf '#!/bin/sh\necho "gitleaks $*" >> "%s/calls"\n' "$S" > "$S/gitleaks"
+  printf '#!/bin/sh\necho "semgrep $*" >> "%s/calls"\nexit 1\n' "$S" > "$S/semgrep"
+  chmod +x "$S/gitleaks" "$S/semgrep"
+  printf 'version: 1\n' > "$P/.bridgie/policy.yaml"   # no verify.commands: the lane's own commands apply
+  run bash -c "cd '$P' && PATH='$S':\"\$PATH\" bridgie verify b"
+  [ "$status" -eq 2 ]
+  grep -Eq '^gitleaks git .*--redact .*--log-opts=[0-9a-f]{40}\.\.HEAD$' "$S/calls"
+  grep -Eq '^semgrep scan .*--baseline-commit [0-9a-f]{40}$' "$S/calls"
+  node -e 'const e=require(process.argv[1]); const r=Object.fromEntries(e.criteria.map(c=>[c.id,c.result])); if(r["mechanical:1"]!=="pass"||r["mechanical:2"]!=="fail") process.exit(1)' "$P/.bridgie/runs/b/verify-01/evidence.json"
+  [ "$(task_field "$P" b T1 status)" = '"failed"' ]
+}

@@ -211,6 +211,101 @@ test('mechanicalPlan: project commands win; else lane commands for detected stac
   assert.deepEqual(fl.mechanicalPlan(root, 'b', wt), [{ tier: 'mechanical', cmd: 'npm test' }, { tier: 'specified', cmd: null, missing: true }]);
   const root2 = project('none');
   writeFileSync(join(wt, 'package.json'), '{}');
-  assert.deepEqual(fl.mechanicalPlan(root2, 'b', wt).map(x => x.cmd), ['npm run lint --if-present', 'npm run build --if-present', 'npx vitest run']);
-  assert.deepEqual(fl.mechanicalPlan(root2, 'b', mkdtempSync(join(tmpdir(), 'empty-'))).map(x => `${x.tier}:${x.missing}`), ['mechanical:true', 'specified:true']);
+  assert.deepEqual(fl.mechanicalPlan(root2, 'b', wt).map(x => x.cmd).filter(c => !/^(gitleaks|semgrep) /.test(c)), ['npm run lint --if-present', 'npm run build --if-present', 'npx vitest run --reporter=verbose']);
+  // no stack detected: only the lane's any-stack scanners run; a tier with no command is still missing
+  assert.deepEqual(fl.mechanicalPlan(root2, 'b', mkdtempSync(join(tmpdir(), 'empty-'))).map(x => `${x.tier}:${!!x.missing}`), ['mechanical:false', 'mechanical:false', 'specified:true']);
+});
+
+// ---------- machine checks: secret scan, static scan, mutation, citations ----------
+test('mechanicalPlan: lane commands for any stack run first and are marked as lane commands with an install hint', () => {
+  const root = project('none');
+  const plan = fl.mechanicalPlan(root, 'b', mkdtempSync(join(tmpdir(), 'empty-')));
+  const mech = plan.filter(x => x.tier === 'mechanical');
+  assert.deepEqual(mech.map(x => x.cmd.split(' ')[0]), ['gitleaks', 'semgrep']);
+  assert.ok(mech.every(x => x.lane === true && x.install), 'lane commands carry lane: true and an install hint');
+  assert.ok(mech.every(x => x.cmd.includes('{base}')), 'both scan only what the task changed');
+  const wt = mkdtempSync(join(tmpdir(), 'wt-')); writeFileSync(join(wt, 'package.json'), '{}');
+  assert.deepEqual(fl.mechanicalPlan(root, 'b', wt).filter(x => x.tier === 'mechanical').map(x => x.cmd.split(' ')[0]), ['gitleaks', 'semgrep', 'npm', 'npm']);
+  const own = project('none', 'version: 1\nverify:\n  commands:\n    mechanical: ["npm test"]\n');
+  assert.equal(fl.mechanicalPlan(own, 'b', wt)[0].lane, undefined, 'project commands are not lane commands');
+});
+
+test('mutation is a command tier, required for money and security, with a Stryker command for dotnet', () => {
+  assert.ok(fl.COMMAND_TIERS.includes('mutation'));
+  const wt = mkdtempSync(join(tmpdir(), 'wt-')); writeFileSync(join(wt, 'app.sln'), '');
+  for (const risk of ['money', 'security']) {
+    const m = fl.mechanicalPlan(project(risk), 'b', wt).filter(x => x.tier === 'mutation');
+    assert.equal(m.length, 1, `${risk} requires mutation`);
+    assert.match(m[0].cmd, /^dotnet stryker .*--since:\{base\}.*--break-at \d+/);
+  }
+  assert.deepEqual(fl.mechanicalPlan(project('none'), 'b', wt).filter(x => x.tier === 'mutation'), [], 'not required at risk none');
+});
+
+test('fillCommand puts the task base commit in place of {base}', () => {
+  assert.equal(fl.fillCommand('scan --since:{base} {base}..HEAD', { base: 'abc123' }), 'scan --since:abc123 abc123..HEAD');
+  assert.equal(fl.fillCommand('npm test', { base: 'abc123' }), 'npm test');
+});
+
+test('missingTools: lane commands whose tool is not installed, once each, with the hint; project commands are not checked', () => {
+  const plan = [
+    { tier: 'mechanical', cmd: 'gitleaks git', lane: true, install: 'brew install gitleaks' },
+    { tier: 'mechanical', cmd: 'semgrep scan', lane: true, install: 'pip install semgrep' },
+    { tier: 'mechanical', cmd: 'semgrep ci', lane: true, install: 'pip install semgrep' },
+    { tier: 'specified', cmd: 'npx vitest run', lane: true },
+    { tier: 'specified', cmd: 'mytool run' },
+    { tier: 'contracts', cmd: null, missing: true },
+  ];
+  const has = cmd => cmd === 'gitleaks' || cmd === 'npx';
+  assert.deepEqual(fl.missingTools(plan, has), [{ tool: 'semgrep', tier: 'mechanical', install: 'pip install semgrep' }]);
+  assert.deepEqual(fl.missingTools(plan, () => true), []);
+});
+
+test('citationProblems: every finding names a real file and line in the repository', () => {
+  const wt = mkdtempSync(join(tmpdir(), 'wt-'));
+  mkdirSync(join(wt, 'src'));
+  writeFileSync(join(wt, 'src', 'a.js'), 'one\ntwo\nthree\n');
+  const f = (file, line) => ({ severity: 'major', file, line, claim: 'c', repro: 'r' });
+  assert.deepEqual(fl.citationProblems([f('src/a.js', 2), f('./src/a.js', 3), f('src\\a.js', 1)], wt), []);
+  assert.match(fl.citationProblems([f(null, null)], wt)[0], /finding 1 \(major\) cites no file and line/);
+  assert.match(fl.citationProblems([f('src/a.js', null)], wt)[0], /cites no file and line/);
+  assert.match(fl.citationProblems([f('src/a.js', 1), f('src/missing.js', 4)], wt)[0], /finding 2 \(major\) cites src\/missing\.js, which is not in the repository/);
+  assert.match(fl.citationProblems([f('src/a.js', 40)], wt)[0], /cites src\/a\.js:40, but the file has 3 lines/);
+  assert.match(fl.citationProblems([f('../outside.js', 1)], wt)[0], /outside the repository/);
+});
+
+test('citationProblems: a file the task deleted may be cited; a path inside the review worktree is read as relative', () => {
+  const wt = mkdtempSync(join(tmpdir(), 'wt-')), rv = mkdtempSync(join(tmpdir(), 'rv-'));
+  writeFileSync(join(wt, 'a.js'), 'one\n');
+  const f = (file, line) => ({ severity: 'minor', file, line, claim: 'c', repro: 'r' });
+  assert.deepEqual(fl.citationProblems([f('gone.js', 7)], wt, { changed: ['gone.js'] }), []);
+  assert.deepEqual(fl.citationProblems([f(join(rv, 'a.js'), 1)], wt, { aliases: [rv] }), []);
+  assert.equal(fl.citationProblems([f(join(rv, 'nope.js'), 1)], wt, { aliases: [rv] }).length, 1);
+});
+
+test('reconcile: a row that cites a test passes only when a passing runner log shows that test', () => {
+  const root = project();
+  fl.writeTasksFromPlan(root, 'b', planOutput(root, [T('T1', ['R1', 'R2', 'P1'])]));
+  fl.startAttempt(root, 'b', 'T1', 'br'); fl.setTask(root, 'b', 'T1', { status: 'verify' });
+  const okLog = join(root, 'specified-1.log'), badLog = join(root, 'specified-2.log');
+  writeFileSync(okLog, '  Passed Ledger_Balances [3 ms]\n');
+  writeFileSync(badLog, '  Failed Refund_AppliesOnce [3 ms]\n');
+  const mech = [
+    { id: 'specified:1', tier: 'specified', check: 'dotnet test', result: 'pass', artifact: okLog },
+    { id: 'specified:2', tier: 'specified', check: 'dotnet test other', result: 'fail', artifact: badLog },
+  ];
+  const cite = (id, name) => ({ id, tier: 'specified', check: `test:${name}`, result: 'pass', artifact: null });
+  const out = join(root, 'ev.json');
+  const { evidence: ev } = fl.reconcile(root, 'b', 'T1', verifyOut(root, [cite('R1', 'Ledger_Balances'), cite('R2', 'Refund_AppliesOnce'), cite('P1', 'Never_Ran'), row('P1')]), mech, out);
+  const by = id => ev.criteria.filter(c => c.id === id).map(c => c.result);
+  assert.deepEqual(by('R1'), ['pass'], 'the test is in a passing runner log');
+  assert.deepEqual(by('R2'), ['not_proven'], 'only a failing log mentions it');
+  assert.deepEqual(by('P1'), ['not_proven', 'pass'], 'the runner never ran it; other rows are untouched');
+  assert.match(ev.criteria.find(c => c.id === 'P1').check, /test:Never_Ran.*not in any passing runner log/);
+});
+
+test('the evidence schema accepts the mutation tier', () => {
+  const root = project();
+  const f = join(root, 'e.json');
+  st.writeJsonAtomic(f, { task: 'T1', criteria: [{ id: 'mutation:1', tier: 'mutation', check: 'dotnet stryker', result: 'pass', artifact: null }], findings: [], verdict: 'pass', verifier: { seat: 'reviewer', adapter: 'fake', model: 'm' } }, 'evidence');
+  assert.ok(existsSync(f));
 });

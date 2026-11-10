@@ -23,6 +23,7 @@ You find out who already serves this person with this problem, what they charge,
 ## Gotchas
 - Search results lie about recency; check the date on the page and record it.
 - A competitor you remember but cannot find a live page for does not exist for this report.
+- The runner rejects the report when a competitor row or a complaint has no link, and it requests every link itself: a page that answers "not found" does not count as a source and is listed as dead on the page the owner reads.
 
 ## Output contract
 `seat-output.json`: `artifact_md` with exactly these sections: `## Direct competitors` (table: name · what · price · link), `## Indirect and substitutes`, `## Prices` (what the person pays today, with links), `## What their customers complain about` (bullets, each ending in a link), `## Not found`, `## Sources` (every link once). `summary_md`: five lines — how crowded, the price band, the loudest complaint, the gap you see, how fresh the sources are. `questions`: anything the owner must confirm (which geography, which segment).

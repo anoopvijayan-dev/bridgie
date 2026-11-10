@@ -81,6 +81,27 @@ Verification commands live in `.bridgie/policy.yaml` (`verify.commands.<tier>`; 
 writes). Without them Bridgie uses the lane's commands for the stacks it detects; a tier the risk requires
 but nobody configured is never skipped silently.
 
+The engineering lane's own commands include three checks that judge only what the task changed (`{base}` in
+any command is the commit the task started from):
+
+| Check | Tool | Runs on | Fails the task when |
+|---|---|---|---|
+| Secret scan | [gitleaks](https://github.com/gitleaks/gitleaks) | every task | the task's commits contain a secret |
+| Static scan | [Semgrep](https://semgrep.dev), `p/default` rules | every task | the task adds an error-level finding |
+| Mutation testing | [Stryker.NET](https://stryker-mutator.io) | money and security bets (.NET) | fewer than 60% of the mutants in changed code are caught |
+
+Install gitleaks and Semgrep before the first `bridgie verify`. If one is missing, `verify` stops before any
+command or model runs, spends no attempt, and says how to install it. Semgrep downloads its rules from
+semgrep.dev; on a closed network, list your own commands under `verify.commands` with a local rules folder.
+Stryker runs from the repository root, so it needs a `stryker-config.json` there that names the solution or test project. `verify.commands` replaces the lane's commands
+for every tier, so list every tier you need there.
+
+Citations are checked by the runner, not trusted. A review finding must name a file and line that exist in the
+task's code, or the whole review is rejected and run again. An evidence row that cites a test (`test:<name>`)
+passes only when a passing runner log shows that test. In `bridgie research`, every competitor row and every
+complaint needs a link; Bridgie requests each link itself, dead ones do not count as sources, and the result
+is written on the research page (`BRIDGIE_NO_LINK_CHECK=1` skips the requests).
+
 While an agent runs, Bridgie state is read-only (a project-wide seat lock): your decisions are refused with a
 message rather than rolled back, and anything the agent adds, changes or deletes under `.bridgie/` is restored.
 
@@ -108,6 +129,10 @@ In an agent harness, say `/bridgie` (the installed skill drives the CLI and leav
 | `docs/superpowers/` | design spec and build plans |
 
 ## Status
+
+Unreleased (machine checks): secret scan, static scan and mutation testing in the engineering lane; reviewer
+and research citations checked by the runner. The scanner commands follow the documented flags of gitleaks,
+Semgrep and Stryker.NET and have not yet been run against the real tools.
 
 v0.4.0 (M3 decide loop): scout, frame, research, lenses, panel, numbers, evidence; swarm seats and web
 capability in the runner; confidence decisions. Borrowed with thanks from

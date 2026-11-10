@@ -101,8 +101,8 @@ test('a requirement tagged money raises the bet risk at plan time, with a risk l
   const { data, body } = st.readFm(st.betPath(root, 'b'));
   assert.equal(data.risk, 'money');
   assert.match(body, /## Risk log[\s\S]*risk none → money: requirement R2 is tagged risk: money/);
-  assert.deepEqual(fl.mechanicalPlan(root, 'b', mkdtempSync(join(tmpdir(), 'wt-'))).map(x => x.tier),
-    ['mechanical', 'specified', 'contracts', 'invariants', 'behavioural', 'dual_run'], 'money tiers apply');
+  assert.deepEqual([...new Set(fl.mechanicalPlan(root, 'b', mkdtempSync(join(tmpdir(), 'wt-'))).map(x => x.tier))],
+    ['mechanical', 'specified', 'contracts', 'invariants', 'mutation', 'behavioural', 'dual_run'], 'money tiers apply');
 });
 
 test('raiseRisk never lowers; riskOfPaths reports the effective risk', () => {

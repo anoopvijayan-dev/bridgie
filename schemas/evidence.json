@@ -3,7 +3,7 @@
   "required": ["task", "criteria", "findings", "verdict", "verifier"],
   "properties": {
     "task": { "type": "string" },
-    "criteria": { "type": "array", "items": { "type": "object", "required": ["id", "tier", "check", "result"], "properties": { "id": { "type": "string" }, "tier": { "type": "string", "enum": ["mechanical", "specified", "contracts", "invariants", "adversarial", "behavioural", "dual_run", "human"] }, "check": { "type": "string" }, "result": { "type": "string", "enum": ["pass", "fail", "not_proven"] }, "artifact": { "type": ["string", "null"] } } } },
+    "criteria": { "type": "array", "items": { "type": "object", "required": ["id", "tier", "check", "result"], "properties": { "id": { "type": "string" }, "tier": { "type": "string", "enum": ["mechanical", "specified", "contracts", "invariants", "mutation", "adversarial", "behavioural", "dual_run", "human"] }, "check": { "type": "string" }, "result": { "type": "string", "enum": ["pass", "fail", "not_proven"] }, "artifact": { "type": ["string", "null"] } } } },
     "findings": { "type": "array", "items": { "type": "object", "required": ["severity", "claim", "repro"], "properties": { "severity": { "type": "string", "enum": ["blocker", "major", "minor"] }, "file": { "type": ["string", "null"] }, "line": { "type": ["integer", "null"] }, "criterion": { "type": ["string", "null"] }, "claim": { "type": "string" }, "repro": { "type": "string" }, "disposition": { "type": ["string", "null"] } } } },
     "verdict": { "type": "string", "enum": ["pass", "fail", "not_proven"] },
     "verifier": { "type": "object", "required": ["seat", "adapter", "model"], "properties": { "seat": { "type": "string" }, "adapter": { "type": "string" }, "model": { "type": "string" } } }

@@ -5,7 +5,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, statSy
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { parse as yparse } from './yaml.mjs';
-import { join, resolve } from 'node:path';
+import { join, resolve, relative, isAbsolute } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import * as st from './state.mjs';
 import { assertValid } from './schema.mjs';
@@ -156,6 +156,44 @@ export function stampTask(file, id) {
 export const allPassed = (root, slug) => loadTasks(root, slug).tasks.every(t => t.status === 'passed');
 
 // ---------- evidence ----------
+// testCitationChecker: a reviewer row whose check is "test:<name>" claims a test proves it. The
+// claim holds only when a passing runner log shows that name; otherwise the row is not_proven.
+function testCitationChecker(mechanicalRows) {
+  let logs = null;
+  const load = () => mechanicalRows.filter(r => r.result === 'pass' && r.artifact && existsSync(r.artifact)).map(r => readFileSync(r.artifact, 'utf8'));
+  return c => {
+    const name = /^test:\s*(\S.*)$/.exec(c.check || '')?.[1].trim();
+    if (!name || c.result !== 'pass') return c;
+    logs ??= load();
+    return logs.some(l => l.includes(name)) ? c : { ...c, result: 'not_proven', check: `${c.check} (not in any passing runner log)` };
+  };
+}
+
+// citationProblems: every reviewer finding must point at a real place. Returns one line per
+// finding with no file and line, a file that is not in the repository, or a line past its end.
+// `changed` lists the task's changed files (a deleted file may be cited); a path under one of
+// `aliases` (the reviewer's own worktree) is read as relative to the repository.
+export function citationProblems(findings, wt, { changed = [], aliases = [] } = {}) {
+  const problems = [];
+  findings.forEach((f, i) => {
+    const who = `finding ${i + 1} (${f.severity})`;
+    if (!f.file || !Number.isInteger(f.line) || f.line < 1) return problems.push(`${who} cites no file and line`);
+    let file = f.file;
+    for (const a of aliases) { const r = relative(a, file); if (isAbsolute(file) && r && !r.startsWith('..') && !isAbsolute(r)) file = r; }
+    file = file.replace(/\\/g, '/').replace(/^\.\//, '');
+    const inside = relative(wt, resolve(wt, file));
+    if (isAbsolute(file) || inside.startsWith('..') || isAbsolute(inside)) return problems.push(`${who} cites ${f.file}, which is outside the repository`);
+    const abs = resolve(wt, file);
+    if (!existsSync(abs) || !statSync(abs).isFile()) {
+      if (!changed.includes(file)) problems.push(`${who} cites ${file}, which is not in the repository`);
+      return;
+    }
+    const lines = readFileSync(abs, 'utf8').replace(/\n$/, '').split('\n').length;
+    if (f.line > lines) problems.push(`${who} cites ${file}:${f.line}, but the file has ${lines} lines`);
+  });
+  return problems;
+}
+
 // reconcile: combine the reviewer's evidence with mechanical rows; every requirement on the task
 // needs a passing row (a missing row is not_proven, R4); blocker/major findings fail the task.
 // On pass the task stays in "verify" until the runner has merged it (markPassed).
@@ -169,7 +207,7 @@ export function reconcile(root, slug, id, reviewerFile, mechanicalRows, outFile)
   const criteria = [
     ...t.requirements.flatMap(r => { const rs = rev.criteria.filter(c => c.id === r); return rs.length ? rs : [missing(r)]; }),
     ...rev.criteria.filter(c => !t.requirements.includes(c.id)),
-  ];
+  ].map(testCitationChecker(mechanicalRows));
   const rows = [...criteria, ...mechanicalRows];
   const serious = rev.findings.filter(f => f.severity === 'blocker' || f.severity === 'major');
   // The reviewer's own verdict can only make the result stricter, never looser.
@@ -252,7 +290,7 @@ function detectStacks(wt) {
 }
 
 // Tiers the runner runs as commands; "adversarial" is the reviewer seat and "human" is acceptance.
-export const COMMAND_TIERS = ['mechanical', 'specified', 'contracts', 'invariants', 'behavioural', 'dual_run'];
+export const COMMAND_TIERS = ['mechanical', 'specified', 'contracts', 'invariants', 'mutation', 'behavioural', 'dual_run'];
 
 // mechanicalPlan: commands for every command tier the policy requires at the bet's risk.
 // A required tier with no command is returned as { tier, cmd: null, missing: true } so verify
@@ -267,14 +305,37 @@ export function mechanicalPlan(root, slug, wt) {
   if (project) byTier = t => project[t] || [];
   else {
     const laneFile = join(st.HOME, 'lanes', bet.lane, 'verifiers.yaml');
-    const lane = existsSync(laneFile) ? yparse(readFileSync(laneFile, 'utf8')).tiers || {} : {};
-    const stacks = detectStacks(wt);
-    byTier = t => stacks.flatMap(sk => lane[t]?.[sk] || []);
+    const doc = existsSync(laneFile) ? yparse(readFileSync(laneFile, 'utf8')) : {};
+    const lane = doc.tiers || {}, install = doc.install || {};
+    const stacks = ['any', ...detectStacks(wt)];   // "any" commands run whatever the stack, and first
+    const mark = cmd => { const hint = install[toolOf(cmd)]; return { cmd, lane: true, ...(hint ? { install: hint } : {}) }; };
+    byTier = t => stacks.flatMap(sk => lane[t]?.[sk] || []).map(mark);
   }
   return commandTiers.flatMap(t => {
     const cmds = byTier(t);
-    return cmds.length ? cmds.map(cmd => ({ tier: t, cmd })) : [{ tier: t, cmd: null, missing: true }];
+    return cmds.length ? cmds.map(c => ({ tier: t, ...(typeof c === 'string' ? { cmd: c } : c) })) : [{ tier: t, cmd: null, missing: true }];
   });
+}
+
+const toolOf = cmd => cmd.trim().split(/\s+/)[0];
+
+// fillCommand: {base} in a verification command is the commit the task started from, so a
+// scanner can look at the task's own changes only (same spelling in cmd.exe and sh).
+export const fillCommand = (cmd, { base }) => cmd.replaceAll('{base}', base);
+
+// missingTools: lane commands whose program is not installed, once per tool. Checked before
+// verify runs anything, so a missing scanner stops the run instead of failing the task.
+// Project commands (verify.commands) are the project's own and are not checked.
+export function missingTools(plan, has) {
+  const seen = new Set(), out = [];
+  for (const x of plan) {
+    if (!x.lane || !x.cmd) continue;
+    const tool = toolOf(x.cmd);
+    if (seen.has(tool) || has(tool)) continue;
+    seen.add(tool);
+    out.push({ tool, tier: x.tier, ...(x.install ? { install: x.install } : {}) });
+  }
+  return out;
 }
 
 // producerVendor: vendor of the newest producer run (implementer/hardener) for a task.

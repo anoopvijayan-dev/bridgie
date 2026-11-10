@@ -65,3 +65,20 @@ setup() {
   [[ "$output" == *"board: 1 fund"* ]]
   [ "$(fm "$P/.bridgie/bets/b/bet.md" status)" = '"evidence"' ]
 }
+
+@test "research checks its links itself and says so on the page" {
+  # nothing listens on port 9 of this machine, so every link is 'could not be checked' without leaving it
+  printf '{"seat":"researcher","summary_md":"s","artifact_md":"## Direct competitors\\n| Name | What | Price | Link |\\n|---|---|---|---|\\n| A | x | 1 | http://127.0.0.1:9/a |\\n\\n## Indirect and substitutes\\n- a spreadsheet\\n\\n## Prices\\n- nothing\\n\\n## What their customers complain about\\n- slow http://127.0.0.1:9/b\\n\\n## Not found\\n- n\\n\\n## Sources\\n- http://127.0.0.1:9/a\\n- http://127.0.0.1:9/b\\n- http://127.0.0.1:9/c\\n"}' > "$P/local.json"
+  run bash -c "cd '$P' && BRIDGIE_NO_LINK_CHECK=0 BRIDGIE_FAKE_OUTPUT='$P/local.json' bridgie research b"
+  [ "$status" -eq 0 ]
+  grep -q '## Link check' "$P/.bridgie/bets/b/research.md"
+  grep -q '0 answered, 0 dead, 3 could not be checked' "$P/.bridgie/bets/b/research.md"
+}
+
+@test "research with a competitor that has no link is rejected" {
+  printf '{"seat":"researcher","summary_md":"s","artifact_md":"## Direct competitors\\n| Name | What | Price | Link |\\n|---|---|---|---|\\n| Remembered Ltd | x | 1 | their site |\\n\\n## Indirect and substitutes\\n\\n## Prices\\n\\n## What their customers complain about\\n- slow https://example.com/a\\n\\n## Not found\\n\\n## Sources\\n- https://example.com/a\\n- https://example.com/b\\n- https://example.com/c\\n"}' > "$P/unlinked.json"
+  run bash -c "cd '$P' && BRIDGIE_FAKE_OUTPUT='$P/unlinked.json' bridgie research b"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"no link on"*"Remembered Ltd"* ]]
+  [ ! -e "$P/.bridgie/bets/b/research.md" ]
+}

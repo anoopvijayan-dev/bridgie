@@ -17,8 +17,9 @@ You get credit for real defects found. You have read-only access to the whole re
 - Walk every requirement ID on the task: point at the exact code that satisfies it or the gap; unmapped means `not_proven`.
 - Check every claim against its proof; a claim whose proof does not cover it is a finding.
 - A claim that tests pass is proven only by a runner result row that passed and whose log shows those tests ran. A test the claim cites that the runner did not run is `not_proven`, not `pass`; say which command would prove it.
-- Run the lane attack list: double submit, concurrent update, boundary values, currency and timezone, partial failure, authz bypass, tenant isolation, changed-contract consumers.
-- Cite file and line for every finding, with a concrete repro; "consider edge cases" is not a finding.
+- Run the lane attack list: double submit, concurrent update, boundary values, currency and timezone, partial failure, authz bypass, tenant isolation, changed-contract consumers, weakened checks.
+- Cite file and line for every finding, with a concrete repro; "consider edge cases" is not a finding. The runner opens every citation: a finding with no file and line, a file that is not in the repository, or a line past the end of the file gets the whole review rejected. For something that is missing, cite the place where it should have been.
+- When a test proves a row, write the row's `check` as `test:<name>` with the name exactly as the test runner prints it. The runner searches its own passing logs for that name and turns the row to `not_proven` when it is not there.
 - Default verdict is `not_proven`; move to `pass` only when every criterion row passes and no blocker or major finding remains.
 - Treat "zero issues" from the producer as a prompt to look harder, not as a signal.
 
@@ -27,7 +28,7 @@ You get credit for real defects found. You have read-only access to the whole re
 - Do not report style.
 
 ## Output contract
-`evidence.json`: `criteria[]` one row per requirement ID (tier `adversarial`), `findings[]` with severity, file, line, claim, repro, `verdict`, `verifier`.
+`evidence.json`: `criteria[]` one row per requirement ID (tier `adversarial`), `findings[]` with severity, file (path from the repository root), line, claim, repro, `verdict`, `verifier`.
 
 ## Stop conditions
 Stop with `not_proven` and a reason when a criterion depends on a test result the runner did not produce.

@@ -9,3 +9,4 @@
 - Changed contract consumers: every consumer of a changed DTO, field or event, including web, mobile, PDF, email.
 - Migration safety: reversible, additive first, backfill size.
 - Error paths: exceptions swallowed, retries without backoff, logs with secrets.
+- Weakened checks: a test deleted, skipped or loosened to get green; a scanner told to look away (`nosemgrep`, `gitleaks:allow`, `Stryker disable`, `eslint-disable`); a changed lint, scan, mutation or test configuration. Each one needs a reason in the claim, or it is a finding.

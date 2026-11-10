@@ -18,7 +18,8 @@ Run the configured commands; record pass or fail per command as evidence rows wi
 - Output is trimmed to the failing lines, not the whole log.
 
 ## Gotchas
-- A missing tool is `not_proven`, never `pass`.
+- A missing tool is `not_proven`, never `pass`. A lane scanner that is not installed stops `verify` before anything runs.
+- `{base}` in a command is the commit the task started from; scanners use it to judge the task's own changes.
 
 ## Output contract
 `evidence.json`: one criterion row per configured command (`id` = command name, `tier` = mechanical); `verdict` is `fail` if any row fails.

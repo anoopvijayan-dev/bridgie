@@ -1,7 +1,7 @@
 // bridgie research <slug> — competitors, substitutes, prices and complaints from the web, every fact linked.
 import { basename, join } from 'node:path';
 import * as st from '../state.mjs';
-import { writeResearch, stopped } from '../decide.mjs';
+import { writeResearch, researchLinks, checkLinks, stopped } from '../decide.mjs';
 import { runSeat } from '../cli/seat.mjs';
 import { die, log, projectRoot, stateCommit, betStatus, waitHuman } from '../cli/core.mjs';
 
@@ -27,9 +27,20 @@ export default async function research(argv) {
   decideStatusOk(root, slug, 'research');
   const runDir = await runSeat(slug, 'decide/researcher', { root });
   stopIfAsked(root, slug, runDir, 'research');
+  // The runner asks every link itself (BRIDGIE_NO_LINK_CHECK=1 skips this): a page that does not
+  // exist cannot be a source, and the model is not the one to say whether it exists.
   let res;
-  try { res = writeResearch(root, slug, join(runDir, 'seat-output.json')); } catch (e) { die(`${e.message}\nresearch: output rejected (see ${runDir})`); }
+  try {
+    const out = join(runDir, 'seat-output.json');
+    let check = null;
+    if (process.env.BRIDGIE_NO_LINK_CHECK !== '1') {
+      const links = researchLinks(out);
+      log(`research: checking ${links.length} link(s)`);
+      check = await checkLinks(links);
+    }
+    res = writeResearch(root, slug, out, check);
+  } catch (e) { die(`${e.message}\nresearch: output rejected (see ${runDir})`); }
   st.ingestQuestions(root, slug, join(runDir, 'seat-output.json'), basename(runDir));
   stateCommit(root, `research ${slug} (${basename(runDir)})`);
-  log(`research written to .bridgie/bets/${slug}/research.md (${res.links} sources). Read it: bridgie open ${slug}`);
+  log(`research written to .bridgie/bets/${slug}/research.md (${res.links} sources${res.dead ? `, ${res.dead} of them dead links` : ''}). Read it: bridgie open ${slug}`);
 }

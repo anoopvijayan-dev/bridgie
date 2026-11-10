@@ -8,7 +8,7 @@ import * as st from '../state.mjs';
 import * as fl from '../flow.mjs';
 import { runSeat, adapterCapabilities } from '../cli/seat.mjs';
 import * as g from '../cli/git.mjs';
-import { HOME, BridgieExit, die, log, waitHuman, parseArgs, projectRoot, stateCommit, git } from '../cli/core.mjs';
+import { HOME, BridgieExit, die, log, waitHuman, parseArgs, projectRoot, stateCommit, git, which } from '../cli/core.mjs';
 import { loadSeat } from '../context.mjs';
 
 function nextRunDir(root, slug, name) {
@@ -24,12 +24,25 @@ function checkReviewer(root, slug, task) {   // R10 and R11, before any model is
   if (fl.crossFamily(root, slug) && fl.producerVendor(root, slug, task) === caps.vendor) die(`verify: reviewer vendor '${caps.vendor}' is the same as the producer's; policy requires a different model family (set routing.seats.reviewer)`);
 }
 
+// checkTools: a lane scanner that is not installed stops verify here, before any command or model
+// runs. It is the machine that is incomplete, not the task, so no attempt is spent on it.
+function checkTools(root, slug, wt, task) {
+  const missing = fl.missingTools(fl.mechanicalPlan(root, slug, wt), which);
+  if (!missing.length) return;
+  die([`verify: the lane's checks need programs that are not installed on this machine:`,
+    ...missing.map(m => `  ${m.tool} (${m.tier} tier)${m.install ? `: ${m.install}` : ''}`),
+    `Install them, or list your own commands under verify.commands in .bridgie/policy.yaml.`,
+    `Nothing ran; task ${task} stays in verify.`].join('\n'));
+}
+
 // runMechanical: every required tier's commands, run in the platform shell inside the worktree.
 // A required tier with no configured command becomes a not_proven row (never silently skipped).
-export function runMechanical(root, slug, wt, vdir) {
+// {base} in a command is replaced by `base`, the commit the task started from.
+export function runMechanical(root, slug, wt, vdir, base) {
   const rows = [];
   let n = 0;
   for (const x of fl.mechanicalPlan(root, slug, wt)) {
+    if (x.cmd) x.cmd = fl.fillCommand(x.cmd, { base });
     n++;
     const logf = join(vdir, `${x.tier}-${n}.log`);
     let check = x.cmd, result;
@@ -87,7 +100,8 @@ export default async function verify(argv) {
   // 2. reviewer preconditions (R10, R11)
   checkReviewer(root, slug, task);
   // 3. mechanical tiers in the task worktree
-  runMechanical(root, slug, wt, vdir);
+  checkTools(root, slug, wt, task);
+  runMechanical(root, slug, wt, vdir, g.taskBase(root, slug, task));
 
   // 4. reviewer in a detached, read-only worktree (R3)
   const rv = g.reviewWorktree(root, slug, task);
@@ -99,6 +113,13 @@ export default async function verify(argv) {
   if (dirty) {
     writeFileSync(join(rvDir, 'VIOLATION'), `reviewer changed files in its read-only worktree:\n${dirty}\n`);
     die(`verify: the reviewer modified its read-only worktree; run failed (R3, see ${join(rvDir, 'VIOLATION')})`);
+  }
+  // A finding must point at a real file and line; one that does not was not read from the code.
+  let cited = [];
+  try { cited = fl.citationProblems(st.readJson(join(rvDir, 'evidence.json')).findings || [], wt, { changed: files, aliases: [rv] }); } catch { /* not valid evidence: reconcile says why */ }
+  if (cited.length) {
+    writeFileSync(join(rvDir, 'REJECTED'), `${cited.join('\n')}\n`);
+    die(`verify: the review of ${task} was rejected; its findings do not point at real places in the code:\n  ${cited.join('\n  ')}\nNothing was recorded and no attempt was spent. Run bridgie verify ${slug} again.`);
   }
   fl.stampTask(join(rvDir, 'evidence.json'), task);
 

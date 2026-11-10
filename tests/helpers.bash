@@ -6,6 +6,7 @@ export PATH="$BRIDGIE_HOME/bin:$PATH"
 export BRIDGIE_NO_COMMIT=1
 export BRIDGIE_USER=tester
 export BRIDGIE_USER_POLICY=/nonexistent/bridgie-user-policy.yaml   # isolate tests from ~/.bridgie
+export BRIDGIE_NO_LINK_CHECK=1   # research tests never reach the network (one test turns it back on)
 
 make_project() {            # make_project [--git] → prints path
   local dir; dir="$(mktemp -d)"
@@ -58,7 +59,7 @@ task_field() { node -e 'const t=JSON.parse(require("fs").readFileSync(process.ar
 # all_tiers <project>: give every verification tier a trivially passing command (risky bets need them).
 all_tiers() {
   printf "verify:\n  commands:\n" >> "$1/.bridgie/policy.yaml"
-  for t in mechanical specified contracts invariants behavioural dual_run; do printf "    %s: ['node -e 0']\n" "$t" >> "$1/.bridgie/policy.yaml"; done
+  for t in mechanical specified contracts invariants mutation behavioural dual_run; do printf "    %s: ['node -e 0']\n" "$t" >> "$1/.bridgie/policy.yaml"; done
 }
 
 # --- cross-platform helpers (tests also run in Git Bash on Windows and on macOS) ---------------------
