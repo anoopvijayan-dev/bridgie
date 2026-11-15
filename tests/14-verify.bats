@@ -46,7 +46,7 @@ setup() {
 }
 
 @test "fail, then retry gets the findings, then blocked after max attempts with an unblock decision (R5)" {
-  F="$BRIDGIE_HOME/tests/fixtures/fake/reviewer-fail.json"
+  F="$BRIDGIE_HOME/adapters/fake/fixtures/reviewer-fail.json"
   run bash -c "cd '$P' && BRIDGIE_FAKE_OUTPUT='$F' bridgie verify b"
   [ "$status" -ne 0 ]
   [ "$(task_field "$P" b T1 status)" = '"failed"' ]

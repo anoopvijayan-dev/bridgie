@@ -112,7 +112,7 @@ setup() {
   mkdir -p "$BRIDGIE_HOME/seats/decide/_cardtest"
   printf -- '---\nname: cardtest\nloop: decide\ntier: scout\ninputs: [card]\nwrites: run_dir\ntools: [read]\noutput: seat-output.json\n---\nSay hi.\n' > "$BRIDGIE_HOME/seats/decide/_cardtest/SKILL.md"
   mkdir -p "$P/.bridgie/runs/b/swarm-01/other-run"; echo x > "$P/.bridgie/runs/b/swarm-01/other-run/sibling.txt"
-  run bash -c "cd '$P' && BRIDGIE_RUNS_DIR='$(native "$P/.bridgie/runs/b/swarm-01")' BRIDGIE_FAKE_OUTPUT='$BRIDGIE_HOME/tests/fixtures/fake/grill.json' bridgie seat-run b decide/_cardtest --packet '$pk' --vars '$pk/card.json' --exclude '$P/.bridgie/runs/b/swarm-01' --no-lock"
+  run bash -c "cd '$P' && BRIDGIE_RUNS_DIR='$(native "$P/.bridgie/runs/b/swarm-01")' BRIDGIE_FAKE_OUTPUT='$BRIDGIE_HOME/adapters/fake/fixtures/grill.json' bridgie seat-run b decide/_cardtest --packet '$pk' --vars '$pk/card.json' --exclude '$P/.bridgie/runs/b/swarm-01' --no-lock"
   rm -rf "$BRIDGIE_HOME/seats/decide/_cardtest"
   [ "$status" -eq 0 ]
   [ -f "$output/signals/t1.txt" ]
@@ -123,7 +123,7 @@ setup() {
 @test "a seat that needs the web is refused on an adapter without it" {
   mkdir -p "$BRIDGIE_HOME/seats/decide/_webtest"
   printf -- '---\nname: webtest\nloop: decide\ntier: scout\ninputs: [bet]\nwrites: run_dir\ntools: [read, web]\noutput: seat-output.json\n---\nSearch.\n' > "$BRIDGIE_HOME/seats/decide/_webtest/SKILL.md"
-  run bash -c "cd '$P' && BRIDGIE_FAKE_READS_WEB=0 BRIDGIE_FAKE_OUTPUT='$BRIDGIE_HOME/tests/fixtures/fake/grill.json' bridgie seat-run b decide/_webtest"
+  run bash -c "cd '$P' && BRIDGIE_FAKE_READS_WEB=0 BRIDGIE_FAKE_OUTPUT='$BRIDGIE_HOME/adapters/fake/fixtures/grill.json' bridgie seat-run b decide/_webtest"
   rm -rf "$BRIDGIE_HOME/seats/decide/_webtest"
   [ "$status" -ne 0 ]
   [[ "$output" == *"needs web access"* ]]

@@ -44,8 +44,8 @@ setup() {
 @test "a failing review is retried by run and passes on the second attempt" {
   signed_bet "$P" b
   bash -c "cd '$P' && bridgie shape b && bridgie shape b --approve" >/dev/null 2>&1
-  D="$(mktemp -d)"; cp "$BRIDGIE_HOME"/tests/fixtures/fake/*.json "$D"/
-  cp "$BRIDGIE_HOME/tests/fixtures/fake/reviewer-fail.json" "$D/reviewer.1.json"
+  D="$(mktemp -d)"; cp "$BRIDGIE_HOME"/adapters/fake/fixtures/*.json "$D"/
+  cp "$BRIDGIE_HOME/adapters/fake/fixtures/reviewer-fail.json" "$D/reviewer.1.json"
   run bash -c "cd '$P' && BRIDGIE_FAKE_DIR='$D' bridgie run b"
   [ "$status" -eq 0 ]
   [ "$(task_field "$P" b T1 attempts)" = '2' ]

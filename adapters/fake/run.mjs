@@ -1,7 +1,7 @@
 // Fake adapter for tests. Returns fixtures instead of calling a model.
 //   --capabilities            {"vendor","reads_repo","reads_web"}; vendor fake-verifier for verify/* seats, fake-producer otherwise
 //                             (BRIDGIE_FAKE_SAME_VENDOR=1 → "fake"; BRIDGIE_FAKE_READS_REPO=0 / BRIDGIE_FAKE_READS_WEB=0 → false)
-//   BRIDGIE_FAKE_DIR          fixture dir (default tests/fixtures/fake); the n-th call of a seat uses <seat>.<n>.json if
+//   BRIDGIE_FAKE_DIR          fixture dir (default adapters/fake/fixtures); the n-th call of a seat uses <seat>.<n>.json if
 //                             present, else <seat>.json (counter in BRIDGIE_FAKE_STATE, default <project>/.bridgie/.fake-state)
 //   BRIDGIE_FAKE_OUTPUT       one fixture path for every seat (overrides the dir)
 //   BRIDGIE_FAKE_SCRIPT       script run with bash inside --cwd before returning (simulates edits; tests only)
@@ -34,7 +34,7 @@ if (o.caps) {
   process.exit(0);
 }
 if (!o.prompt || !existsSync(o.prompt)) { process.stderr.write(`fake: prompt file missing: ${o.prompt}\n`); process.exit(2); }
-const dir = process.env.BRIDGIE_FAKE_DIR || resolve(here, '..', '..', 'tests', 'fixtures', 'fake');
+const dir = process.env.BRIDGIE_FAKE_DIR || join(here, 'fixtures');
 const outNorm = o.out.replace(/\\/g, '/');
 const projectOf = outNorm.includes('/.bridgie/') ? outNorm.slice(0, outNorm.indexOf('/.bridgie/')) : dirname(o.out);
 const state = process.env.BRIDGIE_FAKE_STATE || join(projectOf, '.bridgie', '.fake-state');
