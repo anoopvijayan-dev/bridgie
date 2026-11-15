@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as st from './state.mjs';
@@ -52,6 +52,22 @@ test('renderAll writes read-only pages with CLI hints', () => {
   const html = renderBet(root, 'b', { readonly: true });
   assert.ok(html.includes('bridgie decide b D1'));
   assert.ok(!html.includes('<form'));
+});
+
+test('a public page publishes only the named bets, with no file paths, command hints or forms', () => {
+  const root = project();
+  assert.throws(() => renderAll(root, join(root, 'pub'), { public: true }), /add --bet/);
+  assert.throws(() => renderAll(root, join(root, 'pub'), { public: true, bets: ['nope'] }), /no such bet: nope/);
+  const out = renderAll(root, join(root, 'pub'), { public: true, bets: ['b'] });
+  const bet = readFileSync(join(out, 'bet-b.html'), 'utf8'), index = readFileSync(join(out, 'index.html'), 'utf8');
+  for (const html of [bet, index]) {
+    assert.ok(!html.includes(root), 'no local paths');
+    assert.ok(!html.includes('bridgie decide') && !html.includes('bridgie sign') && !html.includes('bridgie grill'), 'no command hints');
+    assert.ok(!html.includes('<form'), 'no forms');
+    assert.match(html, /progress page · updated \d{4}-\d\d-\d\d/);
+  }
+  assert.ok(bet.includes('Who retries &lt;today&gt;?'));
+  assert.ok(index.includes('<h1>Progress'));
 });
 
 test('bet page blocks sign when confidence is below the policy minimum for the risk', () => {

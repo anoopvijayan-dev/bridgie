@@ -12,7 +12,10 @@ import * as fl from './flow.mjs';
 const T = name => readFileSync(join(st.HOME, 'ui', 'templates', `${name}.html`), 'utf8');
 export const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const fill = (tpl, data) => tpl.replace(/\{\{(\w+)\}\}/g, (_, k) => data[k] ?? '');
-const page = (title, content, opts) => fill(T('base'), { title: esc(title), content, mode: opts.readonly ? 'read-only snapshot' : 'live', home: opts.readonly ? 'index.html' : '/' });
+const page = (title, content, opts) => fill(T('base'), { title: esc(title), content, home: opts.readonly ? 'index.html' : '/',
+  mode: opts.public ? `progress page · updated ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC` : opts.readonly ? 'read-only snapshot' : 'live' });
+// cli: command hints for a local read-only page; none on a public page.
+const cli = (opts, html) => (opts.public ? '' : html);
 
 function age(iso) {
   const h = Math.floor((Date.now() - Date.parse(iso)) / 36e5);
@@ -80,17 +83,18 @@ function requirementsTable(md) {
 const readIf = f => (existsSync(f) ? readFileSync(f, 'utf8') : null);
 
 export function renderInbox(root, opts = {}) {
-  const pending = st.listDecisions(root, null, { pending: true });
+  const only = d => !opts.bets || opts.bets.includes(d);
+  const pending = st.listDecisions(root, null, { pending: true }).filter(d => only(d.bet));
   const href = d => opts.readonly ? `bet-${esc(d.bet)}.html#${esc(d.id)}` : `/bet/${esc(d.bet)}#${esc(d.id)}`;
   const rows = pending.length
     ? pending.map(d => `<li class="${d.status}"><a href="${href(d)}"><span class="pill">${esc(d.type)}</span> <b>${esc(d.bet)}</b> · ${esc(d.id)} <span class="age">${age(d.created_at)}</span><br><span class="ctx">${esc(d.context)}</span></a></li>`).join('\n')
-    : '<li class="empty">Nothing pending. Raise questions with <code>bridgie grill &lt;slug&gt;</code>.</li>';
-  const bets = st.listBets(root).map(s => {
+    : `<li class="empty">Nothing pending.${cli(opts, ' Raise questions with <code>bridgie grill &lt;slug&gt;</code>.')}</li>`;
+  const bets = st.listBets(root).filter(only).map(s => {
     const { data } = st.readFm(st.betPath(root, s));
     const link = opts.readonly ? `bet-${esc(s)}.html` : `/bet/${esc(s)}`;
     return `<li><a href="${link}">${esc(data.title)}</a> <span class="pill">${esc(data.status)}</span></li>`;
   }).join('\n') || '<li class="empty">No bets yet.</li>';
-  return page('Inbox', fill(T('inbox'), { rows, bets, count: String(pending.length) }), opts);
+  return page(opts.public ? 'Progress' : 'Inbox', fill(T('inbox'), { heading: opts.public ? 'Progress' : 'Inbox', rows, bets, count: String(pending.length) }), opts);
 }
 
 const LABEL = { approve_design: 'Approve design', ack_risk: 'Acknowledge risk', unblock: 'Unblock', accept: 'Accept', confidence: 'Confidence proposal' };
@@ -129,7 +133,7 @@ function decisionCard(root, slug, d, opts) {
     } catch { /* no tasks file */ }
   }
   const head = `<h3>${esc(title)} <small class="empty">${esc(d.id)}</small></h3><p>${esc(d.context)}</p>`;
-  if (opts.readonly) return `<section class="question" id="${esc(d.id)}">${head}<p class="cli">CLI: ${(CLI[d.type] ? CLI[d.type](slug, d) : [`bridgie decide ${slug} ${d.id} "<answer>"`]).map(c => `<code>${esc(c)}</code>`).join(' · ')}</p>${detail}</section>`;
+  if (opts.readonly) return `<section class="question" id="${esc(d.id)}">${head}${cli(opts, `<p class="cli">CLI: ${(CLI[d.type] ? CLI[d.type](slug, d) : [`bridgie decide ${slug} ${d.id} "<answer>"`]).map(c => `<code>${esc(c)}</code>`).join(' · ')}</p>`)}${detail}</section>`;
   const hint = d.options.map(o => TEXT_HINT[o]).filter(Boolean);
   const buttons = d.options.map((o, i) => `<button type="submit" name="answer" value="${esc(o)}" class="${i === 0 ? 'primary' : /reject|kill|decline/.test(o) ? 'danger' : ''}">${esc(o)}</button>`).join(' ');
   return `<section class="question" id="${esc(d.id)}">${head}<form method="post" action="/decide"><input type="hidden" name="slug" value="${esc(slug)}"><input type="hidden" name="id" value="${esc(d.id)}">${hint.length ? `<input type="text" name="text" placeholder="${esc(hint.join(' / '))}">` : ''}${buttons}</form>${detail}</section>`;
@@ -185,7 +189,7 @@ export function renderBet(root, slug, opts = {}) {
 
   const hidden = id => `<input type="hidden" name="slug" value="${esc(slug)}"><input type="hidden" name="id" value="${esc(id)}">`;
   const qform = d => opts.readonly
-    ? `<p class="cli">CLI: <code>bridgie decide ${esc(slug)} ${esc(d.id)} "&lt;answer&gt;"</code></p>`
+    ? cli(opts, `<p class="cli">CLI: <code>bridgie decide ${esc(slug)} ${esc(d.id)} "&lt;answer&gt;"</code></p>`)
     : `<form method="post" action="/decide">${hidden(d.id)}
 ${d.options.map(o => `<label><input type="radio" name="answer" value="${esc(o)}"> ${esc(o)}</label>`).join('\n')}
 ${d.allow_free_text ? `<label><input type="radio" name="answer" value="__text__"> other:</label><input type="text" name="text" placeholder="free-text answer">` : ''}
@@ -195,8 +199,8 @@ ${d.allow_free_text ? `<label><input type="radio" name="answer" value="__text__"
     : '<p class="empty">No open questions.</p>';
 
   let signHtml;
-  if (!sign) signHtml = `<p class="empty">No sign decision yet (status: ${esc(data.status)}). Run <code>bridgie grill ${esc(slug)}</code>.</p>`;
-  else if (opts.readonly) signHtml = `<p>${esc(sign.context)}</p><p class="cli">CLI: <code>bridgie sign ${esc(slug)}</code> · <code>bridgie sign ${esc(slug)} --more-evidence</code> · <code>bridgie sign ${esc(slug)} --kill</code></p>`;
+  if (!sign) signHtml = `<p class="empty">No sign decision yet (status: ${esc(data.status)}).${cli(opts, ` Run <code>bridgie grill ${esc(slug)}</code>.`)}</p>`;
+  else if (opts.readonly) signHtml = `<p>${esc(sign.context)}</p>${cli(opts, `<p class="cli">CLI: <code>bridgie sign ${esc(slug)}</code> · <code>bridgie sign ${esc(slug)} --more-evidence</code> · <code>bridgie sign ${esc(slug)} --kill</code></p>`)}`;
   else {
     const pol = st.lanePolicy(st.loadPolicy(root), data.lane, data.risk);
     const min = pol.min_confidence_to_sign || 'anecdote';
@@ -209,12 +213,12 @@ ${d.allow_free_text ? `<label><input type="radio" name="answer" value="__text__"
     signHtml = `<form method="post" action="/decide" id="${esc(sign.id)}">${hidden(sign.id)}<p>${esc(sign.context)}</p>${blocked ? `<p class="warn">Sign is blocked: ${esc(blocked)}</p>` : ''}${btn('sign', 'primary')} ${btn('need more evidence', '')} ${btn('kill', 'danger')}</form>`;
   }
 
-  const openByDefault = new Set(['Who', 'Problem in their words', 'Why now']);
+  const openByDefault = new Set(['Who', 'Problem in their words', 'Why now', ...(opts.public ? ['Decision log'] : [])]);
   const sections = mdSections(body).filter(s => s.title !== 'Open questions')
     .map(s => `<details${openByDefault.has(s.title) ? ' open' : ''}><summary>${esc(s.title)}</summary>${s.html}</details>`).join('\n');
-  const raw = `<code>${esc(st.betPath(root, slug))}</code> · <code>${esc(st.decisionsPath(root, slug))}</code>`;
+  const raw = opts.public ? '' : `<p class="raw">Raw files: <code>${esc(st.betPath(root, slug))}</code> · <code>${esc(st.decisionsPath(root, slug))}</code></p>`;
   const waitingList = decisions.filter(d => !['question', 'sign'].includes(d.type) && d.status !== 'answered');
-  const waiting = waitingList.length ? `<h2>Waiting for you</h2>${waitingList.map(d => decisionCard(root, slug, d, opts)).join('\n')}` : '';
+  const waiting = waitingList.length ? `<h2>${opts.public ? 'Waiting for a decision' : 'Waiting for you'}</h2>${waitingList.map(d => decisionCard(root, slug, d, opts)).join('\n')}` : '';
   const showSign = !['signed', 'delivered', 'evaluated'].includes(data.status) || sign;
   const specs = ['requirements.md', 'design.md'].map(f => [f, readIf(join(root, '.bridgie', 'specs', slug, f))]).filter(([, t]) => t && !waitingList.some(d => d.type === 'approve_design'));
   const specHtml = specs.length ? `<h2>Design and requirements</h2>${specs.map(([f, t]) => `<details><summary>${esc(f)}</summary>${f === 'requirements.md' ? requirementsTable(t) : mdDoc(t, ['Decision'])}</details>`).join('\n')}` : '';
@@ -223,10 +227,17 @@ ${d.allow_free_text ? `<label><input type="radio" name="answer" value="__text__"
     sign: showSign ? `<h2>Sign</h2><div class="signbox">${signHtml}</div>` : '', decide, tasks: tasksTable(root, slug), specs: specHtml, sections, raw }), opts);
 }
 
-export function renderAll(root, outDir) {
+// renderAll: read-only pages for every bet, or with { public: true, bets } a progress page for only the
+// named bets, with no file paths or command hints (safe to publish).
+export function renderAll(root, outDir, { public: pub = false, bets } = {}) {
+  const all = st.listBets(root);
+  if (pub && !bets?.length) throw new Error('a public page publishes only the bets you name: add --bet <slug> for each');
+  const missing = (bets || []).filter(b => !all.includes(b));
+  if (missing.length) throw new Error(`no such bet: ${missing.join(', ')}`);
+  const opts = { readonly: true, public: pub, bets: bets?.length ? bets : null };
   mkdirSync(outDir, { recursive: true });
-  writeFileSync(join(outDir, 'index.html'), renderInbox(root, { readonly: true }));
-  for (const s of st.listBets(root)) writeFileSync(join(outDir, `bet-${s}.html`), renderBet(root, s, { readonly: true }));
+  writeFileSync(join(outDir, 'index.html'), renderInbox(root, opts));
+  for (const s of opts.bets || all) writeFileSync(join(outDir, `bet-${s}.html`), renderBet(root, s, opts));
   return outDir;
 }
 
