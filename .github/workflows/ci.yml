@@ -65,4 +65,4 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: shellcheck -x -S warning bin/bridgie bin/install.sh bin/get.sh tests/*.bash tests/run.sh
+      - run: shellcheck -x -S warning bin/bridgie bin/install.sh tests/*.bash tests/run.sh

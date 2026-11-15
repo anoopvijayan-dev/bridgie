@@ -4,7 +4,7 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 export BRIDGIE_USER_POLICY=/nonexistent/bridgie-user-policy.yaml   # isolate tests from ~/.bridgie
 if command -v shellcheck >/dev/null 2>&1; then
-  shellcheck -x -S warning bin/bridgie bin/install.sh bin/get.sh tests/*.bash tests/run.sh
+  shellcheck -x -S warning bin/bridgie bin/install.sh tests/*.bash tests/run.sh
 else
   echo "shellcheck not installed; skipping (apt install shellcheck / brew install shellcheck)"
 fi

@@ -117,7 +117,6 @@ In an agent harness, say `/bridgie` (the installed skill drives the CLI and leav
 | `skills/bridgie/` | the skill agent harnesses use to drive bridgie |
 | `schemas/`, `templates/`, `policy/` | the contracts |
 | `ui/templates/` | decision surface pages |
-| `docs/superpowers/` | design spec and build plans |
 
 ## Status
 
