@@ -31,6 +31,18 @@ teardown() { if [[ -n "${SERVER_PID:-}" ]]; then kill "$SERVER_PID" 2>/dev/null 
   grep -q 'bridgie decide b D1' "$P/.bridgie/ui/bet-b.html"
 }
 
+@test "open --public renders a progress page for the named bets only, and refuses without --bet" {
+  run bash -c "cd '$P' && bridgie open --public"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"add --bet"* ]]
+  run bash -c "cd '$P' && bridgie open --public --bet b --out site"
+  [ "$status" -eq 0 ]
+  [ -f "$P/site/index.html" ]
+  [ -f "$P/site/bet-b.html" ]
+  ! grep -q 'bridgie decide' "$P/site/bet-b.html"
+  ! grep -q "$P" "$P/site/bet-b.html"
+}
+
 @test "inbox and bet pages render pending decisions (R12)" {
   start_server
   run get /

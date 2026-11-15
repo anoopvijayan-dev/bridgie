@@ -108,6 +108,11 @@ message rather than rolled back, and anything the agent adds, changes or deletes
 link. `bridgie open --invite alice` prints a second link for a second approver. With `--host` beyond
 localhost the traffic is plain HTTP, so share each link only with its person.
 
+**Building in public:** `bridgie open --public --bet <slug> --out site` renders a read-only progress page for
+the bets you name and no others: status, open questions, the board's verdict, the dated decision log. It
+has no forms, file paths or command hints, so `site/` is safe to publish (for example with GitHub Pages on
+every push).
+
 Bridgie never pushes and never merges into your base branch. Merge `bridgie/<slug>` yourself after acceptance.
 In an agent harness, say `/bridgie` (the installed skill drives the CLI and leaves decisions to you).
 
