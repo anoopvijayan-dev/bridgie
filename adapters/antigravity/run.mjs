@@ -4,7 +4,9 @@ import { dirname, join, basename } from 'node:path';
 import { homedir } from 'node:os';
 import * as A from '../lib/common.mjs';
 
-const o = A.parse(process.argv.slice(2));
+// --check-cwd DIR (used by bridgie doctor): OK when an Antigravity project covers DIR, else the reason.
+const cc = process.argv.indexOf('--check-cwd');
+const o = cc >= 0 ? {} : A.parse(process.argv.slice(2));
 function findAgy() {
   if (process.env.BRIDGIE_AGY_BIN) return process.env.BRIDGIE_AGY_BIN;
   const onPath = A.which('agy');
@@ -33,6 +35,12 @@ function findProject(dir) {
   return best?.id || null;
 }
 const bin = findAgy();
+if (cc >= 0) {
+  const dir = process.argv[cc + 1];
+  const id = findProject(dir);
+  if (id) { process.stdout.write(`OK ${id}\n`); process.exit(0); }
+  process.stdout.write(`no Antigravity project covers ${dir}\n`); process.exit(1);
+}
 if (o.probe) A.probe(bin, 'agy (PATH or %LOCALAPPDATA%/agy/bin)');
 if (o.caps) A.caps({ vendor: 'google', reads_repo: true, reads_web: false });
 A.requireRunArgs(o);

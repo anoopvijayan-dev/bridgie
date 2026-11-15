@@ -92,7 +92,7 @@ export default async function verify(argv) {
   // 4. reviewer in a detached, read-only worktree (R3)
   const rv = g.reviewWorktree(root, slug, task);
   let rvDir, failure = null;
-  try { rvDir = await runSeat(slug, 'verify/reviewer', { root, task, cwd: rv, packet: vdir }); } catch (e) { failure = e; }
+  try { rvDir = await runSeat(slug, 'verify/reviewer', { root, task, cwd: rv, packet: vdir, needsRepo: true, avoidVendor: fl.crossFamily(root, slug) ? fl.producerVendor(root, slug, task) : '' }); } catch (e) { failure = e; }
   const dirty = git(['-C', rv, 'status', '--porcelain']).out.trim();
   g.removeWorktree(root, rv);
   if (failure) die(`${failure.message}\nverify: reviewer run failed for ${task}; task stays in verify`);

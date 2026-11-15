@@ -93,6 +93,14 @@ Verification commands live in `.bridgie/policy.yaml` (`verify.commands.<tier>`; 
 writes). Without them Bridgie uses the lane's commands for the stacks it detects; a tier the risk requires
 but nobody configured is never skipped silently.
 
+Which model CLI runs each seat is set in `~/.bridgie/policy.yaml` (`routing.tiers`, `routing.seats`). When the
+routed CLI cannot run a seat at all (not installed, not set up for the folder, signed out, over its limit,
+crashed), Bridgie warns and runs the seat on the next CLI that is installed and fits it: the agent you are
+running Bridgie from, then Claude Code, Codex, Antigravity, Copilot. A model that ran but answered badly is not
+retried elsewhere, and the reviewer still needs a different model family from the builder. Set your own order
+with `routing.fallback: [codex, claude-code]`, turn it off with `routing.fallback: []`, or pin one CLI for a
+command with `BRIDGIE_ADAPTER=<name>`.
+
 While an agent runs, Bridgie state is read-only (a project-wide seat lock): your decisions are refused with a
 message rather than rolled back, and anything the agent adds, changes or deletes under `.bridgie/` is restored.
 
