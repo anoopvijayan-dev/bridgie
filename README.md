@@ -26,7 +26,7 @@ One command, for you and your agents:
 
 Open a **new** terminal afterwards. To update the tool and the skill together, run the same command again;
 `bridgie doctor` warns when an installed skill is out of date. The skill alone, without the CLI:
-`npx skills add anoopvijayan-dev/bridge` (the skill then runs Bridgie through `npx bridgie`).
+`npx skills add anoopvijayan-dev/bridgie` (the skill then runs Bridgie through `npx bridgie`).
 
 **Claude chat and Claude cloud sessions** read skills from your claude.ai account, not your disk: upload
 `skills/bridgie/SKILL.md` there once (and again after it changes).

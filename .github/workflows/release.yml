@@ -2,7 +2,7 @@ name: release
 # Publishes bridgie to npm when a version tag is pushed:  git tag v0.6.0 && git push origin v0.6.0
 # Uses npm trusted publishing (OIDC): no token is stored in the repo. One-time setup on npmjs.com,
 # after the first manual `npm publish`: package bridgie, Settings, Trusted publishing, GitHub Actions,
-# repository anoopvijayan-dev/bridge, workflow release.yml.
+# repository anoopvijayan-dev/bridgie, workflow release.yml.
 on:
   push:
     tags: ['v*']
