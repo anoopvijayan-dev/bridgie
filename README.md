@@ -18,7 +18,8 @@ node ~/bridgie/bin/bridgie.mjs setup
 ```
 
 (On Windows PowerShell use `$HOME\bridgie` for `~/bridgie`.) `setup` links the `bridgie` command with npm, so
-npm writes the right launcher for your shell; installs the agent skill for Claude Code and other agents; and
+npm writes the right launcher for your shell; installs the agent skill (`skills/bridgie/`, the one copy) for
+every agent home it finds (`~/.claude`, `~/.agents`, `~/.copilot`, `~/.gemini/antigravity`); and
 writes `~/.bridgie/policy.yaml` (which model runtime each seat uses on this machine). Open a **new** terminal
 afterwards. To update later: `git pull` in the clone; re-run `setup` only if it says so.
 

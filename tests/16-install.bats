@@ -19,6 +19,8 @@ load helpers
   [ "$status" -eq 0 ]
   [ -f "$H/.claude/skills/bridgie/SKILL.md" ]
   [ -f "$H/.agents/skills/bridgie/SKILL.md" ]
+  [ ! -e "$H/.copilot" ]                                  # homes that do not exist are not created
+  [[ "$output" == *"upload skills/bridgie/SKILL.md"* ]]
   cat "$H/npm.log"; has_path_line "$H/npm.log" "install -g " "$BRIDGIE_HOME"
   [[ "$output" == *"works in PowerShell, cmd, Git Bash, macOS and Linux"* ]]
   grep -q 'adapter: copilot' "$H/.bridgie/policy.yaml"
@@ -28,6 +30,29 @@ load helpers
   run env HOME="$H" USERPROFILE="$(native "$H")" node "$BRIDGIE_HOME/bin/bridgie.mjs" setup --no-link --no-policy
   [ "$status" -eq 0 ]
   [ "$(wc -l < "$H/npm.log")" -eq 2 ]
+}
+
+@test "setup installs the skill for every agent home that exists, and doctor flags a stale copy" {
+  H="$(mktemp -d)"; mkdir -p "$H/.copilot" "$H/.gemini/antigravity"
+  run env HOME="$H" USERPROFILE="$(native "$H")" node "$BRIDGIE_HOME/bin/bridgie.mjs" setup --no-link --no-policy
+  [ "$status" -eq 0 ]
+  cmp "$BRIDGIE_HOME/skills/bridgie/SKILL.md" "$H/.copilot/skills/bridgie/SKILL.md"
+  cmp "$BRIDGIE_HOME/skills/bridgie/SKILL.md" "$H/.gemini/antigravity/skills/bridgie/SKILL.md"
+  [ ! -e "$H/.claude" ]
+  run env -u CLAUDE_CODE_REMOTE bash -c "cd '$(mktemp -d)' && HOME='$H' USERPROFILE='$(native "$H")' bridgie doctor"
+  [[ "$output" == *"[ok] skill current: "*"copilot"* ]]
+  echo 'old' > "$H/.copilot/skills/bridgie/SKILL.md"
+  run env -u CLAUDE_CODE_REMOTE bash -c "cd '$(mktemp -d)' && HOME='$H' USERPROFILE='$(native "$H")' bridgie doctor"
+  [ "$status" -eq 0 ]                                     # a stale skill warns, it does not fail
+  [[ "$output" == *"[warn] skill out of date for GitHub Copilot CLI"* ]]
+  [[ "$output" == *"bridgie setup --no-link --no-policy"* ]]
+}
+
+@test "the skill covers chat, local terminals and cloud sessions" {
+  S="$BRIDGIE_HOME/skills/bridgie/SKILL.md"
+  grep -q 'device_bash' "$S"
+  grep -q 'CLAUDE_CODE_REMOTE' "$S"
+  grep -q 'bridgie version' "$S"
 }
 
 @test "setup removes the old bash-era Windows shim, and leaves other files alone" {

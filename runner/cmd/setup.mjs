@@ -1,13 +1,15 @@
 // bridgie setup [--no-link] [--no-policy] — install Bridgie for this user, on any OS:
-//   1. the agent skill into ~/.claude/skills and ~/.agents/skills (when those homes exist)
+//   1. the agent skill into each agent's skills folder whose home exists (runner/skills.mjs:
+//      ~/.claude, ~/.agents, ~/.copilot, ~/.gemini/antigravity)
 //   2. `bridgie` on PATH via `npm install -g <this folder>` (npm writes the right launcher for
 //      PowerShell, cmd, Git Bash, macOS and Linux), and removal of the old bash-era Windows shim
 //   3. ~/.bridgie/policy.yaml: which model runtime each seat tier uses on this machine
-import { existsSync, mkdirSync, copyFileSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { HOME, IS_WIN, parseArgs, which } from '../cli/core.mjs';
+import { SKILL_HOMES, skillTargets, installSkill } from '../skills.mjs';
 
 const POLICY = `# Bridgie routing for this machine. Projects can override in .bridgie/policy.yaml.
 # Adapters: claude-code, copilot, codex, antigravity, fake. Check them with: bridgie doctor
@@ -26,16 +28,11 @@ export default async function setup(argv) {
   const home = homedir();
   const say = s => process.stdout.write(`${s}\n`);
 
-  // 1. skill
-  let installed = 0;
-  for (const h of [join(home, '.claude'), join(home, '.agents')]) {
-    if (!existsSync(h)) continue;
-    mkdirSync(join(h, 'skills', 'bridgie'), { recursive: true });
-    copyFileSync(join(HOME, 'skills', 'bridgie', 'SKILL.md'), join(h, 'skills', 'bridgie', 'SKILL.md'));
-    say(`skill installed: ${join(h, 'skills', 'bridgie', 'SKILL.md')}`);
-    installed++;
-  }
-  if (!installed) say("no ~/.claude or ~/.agents folder found; copy skills/bridgie/ into your agent's skills folder by hand");
+  // 1. skill, into every agent home that exists (see runner/skills.mjs)
+  const targets = skillTargets(home);
+  for (const t of targets) { installSkill(HOME, t.dir); say(`skill installed: ${join(t.dir, 'SKILL.md')}  (${t.who})`); }
+  if (!targets.length) say(`no agent home found (${SKILL_HOMES.map(([h]) => `~/${h}`).join(', ')}); copy skills/bridgie/ into your agent's skills folder by hand`);
+  say('Claude chat and cloud sessions: upload skills/bridgie/SKILL.md as the bridgie skill on claude.ai, so every Claude surface uses this same file');
 
   // 2. command on PATH
   const oldShim = join(process.env.LOCALAPPDATA || join(home, 'AppData', 'Local'), 'Microsoft', 'WindowsApps', 'bridgie.cmd');
