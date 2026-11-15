@@ -56,7 +56,7 @@ setup() {
   [[ "$output" == *"output rejected"* ]]
   # synthesis: the owner drops notes beside the bet; the second fixture proposes anecdote
   mkdir -p "$Q/.bridgie/bets/e/evidence"; for i in 1 2 3; do echo "Broker $i: about half a day per pack" > "$Q/.bridgie/bets/e/evidence/notes-broker-$i.md"; done
-  run bash -c "cd '$Q' && BRIDGIE_FAKE_OUTPUT='$BRIDGIE_HOME/tests/fixtures/fake/evidence.2.json' bridgie evidence e"
+  run bash -c "cd '$Q' && BRIDGIE_FAKE_OUTPUT='$BRIDGIE_HOME/adapters/fake/fixtures/evidence.2.json' bridgie evidence e"
   [ "$status" -eq 0 ]
   [[ "$output" == *"confidence proposal raised as D"* ]]
   grep -q 'notes-broker-2.md' "$Q/.bridgie/runs/e/evidence-03/prompt.md"

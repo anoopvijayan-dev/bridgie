@@ -83,6 +83,18 @@ stubs() {
   [[ "$output" != *'"docs/'* ]]
 }
 
+@test "the packed package runs on its own: a fake-adapter grill works without the tests folder" {
+  D="$(mktemp -d)"
+  (cd "$BRIDGIE_HOME" && npm pack --pack-destination "$D" --silent) >/dev/null
+  tar -xzf "$D"/bridgie-*.tgz -C "$D"
+  [ ! -e "$D/package/tests" ]
+  P="$(make_project --git)"
+  run bash -c "cd '$P' && unset BRIDGIE_HOME && node '$D/package/bin/bridgie.mjs' init --lane product && node '$D/package/bin/bridgie.mjs' bet new b --title T && BRIDGIE_ADAPTER=fake node '$D/package/bin/bridgie.mjs' grill b"
+  echo "$output"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"no fixture"* ]]
+}
+
 @test "setup removes the old bash-era Windows shim, and leaves other files alone" {
   H="$(mktemp -d)"; W="$H/AppData/Local/Microsoft/WindowsApps"; mkdir -p "$W"
   printf '@echo off\r\n"C:\\Git\\usr\\bin\\bash.exe" "/c/Users/x/bridgie/bin/bridgie" %%*\r\n' > "$W/bridgie.cmd"

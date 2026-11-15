@@ -143,7 +143,7 @@ teardown() { if [[ -n "${SERVER_PID:-}" ]]; then kill "$SERVER_PID" 2>/dev/null 
   bash -c "cd '$Q' && bridgie panel d" >/dev/null 2>&1 || true
   bash -c "cd '$Q' && bridgie panel d --n 6" >/dev/null 2>&1
   mkdir -p "$Q/.bridgie/bets/d/evidence"; echo 'broker 1 notes' > "$Q/.bridgie/bets/d/evidence/n1.md"
-  bash -c "cd '$Q' && BRIDGIE_FAKE_OUTPUT='$BRIDGIE_HOME/tests/fixtures/fake/evidence.2.json' bridgie evidence d" >/dev/null 2>&1
+  bash -c "cd '$Q' && BRIDGIE_FAKE_OUTPUT='$BRIDGIE_HOME/adapters/fake/fixtures/evidence.2.json' bridgie evidence d" >/dev/null 2>&1
   P="$Q"; start_server
   run get /bet/d
   [[ "$output" == *"What the decide loop found"* ]]
