@@ -99,6 +99,12 @@
     "routing": {
       "type": "object",
       "properties": {
+        "fallback": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "tiers": {
           "type": "object",
           "additionalProperties": {

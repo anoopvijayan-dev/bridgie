@@ -84,39 +84,70 @@ export async function runSeat(slug, seat, opts = {}) {
   const { manifest } = loadSeat(seat);
   let route;
   try { route = st.route(root, manifest); } catch (e) { die(`routing failed: ${e.message}`); }
-  const { adapter, model = 'default', effort } = route;
-  if (adapter === 'none') die(`seat ${seat} has no model adapter (mechanical seats run in the verify command)`);
-  const [cmd, pre] = adapterCommand(adapter);
+  if (route.adapter === 'none') die(`seat ${seat} has no model adapter (mechanical seats run in the verify command)`);
   const mode = manifest.writes === 'worktree' ? 'write' : 'readonly';
   const output = manifest.output;
-  const { raw, caps } = adapterCapabilities(adapter, seatDir, model);
-  writeFileSync(join(runDir, 'adapter.json'), raw + '\n');
-  if ((manifest.tools || []).includes('web') && caps.reads_web !== true) die(`seat ${name} needs web access; adapter '${adapter}' has none (route it to one that does: routing.seats.${name})`);
+  const needsWeb = (manifest.tools || []).includes('web');
+  // fits: can this adapter take the seat? (web for research; repo access and another model family
+  // for the reviewer, when the caller says so)
+  const fits = caps => (!needsWeb || caps.reads_web === true) && (!opts.needsRepo || caps.reads_repo === true) && (!opts.avoidVendor || caps.vendor !== opts.avoidVendor);
+  let { adapter, model = 'default', effort } = route;
+  let { raw, caps } = adapterCapabilities(adapter, seatDir, model);
+  if (needsWeb && caps.reads_web !== true) die(`seat ${name} needs web access; adapter '${adapter}' has none (route it to one that does: routing.seats.${name})`);
+  const spare = st.fallbacks(root, adapter);
+  // nextFallback: the next spare adapter whose CLI is installed and that fits the seat.
+  const nextFallback = () => {
+    while (spare.length) {
+      const a = spare.shift();
+      if (!existsSync(join(HOME, 'adapters', a))) continue;
+      const [c, p] = adapterCommand(a);
+      const probe = spawnSync(c, [...p, '--probe'], { encoding: 'utf8', timeout: 30000 });
+      if (probe.status !== 0 || !/OK/.test(probe.stdout || '')) continue;
+      const got = adapterCapabilities(a, seatDir, 'default');
+      if (fits(got.caps)) return { adapter: a, ...got };
+    }
+    return null;
+  };
 
-  // 3. lock, snapshot, launch, measure
+  // 3. lock, snapshot, launch, measure; on an adapter that cannot run at all, warn and fall back
   const locked = opts.lock !== false;
   const excludes = [relTo(root, runDir), ...(opts.exclude ? [relTo(root, opts.exclude)] : [])];
   if (locked) seatLock(root, name, runDir);
   try {
     try { snapshot(root, join(runDir, '.snapshot'), excludes); } catch (e) { die(e.message); }
-    const startedAt = new Date().toISOString().replace(/\.\d+Z$/, 'Z'), start = Date.now();
-    const args = [...pre, '--seat', seatDir, '--prompt', join(runDir, 'prompt.md'), '--out', join(runDir, output), '--cwd', cwd, '--mode', mode, '--model', model, ...(effort ? ['--effort', effort] : [])];
-    const rc = await launch(cmd, args, join(runDir, 'adapter.log'));
-    st.costAdd(runDir, { seat: name, adapter, model, started_at: startedAt, duration_s: Math.round((Date.now() - start) / 1000), attempt: n, exit_code: rc, tokens_in: null, tokens_out: null, usd: null });
+    const fellBack = [];
+    for (;;) {
+      writeFileSync(join(runDir, 'adapter.json'), raw + '\n');
+      const [cmd, pre] = adapterCommand(adapter);
+      const startedAt = new Date().toISOString().replace(/\.\d+Z$/, 'Z'), start = Date.now();
+      const args = [...pre, '--seat', seatDir, '--prompt', join(runDir, 'prompt.md'), '--out', join(runDir, output), '--cwd', cwd, '--mode', mode, '--model', model, ...(effort ? ['--effort', effort] : [])];
+      const rc = await launch(cmd, args, join(runDir, 'adapter.log'));
+      st.costAdd(runDir, { seat: name, adapter, model, started_at: startedAt, duration_s: Math.round((Date.now() - start) / 1000), attempt: n, exit_code: rc, tokens_in: null, tokens_out: null, usd: null });
 
-    // 4. single-writer guard (P1): any added, removed or changed state file fails the run
-    const d = check(root, join(runDir, '.snapshot'), excludes);
-    if (d.added.length || d.removed.length || d.changed.length) {
-      const restored = restore(root, join(runDir, '.snapshot'), excludes);
-      writeFileSync(join(runDir, 'VIOLATION'), `seat ${name} modified Bridgie state directly; state restored from snapshot\n${JSON.stringify(restored)}\n`);
-      die(`seat ${name} wrote to Bridgie state files; run failed and state restored (see ${join(runDir, 'VIOLATION')})`);
+      // 4. single-writer guard (P1): any added, removed or changed state file fails the run
+      const d = check(root, join(runDir, '.snapshot'), excludes);
+      if (d.added.length || d.removed.length || d.changed.length) {
+        const restored = restore(root, join(runDir, '.snapshot'), excludes);
+        writeFileSync(join(runDir, 'VIOLATION'), `seat ${name} modified Bridgie state directly; state restored from snapshot\n${JSON.stringify(restored)}\n`);
+        die(`seat ${name} wrote to Bridgie state files; run failed and state restored (see ${join(runDir, 'VIOLATION')})`);
+      }
+      if (rc === 0) break;
+      let why = '';
+      try { why = readFileSync(join(runDir, 'adapter.log'), 'utf8').trim().split(/\r?\n/).filter(l => /^(adapter|extract-json):|not found|no Antigravity project/.test(l)).pop() || ''; } catch {}
+      const failed = `adapter ${adapter} exited ${rc} for seat ${name}${why ? `: ${why}` : ''}`;
+      // 1: the adapter could not start (CLI missing, not set up); 6: the CLI failed (signed out, over
+      // its limit, crashed); 127: could not launch. A model that ran but answered badly (4, 5) is not
+      // a reason to switch models.
+      const next = [1, 6, 127].includes(rc) ? nextFallback() : null;
+      if (!next) die(`${failed}; see ${join(runDir, 'adapter.log')}${fellBack.length ? ` (after falling back from ${fellBack.join(', ')})` : ''}`);
+      process.stderr.write(`bridgie: warning: ${failed}; falling back to ${next.adapter}\n`);
+      renameSync(join(runDir, 'adapter.log'), join(runDir, `adapter-${adapter}.log`));
+      for (const f of [output, 'reply.txt']) rmSync(join(runDir, f), { force: true });
+      fellBack.push(adapter);
+      writeFileSync(join(runDir, 'fallback.json'), JSON.stringify({ routed: route.adapter, failed: fellBack, used: next.adapter }, null, 2) + '\n');
+      ({ adapter, raw, caps } = next); model = 'default'; effort = null;
     }
     rmSync(join(runDir, '.snapshot'), { recursive: true, force: true });   // kept only beside a VIOLATION
-    if (rc !== 0) {
-      let why = '';
-      try { why = readFileSync(join(runDir, 'adapter.log'), 'utf8').trim().split(/\r?\n/).filter(l => /^(adapter|extract-json):|not found/.test(l)).pop() || ''; } catch {}
-      die(`adapter ${adapter} exited ${rc} for seat ${name}${why ? `: ${why}` : ''}; see ${join(runDir, 'adapter.log')}`);
-    }
   } finally {
     if (locked) seatUnlock(root);
   }

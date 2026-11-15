@@ -63,6 +63,17 @@ export function doctor(root) {
 
   if (!root) { warn('not inside a project: tool checks only'); return r; }
   try { st.loadPolicy(root); ok('project policy merges and validates'); } catch (e) { fail(`project policy: ${e.message}`); }
+  try {   // Antigravity runs only in a folder one of its projects covers; say so before a seat fails
+    const pol = st.loadPolicy(root), routes = [...Object.values(pol.routing?.tiers || {}), ...Object.values(pol.routing?.seats || {})];
+    if (!process.env.BRIDGIE_ADAPTER && routes.some(x => x.adapter === 'antigravity')) {
+      const p = spawnSync(process.execPath, [join(st.HOME, 'adapters', 'antigravity', 'run.mjs'), '--check-cwd', root], { encoding: 'utf8', timeout: 30000 });
+      if (p.status === 0) ok(`Antigravity project for this folder: ${(p.stdout || '').trim().replace(/^OK /, '')}`);
+      else {
+        const spare = st.fallbacks(root, 'antigravity')[0];
+        warn(`no Antigravity project covers ${root}; seats routed to Antigravity will ${spare ? `fall back to ${spare}` : 'fail'}. Fix: open this folder once in Antigravity, or set BRIDGIE_AGY_PROJECT to a project id`);
+      }
+    }
+  } catch { /* policy errors are reported above */ }
   const betSchema = st.loadSchema('bet'), decSchema = st.loadSchema('decisions'); let betFail = 0;
   for (const s of st.listBets(root)) {
     const e1 = validate(betSchema, st.readFm(st.betPath(root, s)).data); if (e1.length) { betFail++; fail(`bet ${s}: ${e1.join('; ')}`); }

@@ -306,6 +306,23 @@ export function route(root, manifest) {
     effort: r.effort || null,
   };
 }
+// parentAdapter: the agent harness running Bridgie, when it can be told from the environment.
+export function parentAdapter() {
+  if (process.env.BRIDGIE_PARENT_ADAPTER) return process.env.BRIDGIE_PARENT_ADAPTER;
+  if (process.env.CLAUDECODE) return 'claude-code';
+  return null;
+}
+
+// fallbacks: adapters to try, in order, when the routed one cannot run a seat at all (not installed,
+// not set up, signed out, crashed). BRIDGIE_ADAPTER pins one adapter: no fallback. routing.fallback
+// sets the list ([] turns fallback off); without it: the parent harness, then the known model CLIs.
+export function fallbacks(root, primary) {
+  if (process.env.BRIDGIE_ADAPTER) return [];
+  const set = loadPolicy(root).routing?.fallback;
+  const list = Array.isArray(set) ? set : [parentAdapter(), 'claude-code', 'codex', 'antigravity', 'copilot'].filter(a => a !== 'fake');
+  return [...new Set(list.filter(a => a && a !== primary && a !== 'none'))];
+}
+
 export function costAdd(runDir, entry) {
   const f = join(runDir, 'cost.json');
   const doc = existsSync(f) ? readJson(f) : { entries: [] };
