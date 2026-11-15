@@ -21,8 +21,8 @@
   "engines": { "node": ">=20" },
   "scripts": { "test": "node --test", "test:cli": "bash tests/run.sh" },
   "keywords": ["agents", "agent-skills", "claude-code", "codex", "copilot", "antigravity", "ai", "workflow", "cli"],
-  "repository": { "type": "git", "url": "git+https://github.com/anoopvijayan-dev/bridge.git" },
-  "homepage": "https://github.com/anoopvijayan-dev/bridge#readme",
-  "bugs": { "url": "https://github.com/anoopvijayan-dev/bridge/issues" },
+  "repository": { "type": "git", "url": "git+https://github.com/anoopvijayan-dev/bridgie.git" },
+  "homepage": "https://github.com/anoopvijayan-dev/bridgie#readme",
+  "bugs": { "url": "https://github.com/anoopvijayan-dev/bridgie/issues" },
   "license": "MIT"
 }
