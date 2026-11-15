@@ -1,54 +1,82 @@
 ---
 name: bridgie
-description: Drive the Bridgie company-OS CLI for a person - turn an idea into a bet, grill it, then shape, plan, build, verify and package it for acceptance, always leaving every human decision to the person on the Bridgie decision page. Use when the person says /bridgie, mentions a bet, wants to evaluate or start an idea, or wants a feature built through Bridgie.
+description: Drive the Bridgie company-OS CLI for a person - scout signals, turn an idea into a bet, grill it, then shape, plan, build, verify and package it for acceptance, and learn from it, always leaving every human decision to the person. Works from Claude chat on their computer, from a local agent terminal (Claude Code, Codex, Copilot, Antigravity) and from a Claude cloud session. Use when the person says /bridgie, mentions a bet, wants to evaluate or start an idea, or wants a feature built through Bridgie.
 ---
 
 # Bridgie
 
-Bridgie is a command-line tool (`bridgie`) that runs work through five loops: decide → build → verify → accept → learn. State lives in `.bridgie/` in the project; only the tool writes it. Your job is to drive the tool and help the person think. The person makes every decision.
+Bridgie is a command-line tool that runs work through five loops: decide, build, verify, accept, learn. State lives in `.bridgie/` inside each project and only the tool writes it. Your job is to drive the tool and help the person think. The person makes every decision.
 
-## The one rule
+## 1. Find out where you are, then set `B`
 
-Never answer a Bridgie decision yourself: grill questions, sign, design approval, risk acknowledgement, unblock, acceptance, confidence proposals. Do not run `bridgie decide`, `bridgie sign`, `bridgie ack`, `bridgie shape --approve`, `bridgie shape --changes` or `bridgie accept --approve|--conditions|--reject` unless the person has just told you their answer in this conversation. Point them to the decision page instead: `bridgie open <slug>`. Never edit `customer.yaml`, `pitch.md` or `numbers.yaml` beside a bet with figures the person did not give you, and never write a buyer's answer or an evidence note yourself.
+Every command below is written `B <command>`. Work out once which case you are in, and use that form of `B` for the rest of the session.
 
-## Starting
+Bridgie is the npm package `bridgie` (Node 20+). Wherever there is a shell with node, `bridgie` works if it is installed, and `npx -y bridgie` works if it is not.
 
-- Check the tool: `bridgie doctor`. If `bridgie` is not on PATH, tell the person to run `node <their bridgie clone>/bin/bridgie.mjs setup` and open a new terminal.
-- No `.bridgie/` folder yet: `bridgie init --lane <engineering|product|marketing|sales|platform|security>`. An empty folder is fine for a new company; Build needs a git repository.
+**A. Claude chat with the person's computer** (you have a `device_bash` tool).
+- Request folder access to each project folder (or its parent, to create one) with `device_request_folder_access`; it appears under `$HOME/mnt/`.
+- No state carries between calls, so `cd` in the same call: `cd $HOME/mnt/<project> && BRIDGIE_ADAPTER=claude-code npx -y bridgie <command>`.
+- Only the `claude-code` adapter works in that shell, so set `BRIDGIE_ADAPTER=claude-code` on seat-running commands (the person's own `~/.bridgie/policy.yaml` does not apply there).
+- Deleting is off by default, and git needs it for lock files and checkouts: before `init` in a new repo, or any `shape`, `build`, `run` or `verify`, call `device_request_delete_permission` once for the project folder with a one-line reason.
+- Calls are capped near 180s: pass `timeout_ms: 180000` on seat commands; if one still times out, start it with `nohup ... > .bridgie-chat.log 2>&1 &` and poll the log and `B status`.
 
-## Find: from signals to opportunities
+**B. A terminal on the person's computer** (Claude Code, Codex, Copilot CLI, Antigravity, or any other agent).
+- `B` is `bridgie`, run from the project folder. Routing comes from `~/.bridgie/policy.yaml`, so do not set `BRIDGIE_ADAPTER` unless asked.
+- If `bridgie version` fails, use `npx -y bridgie` for now and suggest the person installs it once with `npx bridgie@latest setup` (puts `bridgie` on PATH, installs this skill for their agents, writes the routing policy), then opens a new terminal.
 
-If the person has raw material (support exports, notes, emails, forum threads) in a folder: `bridgie scout --from <folder>`. It writes `.bridgie/scout/<name>/opportunities.md`, ranked by independent sources × severity. Read the list back in short form; the person picks one: `bridgie bet new <slug> --from <name>/O2`.
+**C. A Claude cloud session** (`CLAUDE_CODE_REMOTE` is set; no `device_bash`).
+- The container cannot reach the person's computer; Bridgie runs here. `B` is `BRIDGIE_ADAPTER=claude-code npx -y bridgie`, run from the project.
+- The project is the repository this session was started on (your working directory). For a brand-new company, ask the person which GitHub repository to use; a folder that is not pushed anywhere is lost when the container is reclaimed.
+- Long seat runs: start them with the Bash tool's `run_in_background`, writing to `.bridgie-chat.log`, and check `B status` when they finish.
+- The container is reclaimed after inactivity, so after each step that changed `.bridgie/`, commit it on the session's development branch and push that branch. Ask the person before pushing any other branch, including `bridgie/<slug>`.
+- `research` needs web access; if the environment's network policy blocks a site, say so rather than guessing facts.
 
-## Decide: from idea to signed bet
+Then run `B doctor` to check the setup. A `[warn]` for an adapter that is not installed is normal; a `[fail]` is not.
 
-1. `bridgie bet new <slug> --title "..." --risk <money|data|security|infra|ux|none>` (or `--from` an opportunity).
-2. `bridgie frame <slug> "<one-line idea>"` drafts Who, Problem in their words, Why now, What they do today, Expected outcome, and raises every assumption as a question. Or help the person write the body by hand in `.bridgie/bets/<slug>/bet.md` (markdown body only, never the YAML frontmatter).
-3. `bridgie research <slug>` maps competitors, prices and complaints from the web with a link on every fact (needs an adapter with web access).
-4. `bridgie grill <slug> --lenses` stress-tests the why and convenes the three-lens board (offer, moat, product) with a chair; the vote is computed by the runner.
-5. `bridgie panel <slug>` first drafts `customer.yaml` and `pitch.md` beside the bet and stops: the person must review them. Run it again to deal the buyers. The result is objections, segments and a price range from simulated buyers: an upper bound, never evidence, and it does not change confidence.
-6. Money bets: `bridgie numbers <slug> --template`, the person fills in their own figures, `bridgie numbers <slug>` computes the verdict. Signing is refused without positive unit economics.
-7. `bridgie evidence <slug>` turns "don't know" answers and the panel's open points into interview guides and data pulls. When the person has run them and dropped notes into `.bridgie/bets/<slug>/evidence/`, run it again: it synthesises and proposes a confidence tier the person accepts or keeps on the page.
-8. Tell the person to answer, accept or keep, and sign on `bridgie open <slug>`. "Don't know" is a valid answer; it becomes an evidence task.
+## 2. Decisions: the one rule
 
-## Build, verify, accept
+Never answer a Bridgie decision yourself: grill questions, sign, design approval, risk acknowledgement, unblock, acceptance, confidence proposals.
 
-- `bridgie run <slug>` drives shape → plan → build → verify → accept packaging and stops at each human decision. Run it again after the person decides.
-- Single steps when needed: `bridgie shape | plan | build | verify | accept <slug>`.
-- A command that ends with "waiting for ..." is not a failure. Say what is waiting and send the person to `bridgie open <slug>`.
-- A blocked task needs the person's unblock decision. Summarise its escalation from `bridgie status` and `.bridgie/specs/<slug>/tasks.json`; do not retry it yourself.
-- Bridgie never pushes or merges into the base branch. After acceptance, the person merges `bridgie/<slug>` when they choose.
+- In case B the person can use the decision page: `B open <slug>`.
+- In cases A and C the page is served inside a shell their browser cannot reach, so take decisions in chat: read the pending questions and options from the bet's files and `B status`, show them to the person (for several choices use AskUserQuestion or a short rendered page, not raw markdown), and only after they answer in this conversation run `B decide <slug> <id> <answer> [--text "..."]`, `B sign`, `B ack`, `B shape --approve|--changes` or `B accept --approve|--conditions|--reject`, exactly as they said.
 
-## Learn
+Never put figures the person did not give you into `customer.yaml`, `pitch.md` or `numbers.yaml`, and never write a buyer's answer or an evidence note yourself.
 
-After an accept decision or a killed bet: `bridgie learn <slug>`. Read the proposals file aloud in short form and ask which ones to adopt; adopted gotchas go into `.bridgie/learn/gotchas.md`.
+## 3. Starting a project
+
+- New: `B new <folder> --lane <engineering|product|marketing|sales|platform|security>` (makes the folder, the git repo and the state).
+- Existing folder: `B init --lane <lane>`. An empty folder is fine for a new company; Build needs git.
+- Plain `B` (or `B next`) says what to do next at any stage.
+
+## 4. Find
+
+If the person has raw signals (emails, support exports, notes, forum threads) in a folder: `B scout --from <folder>` writes `.bridgie/scout/<name>/opportunities.md`, ranked by independent sources times severity. Summarise the list; the person picks one, then `B bet new <slug> --from <name>/O<n>`.
+
+## 5. Decide loop
+
+1. `B bet new <slug> --title "..." --risk <money|data|security|infra|ux|none>`.
+2. `B frame <slug> "<one-line idea>"` drafts Who, Problem, Why now, What they do today, Expected outcome, and raises every assumption as a question. Or help the person write the markdown body of `.bridgie/bets/<slug>/bet.md` by hand (never the YAML frontmatter).
+3. `B research <slug>`: competitors, prices and complaints, with a link on every fact.
+4. `B grill <slug> --lenses`: adversarial grill plus the offer, moat and product board with a chair. The runner computes the vote.
+5. `B panel <slug>`: the first run drafts `customer.yaml` and `pitch.md` for the person to correct, and stops. Run it again for simulated buyers. The result is an upper bound, never evidence, and does not change confidence.
+6. Money bets: `B numbers <slug> --template`, the person fills in their own figures, then `B numbers <slug>`. Signing is refused without positive unit economics.
+7. `B evidence <slug>` turns "don't know" answers and the panel's open points into interview guides and data pulls. Once the person has dropped notes into `.bridgie/bets/<slug>/evidence/`, run it again: it proposes a confidence tier for them to accept or keep.
+8. Take their answers, confidence choice and sign or kill through section 2. "Don't know" is a valid answer; it becomes an evidence task.
+
+## 6. Build, verify, accept, learn
+
+- `B run <slug>` drives shape, plan, build, verify and accept packaging, and stops at each decision. Run it again after the person decides. Single steps: `B shape | plan | build | verify | accept <slug>`.
+- A command ending "waiting for ..." is not a failure: say what is waiting and ask the person for that decision.
+- A blocked task needs their unblock decision. Summarise the escalation from `B status` and `.bridgie/specs/<slug>/tasks.json`; do not retry it yourself.
+- Bridgie never pushes or merges. After acceptance the person merges `bridgie/<slug>` when they choose.
+- After an accept decision or a killed bet: `B learn <slug>`. Summarise the proposals and ask which to adopt; adopted gotchas go into `.bridgie/learn/gotchas.md`.
 
 ## Reporting
 
-After each command, tell the person in two or three sentences what happened, what is waiting for them, and the next command. Quote `bridgie status` when it helps. Do not paste whole run transcripts.
+After each command, say in two or three sentences what happened, what is waiting for the person and the next step. Quote `B status` when it helps. Do not paste whole transcripts.
 
 ## Gotchas
 
-- Do not edit anything under `.bridgie/` except a bet's markdown body and `.bridgie/learn/gotchas.md`; the runner refuses state changes it did not make and restores them.
-- Model routing is per machine in `~/.bridgie/policy.yaml` (`routing.tiers` and `routing.seats`); per project overrides go in `.bridgie/policy.yaml`. `BRIDGIE_ADAPTER=fake` runs the loop without models, for demos.
-- Bridgie runs the same in PowerShell, cmd, Git Bash, macOS and Linux terminals.
+- Only edit a bet's markdown body and `.bridgie/learn/gotchas.md`; the runner refuses state changes it did not make and restores them.
+- Model routing is per machine in `~/.bridgie/policy.yaml` (`routing.tiers`, `routing.seats`), per project in `.bridgie/policy.yaml`. `BRIDGIE_ADAPTER=fake` runs the loop without models, for dry runs and demos.
+- This skill ships inside the `bridgie` package (`skills/bridgie/SKILL.md`). `npx bridgie@latest setup` installs or updates it for every agent on the machine, and `B doctor` warns when an installed copy is out of date. Claude chat and cloud sessions use the copy the person uploaded to claude.ai; it needs re-uploading after it changes.

@@ -13,14 +13,26 @@ rendered page and is written back to files you can diff.
 Needs **git** and **Node 20+**. Works the same in PowerShell, cmd, Git Bash, macOS and Linux terminals.
 
 ```
-git clone https://github.com/anoopvijayan-dev/bridge.git ~/bridgie
-node ~/bridgie/bin/bridgie.mjs setup
+npx bridgie@latest setup
 ```
 
-(On Windows PowerShell use `$HOME\bridgie` for `~/bridgie`.) `setup` links the `bridgie` command with npm, so
-npm writes the right launcher for your shell; installs the agent skill for Claude Code and other agents; and
-writes `~/.bridgie/policy.yaml` (which model runtime each seat uses on this machine). Open a **new** terminal
-afterwards. To update later: `git pull` in the clone; re-run `setup` only if it says so.
+One command, for you and your agents:
+
+1. puts `bridgie` on your PATH (`npm install -g bridgie`; npm writes the right launcher for your shell);
+2. installs the `/bridgie` agent skill for every agent it finds on the machine (Claude Code, Codex,
+   GitHub Copilot, Antigravity, Gemini CLI, Cursor and others) through the open
+   [`skills`](https://skills.sh) installer; pass `--agent claude-code --agent codex` to pick;
+3. writes `~/.bridgie/policy.yaml`: which model CLI each seat uses, from the ones it finds.
+
+Open a **new** terminal afterwards. To update the tool and the skill together, run the same command again;
+`bridgie doctor` warns when an installed skill is out of date. The skill alone, without the CLI:
+`npx skills add anoopvijayan-dev/bridge` (the skill then runs Bridgie through `npx bridgie`).
+
+**Claude chat and Claude cloud sessions** read skills from your claude.ai account, not your disk: upload
+`skills/bridgie/SKILL.md` there once (and again after it changes).
+
+**Working on Bridgie itself:** clone this repo and run `node bin/bridgie.mjs setup` in it; `setup` then links
+your clone instead of installing from npm.
 
 ## Start
 

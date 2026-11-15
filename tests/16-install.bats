@@ -10,31 +10,84 @@ load helpers
   [[ "$d" != *"<"* ]]
 }
 
-@test "setup copies the skill, links with npm, creates a routing policy once, and is safe to re-run" {
-  H="$(mktemp -d)"; mkdir -p "$H/.claude" "$H/.agents" "$H/stub"
-  printf 'require("fs").appendFileSync(process.argv[2], process.argv.slice(3).join(" ") + "\\n")\n' > "$H/npm.cjs"
-  if on_windows; then printf '@node "%s" "%s" %%*\r\n' "$(native "$H/npm.cjs")" "$(native "$H/npm.log")" > "$H/stub/npm.cmd"
-  else printf '#!/bin/sh\nexec node "%s" "%s" "$@"\n' "$H/npm.cjs" "$H/npm.log" > "$H/stub/npm"; chmod +x "$H/stub/npm"; fi
+# stubs <home>: fake npm and npx on $H/stub that log their arguments to $H/npm.log and $H/npx.log
+stubs() {
+  mkdir -p "$1/stub"
+  printf 'require("fs").appendFileSync(process.argv[2], process.argv.slice(3).join(" ") + "\\n")\n' > "$1/log.cjs"
+  for c in npm npx; do
+    if on_windows; then printf '@node "%s" "%s" %%*\r\n' "$(native "$1/log.cjs")" "$(native "$1/$c.log")" > "$1/stub/$c.cmd"
+    else printf '#!/bin/sh\nexec node "%s" "%s" "$@"\n' "$1/log.cjs" "$1/$c.log" > "$1/stub/$c"; chmod +x "$1/stub/$c"; fi
+  done
+}
+
+@test "setup links the clone, installs the skill through the skills installer, writes a policy once, and is safe to re-run" {
+  H="$(mktemp -d)"; stubs "$H"
   run env HOME="$H" USERPROFILE="$(native "$H")" PATH="$H/stub:$PATH" node "$BRIDGIE_HOME/bin/bridgie.mjs" setup
   [ "$status" -eq 0 ]
-  [ -f "$H/.claude/skills/bridgie/SKILL.md" ]
-  [ -f "$H/.agents/skills/bridgie/SKILL.md" ]
-  cat "$H/npm.log"; has_path_line "$H/npm.log" "install -g " "$BRIDGIE_HOME"
+  cat "$H/npm.log" "$H/npx.log"
+  has_path_line "$H/npm.log" "install -g " "$BRIDGIE_HOME"            # a git clone is linked, not downloaded
+  grep -q -- "-y skills@1.8.1 add .*skills.bridgie -g -y --copy$" "$H/npx.log"
   [[ "$output" == *"works in PowerShell, cmd, Git Bash, macOS and Linux"* ]]
-  grep -q 'adapter: copilot' "$H/.bridgie/policy.yaml"
+  [[ "$output" == *"upload skills/bridgie/SKILL.md"* ]]
+  grep -q 'adapter: ' "$H/.bridgie/policy.yaml"
   run env HOME="$H" USERPROFILE="$(native "$H")" PATH="$H/stub:$PATH" "$BRIDGIE_HOME/bin/install.sh"      # old entry point still works
   [ "$status" -eq 0 ]
   [[ "$output" == *"already exists"* ]]
-  run env HOME="$H" USERPROFILE="$(native "$H")" node "$BRIDGIE_HOME/bin/bridgie.mjs" setup --no-link --no-policy
+  run env HOME="$H" USERPROFILE="$(native "$H")" PATH="$H/stub:$PATH" node "$BRIDGIE_HOME/bin/bridgie.mjs" setup --no-link --no-policy --agent claude-code --agent codex
   [ "$status" -eq 0 ]
-  [ "$(wc -l < "$H/npm.log")" -eq 2 ]
+  [ "$(grep -c 'install -g' "$H/npm.log")" -eq 2 ]
+  grep -q -- "--copy --agent claude-code codex$" "$H/npx.log"
+}
+
+@test "setup from the npm package installs that version of bridgie, not the npx cache folder" {
+  C="$(mktemp -d)/bridgie"; mkdir -p "$C"
+  for d in bin runner schemas policy templates ui adapters seats lanes skills; do cp -r "$BRIDGIE_HOME/$d" "$C/"; done
+  cp "$BRIDGIE_HOME/VERSION" "$C/"
+  H="$(mktemp -d)"; stubs "$H"
+  run env HOME="$H" USERPROFILE="$(native "$H")" PATH="$H/stub:$PATH" BRIDGIE_HOME="$C" node "$C/bin/bridgie.mjs" setup --no-skill --no-policy
+  [ "$status" -eq 0 ]
+  grep -qx "install -g bridgie@$(cat "$BRIDGIE_HOME/VERSION")" "$H/npm.log"
+  [ ! -f "$H/npx.log" ]
+}
+
+@test "doctor reports installed skill copies as current or out of date" {
+  H="$(mktemp -d)"; mkdir -p "$H/.agents/skills" "$H/.claude/skills"
+  cp -r "$BRIDGIE_HOME/skills/bridgie" "$H/.agents/skills/"; cp -r "$BRIDGIE_HOME/skills/bridgie" "$H/.claude/skills/"
+  run env -u CLAUDE_CODE_REMOTE bash -c "cd '$(mktemp -d)' && HOME='$H' USERPROFILE='$(native "$H")' bridgie doctor"
+  [[ "$output" == *"[ok] skill current for Claude Code"* ]]
+  [[ "$output" == *"[ok] skill current for agents that read ~/.agents/skills"* ]]
+  echo 'old' > "$H/.claude/skills/bridgie/SKILL.md"
+  run env -u CLAUDE_CODE_REMOTE bash -c "cd '$(mktemp -d)' && HOME='$H' USERPROFILE='$(native "$H")' bridgie doctor"
+  [ "$status" -eq 0 ]                                     # a stale skill warns, it does not fail
+  [[ "$output" == *"[warn] skill out of date for Claude Code"* ]]
+  run env -u CLAUDE_CODE_REMOTE bash -c "cd '$(mktemp -d)' && HOME='$(mktemp -d)' bridgie doctor"
+  [[ "$output" == *"[warn] agent skill not installed"* ]]
+}
+
+@test "the skill covers chat, local terminals and cloud sessions, and names no one's machine" {
+  S="$BRIDGIE_HOME/skills/bridgie/SKILL.md"
+  grep -q 'device_bash' "$S"
+  grep -q 'CLAUDE_CODE_REMOTE' "$S"
+  grep -q 'npx -y bridgie' "$S"
+  ! grep -qiE 'anoop|source/repos|/home/user' "$S"
+}
+
+@test "the npm package version matches VERSION, and the package ships the skill but not the tests" {
+  [ "$(node -p 'require(process.argv[1]).version' "$BRIDGIE_HOME/package.json")" = "$(cat "$BRIDGIE_HOME/VERSION")" ]
+  run bash -c "cd '$BRIDGIE_HOME' && npm pack --dry-run --json"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"skills/bridgie/SKILL.md"'* ]]
+  [[ "$output" == *'"LICENSE"'* ]]
+  [[ "$output" != *'"tests/'* ]]
+  [[ "$output" != *'.test.mjs"'* ]]
+  [[ "$output" != *'"docs/'* ]]
 }
 
 @test "setup removes the old bash-era Windows shim, and leaves other files alone" {
   H="$(mktemp -d)"; W="$H/AppData/Local/Microsoft/WindowsApps"; mkdir -p "$W"
   printf '@echo off\r\n"C:\\Git\\usr\\bin\\bash.exe" "/c/Users/x/bridgie/bin/bridgie" %%*\r\n' > "$W/bridgie.cmd"
   echo 'something else' > "$W/other.cmd"
-  run env HOME="$H" USERPROFILE="$(native "$H")" LOCALAPPDATA="$(native "$H/AppData/Local")" node "$BRIDGIE_HOME/bin/bridgie.mjs" setup --no-link --no-policy
+  run env HOME="$H" USERPROFILE="$(native "$H")" LOCALAPPDATA="$(native "$H/AppData/Local")" node "$BRIDGIE_HOME/bin/bridgie.mjs" setup --no-link --no-skill --no-policy
   [ "$status" -eq 0 ]
   [ ! -e "$W/bridgie.cmd" ]
   [ -f "$W/other.cmd" ]

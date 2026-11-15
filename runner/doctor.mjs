@@ -7,6 +7,7 @@ import { splitFrontmatter, parse as yparse } from './yaml.mjs';
 import { validate } from './schema.mjs';
 import * as st from './state.mjs';
 import { leftoverSnapshots } from './guard.mjs';
+import { installedSkills, skillSource } from './skills.mjs';
 
 export function doctor(root) {
   const r = [];
@@ -49,6 +50,15 @@ export function doctor(root) {
     if (!existsSync(run)) continue;
     const p = spawnSync(process.execPath, [run, '--probe'], { encoding: 'utf8', timeout: 30000 });
     p.status === 0 && /OK/.test(p.stdout || '') ? ok(`adapter ${a}: probe OK`) : warn(`adapter ${a}: probe failed: ${((p.stderr || p.stdout || p.error?.message || '').trim().split('\n')[0]) || 'no output'}`);
+  }
+
+  // The agent skill: one source in skills/bridgie/, copies in each agent's skills folder.
+  if (process.env.CLAUDE_CODE_REMOTE) ok('Claude cloud session: the bridgie skill comes from claude.ai (upload skills/bridgie/SKILL.md there after it changes)');
+  else if (existsSync(join(skillSource(st.HOME), 'SKILL.md'))) {
+    const got = installedSkills(st.HOME);
+    if (!got.length) warn('agent skill not installed; run: bridgie setup --no-link --no-policy');
+    for (const t of got) t.state === 'current' ? ok(`skill current for ${t.who}: ${t.dir}`)
+      : warn(`skill out of date for ${t.who}: ${t.dir}; run: bridgie setup --no-link --no-policy`);
   }
 
   if (!root) { warn('not inside a project: tool checks only'); return r; }

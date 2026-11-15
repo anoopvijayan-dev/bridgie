@@ -1,0 +1,43 @@
+name: release
+# Publishes bridgie to npm when a version tag is pushed:  git tag v0.6.0 && git push origin v0.6.0
+# Uses npm trusted publishing (OIDC): no token is stored in the repo. One-time setup on npmjs.com,
+# after the first manual `npm publish`: package bridgie, Settings, Trusted publishing, GitHub Actions,
+# repository anoopvijayan-dev/bridge, workflow release.yml.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      - name: npm with trusted publishing
+        run: npm install -g npm@11
+      - name: tag, VERSION and package.json agree
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          test "$v" = "$(cat VERSION)" || { echo "tag $GITHUB_REF_NAME but VERSION is $(cat VERSION)"; exit 1; }
+          test "$v" = "$(node -p 'require("./package.json").version')" || { echo "package.json version differs from the tag"; exit 1; }
+      - name: git identity for test repos
+        run: |
+          git config --global user.name ci
+          git config --global user.email ci@example.com
+          git config --global init.defaultBranch main
+      - name: tests
+        run: |
+          node --test
+          npm i -g bats
+          bats tests/
+        env:
+          BRIDGIE_USER_POLICY: /nonexistent/bridgie-user-policy.yaml
+      - name: publish
+        run: npm publish --access public
