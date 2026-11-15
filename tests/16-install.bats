@@ -10,19 +10,20 @@ load helpers
   [[ "$d" != *"<"* ]]
 }
 
-# stubs <home>: fake npm and npx on $H/stub that log their arguments to $H/npm.log and $H/npx.log
+# stubs <home>: fake npm and npx in "$H/my tools" (a folder with a space, like C:\Program Files) that log
+# their arguments to $H/npm.log and $H/npx.log; STUB_FAIL=npm makes npm exit 1.
 stubs() {
-  mkdir -p "$1/stub"
-  printf 'require("fs").appendFileSync(process.argv[2], process.argv.slice(3).join(" ") + "\\n")\n' > "$1/log.cjs"
+  mkdir -p "$1/my tools"
+  printf 'const [log, ...a] = process.argv.slice(2); require("fs").appendFileSync(log, a.join(" ") + "\\n"); if (process.env.STUB_FAIL && log.endsWith(process.env.STUB_FAIL + ".log")) process.exit(1)\n' > "$1/log.cjs"
   for c in npm npx; do
-    if on_windows; then printf '@node "%s" "%s" %%*\r\n' "$(native "$1/log.cjs")" "$(native "$1/$c.log")" > "$1/stub/$c.cmd"
-    else printf '#!/bin/sh\nexec node "%s" "%s" "$@"\n' "$1/log.cjs" "$1/$c.log" > "$1/stub/$c"; chmod +x "$1/stub/$c"; fi
+    if on_windows; then printf '@node "%s" "%s" %%*\r\n' "$(native "$1/log.cjs")" "$(native "$1/$c.log")" > "$1/my tools/$c.cmd"
+    else printf '#!/bin/sh\nexec node "%s" "%s" "$@"\n' "$1/log.cjs" "$1/$c.log" > "$1/my tools/$c"; chmod +x "$1/my tools/$c"; fi
   done
 }
 
 @test "setup links the clone, installs the skill through the skills installer, writes a policy once, and is safe to re-run" {
   H="$(mktemp -d)"; stubs "$H"
-  run env HOME="$H" USERPROFILE="$(native "$H")" PATH="$H/stub:$PATH" node "$BRIDGIE_HOME/bin/bridgie.mjs" setup
+  run env HOME="$H" USERPROFILE="$(native "$H")" PATH="$H/my tools:$PATH" node "$BRIDGIE_HOME/bin/bridgie.mjs" setup
   [ "$status" -eq 0 ]
   cat "$H/npm.log" "$H/npx.log"
   has_path_line "$H/npm.log" "install -g " "$BRIDGIE_HOME"            # a git clone is linked, not downloaded
@@ -30,10 +31,10 @@ stubs() {
   [[ "$output" == *"works in PowerShell, cmd, Git Bash, macOS and Linux"* ]]
   [[ "$output" == *"upload skills/bridgie/SKILL.md"* ]]
   grep -q 'adapter: ' "$H/.bridgie/policy.yaml"
-  run env HOME="$H" USERPROFILE="$(native "$H")" PATH="$H/stub:$PATH" "$BRIDGIE_HOME/bin/install.sh"      # old entry point still works
+  run env HOME="$H" USERPROFILE="$(native "$H")" PATH="$H/my tools:$PATH" "$BRIDGIE_HOME/bin/install.sh"      # old entry point still works
   [ "$status" -eq 0 ]
   [[ "$output" == *"already exists"* ]]
-  run env HOME="$H" USERPROFILE="$(native "$H")" PATH="$H/stub:$PATH" node "$BRIDGIE_HOME/bin/bridgie.mjs" setup --no-link --no-policy --agent claude-code --agent codex
+  run env HOME="$H" USERPROFILE="$(native "$H")" PATH="$H/my tools:$PATH" node "$BRIDGIE_HOME/bin/bridgie.mjs" setup --no-link --no-policy --agent claude-code --agent codex
   [ "$status" -eq 0 ]
   [ "$(grep -c 'install -g' "$H/npm.log")" -eq 2 ]
   grep -q -- "--copy --agent claude-code codex$" "$H/npx.log"
@@ -44,10 +45,22 @@ stubs() {
   for d in bin runner schemas policy templates ui adapters seats lanes skills; do cp -r "$BRIDGIE_HOME/$d" "$C/"; done
   cp "$BRIDGIE_HOME/VERSION" "$C/"
   H="$(mktemp -d)"; stubs "$H"
-  run env HOME="$H" USERPROFILE="$(native "$H")" PATH="$H/stub:$PATH" BRIDGIE_HOME="$C" node "$C/bin/bridgie.mjs" setup --no-skill --no-policy
+  run env HOME="$H" USERPROFILE="$(native "$H")" PATH="$H/my tools:$PATH" BRIDGIE_HOME="$C" node "$C/bin/bridgie.mjs" setup --no-skill --no-policy
   [ "$status" -eq 0 ]
   grep -qx "install -g bridgie@$(cat "$BRIDGIE_HOME/VERSION")" "$H/npm.log"
   [ ! -f "$H/npx.log" ]
+}
+
+@test "setup keeps the old Windows shim when installing the new command fails, and says how to retry" {
+  H="$(mktemp -d)"; stubs "$H"; W="$H/AppData/Local/Microsoft/WindowsApps"; mkdir -p "$W"
+  printf '@echo off\r\n"C:\\Git\\usr\\bin\\bash.exe" "/c/Users/x/bridgie/bin/bridgie" %%*\r\n' > "$W/bridgie.cmd"
+  run env HOME="$H" USERPROFILE="$(native "$H")" LOCALAPPDATA="$(native "$H/AppData/Local")" PATH="$H/my tools:$PATH" STUB_FAIL=npm node "$BRIDGIE_HOME/bin/bridgie.mjs" setup --no-skill --no-policy
+  [ "$status" -eq 0 ]
+  [ -f "$W/bridgie.cmd" ]
+  [[ "$output" == *"npm install -g failed; run it yourself"* ]]
+  run env HOME="$H" USERPROFILE="$(native "$H")" LOCALAPPDATA="$(native "$H/AppData/Local")" PATH="$H/my tools:$PATH" node "$BRIDGIE_HOME/bin/bridgie.mjs" setup --no-skill --no-policy
+  [ ! -e "$W/bridgie.cmd" ]
+  [[ "$output" == *"removed the old bash shim"* ]]
 }
 
 @test "doctor reports installed skill copies as current or out of date" {

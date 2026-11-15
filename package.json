@@ -1,6 +1,6 @@
 {
   "name": "bridgie",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "A file-based operating system for running a company's work through AI agents: decide, build, verify, accept, learn.",
   "type": "module",
   "bin": { "bridgie": "bin/bridgie.mjs" },

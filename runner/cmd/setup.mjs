@@ -48,8 +48,14 @@ function routing() {
 }
 
 const inside = (dir, parent) => { const r = relative(parent, dir); return r && !r.startsWith('..') && !isAbsolute(r); };
-const run = (cmd, args) => spawnSync(cmd, args, { stdio: 'inherit', shell: IS_WIN });   // npm/npx are .cmd files on Windows
-const q = s => (IS_WIN && /\s/.test(s) ? `"${s}"` : s);                                  // shell: true on Windows needs quoting
+// Run npm or npx. On Windows they are .cmd files, which only run through cmd.exe, so build one command
+// line with every part quoted (npm usually lives in C:\Program Files\nodejs) and let cmd find the
+// command by name; elsewhere run the resolved path directly with no shell.
+const winQuote = s => (/[\s"&|<>^()%!]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s);
+export const commandLine = (name, args) => [name, ...args].map(winQuote).join(' ');
+const run = (name, path, args, opts = {}) => IS_WIN
+  ? spawnSync(commandLine(name, args), { stdio: 'inherit', ...opts, shell: true })
+  : spawnSync(path, args, { stdio: 'inherit', ...opts });
 
 export default async function setup(argv) {
   const a = parseArgs(argv, { 'no-link': 'bool', 'no-skill': 'bool', 'no-policy': 'bool', agent: 'list', path: 'bool', policy: 'bool' }, 'setup');
@@ -57,28 +63,29 @@ export default async function setup(argv) {
   const say = s => process.stdout.write(`${s}\n`);
   const npm = which('npm'), npx = which('npx');
 
-  // 1. command on PATH
+  // 1. command on PATH. The old bash-era Windows shim goes only once the new command is in place.
   const oldShim = join(process.env.LOCALAPPDATA || join(home, 'AppData', 'Local'), 'Microsoft', 'WindowsApps', 'bridgie.cmd');
-  if (existsSync(oldShim) && /bin[\\/]bridgie"/.test(readFileSync(oldShim, 'utf8'))) { rmSync(oldShim); say(`removed the old bash shim ${oldShim}`); }
-  if (!a['no-link']) {
+  const dropShim = () => { if (existsSync(oldShim) && /bin[\\/]bridgie"/.test(readFileSync(oldShim, 'utf8'))) { rmSync(oldShim); say(`removed the old bash shim ${oldShim}`); } };
+  if (a['no-link']) dropShim();
+  else {
     const fromClone = existsSync(join(HOME, '.git'));
-    const globalRoot = npm ? (spawnSync(npm, ['root', '-g'], { encoding: 'utf8', shell: IS_WIN }).stdout || '').trim() : '';
-    if (!npm) say(`npm not found; put ${join(HOME, 'bin')} on your PATH to use bridgie`);
-    else if (!fromClone && globalRoot && inside(resolve(HOME), resolve(globalRoot))) say(`bridgie ${version()} is already installed with npm`);
+    const globalRoot = npm ? (run('npm', npm, ['root', '-g'], { stdio: 'pipe', encoding: 'utf8' }).stdout || '').trim() : '';
+    if (!npm) say(`npm not found; install Node.js (it includes npm), then run: npx bridgie@latest setup`);
+    else if (!fromClone && globalRoot && inside(resolve(HOME), resolve(globalRoot))) { say(`bridgie ${version()} is already installed with npm`); dropShim(); }
     else {
       const target = fromClone ? HOME : `bridgie@${version()}`;
-      const r = run(npm, ['install', '-g', q(target)]);
-      if (r.status === 0) say(`bridgie ${fromClone ? 'linked from this clone' : `${version()} installed`} with npm: works in PowerShell, cmd, Git Bash, macOS and Linux terminals`);
-      else say(`npm install -g failed; put ${join(HOME, 'bin')} on your PATH instead, or fix npm's global prefix (npm config get prefix)`);
+      const r = run('npm', npm, ['install', '-g', target]);
+      if (r.status === 0) { say(`bridgie ${fromClone ? 'linked from this clone' : `${version()} installed`} with npm: works in PowerShell, cmd, Git Bash, macOS and Linux terminals`); dropShim(); }
+      else say(`npm install -g failed; run it yourself to see why: npm install -g ${fromClone ? `"${HOME}"` : target}   (or check npm's global prefix: npm config get prefix)`);
     }
   }
 
   // 2. agent skill, for every agent on this machine, through the skills installer
   if (!a['no-skill']) {
     const args = addArgs(HOME, a.agent);
-    const r = npx ? run(npx, args.map(q)) : { status: 1 };
+    const r = npx ? run('npx', npx, args) : { status: 1 };
     if (r.status === 0) say('bridgie skill installed for the agents found on this machine (list them: npx skills ls -g)');
-    else say(`could not run the skills installer${npx ? '' : ' (npx not found)'}; install the skill by hand: npx ${args.join(' ')}`);
+    else say(`could not run the skills installer${npx ? '' : ' (npx not found)'}; install the skill by hand: npx -y ${args[1]} add anoopvijayan-dev/bridgie -g -y --copy`);
     say('Claude chat and Claude cloud sessions read skills from claude.ai: upload skills/bridgie/SKILL.md there once (and again after it changes)');
   }
 
