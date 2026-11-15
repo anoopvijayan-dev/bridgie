@@ -1,11 +1,28 @@
 {
   "name": "bridgie",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "A file-based operating system for running a company's work through AI agents: decide, build, verify, accept, learn.",
   "type": "module",
   "bin": { "bridgie": "bin/bridgie.mjs" },
+  "files": [
+    "bin/",
+    "runner/",
+    "!runner/**/*.test.mjs",
+    "adapters/",
+    "seats/",
+    "lanes/",
+    "policy/",
+    "schemas/",
+    "templates/",
+    "ui/",
+    "skills/",
+    "VERSION"
+  ],
   "engines": { "node": ">=20" },
   "scripts": { "test": "node --test", "test:cli": "bash tests/run.sh" },
-  "license": "UNLICENSED",
-  "private": true
+  "keywords": ["agents", "agent-skills", "claude-code", "codex", "copilot", "antigravity", "ai", "workflow", "cli"],
+  "repository": { "type": "git", "url": "git+https://github.com/anoopvijayan-dev/bridge.git" },
+  "homepage": "https://github.com/anoopvijayan-dev/bridge#readme",
+  "bugs": { "url": "https://github.com/anoopvijayan-dev/bridge/issues" },
+  "license": "MIT"
 }

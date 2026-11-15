@@ -1,19 +1,19 @@
-// bridgie setup [--no-link] [--no-policy] — install Bridgie for this user, on any OS:
-//   1. the agent skill into each agent's skills folder whose home exists (runner/skills.mjs:
-//      ~/.claude, ~/.agents, ~/.copilot, ~/.gemini/antigravity)
-//   2. `bridgie` on PATH via `npm install -g <this folder>` (npm writes the right launcher for
-//      PowerShell, cmd, Git Bash, macOS and Linux), and removal of the old bash-era Windows shim
-//   3. ~/.bridgie/policy.yaml: which model runtime each seat tier uses on this machine
+// bridgie setup [--no-link] [--no-skill] [--no-policy] [--agent NAME...] — install Bridgie for this user, on any OS.
+// Usually run as:  npx bridgie@latest setup
+//   1. `bridgie` on PATH via npm (npm writes the right launcher for PowerShell, cmd, Git Bash, macOS
+//      and Linux): from a git clone it links the clone, otherwise it installs bridgie@<this version>.
+//      Also removes the old bash-era Windows shim.
+//   2. the agent skill, through the open `skills` installer, for every agent found on this machine
+//      (or only --agent NAME...); see runner/skills.mjs
+//   3. ~/.bridgie/policy.yaml: which model runtime each seat tier uses, from the CLIs found here
 import { existsSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve, relative, isAbsolute } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { HOME, IS_WIN, parseArgs, which } from '../cli/core.mjs';
-import { SKILL_HOMES, skillTargets, installSkill } from '../skills.mjs';
+import { HOME, IS_WIN, parseArgs, which, version } from '../cli/core.mjs';
+import { addArgs } from '../skills.mjs';
 
-const POLICY = `# Bridgie routing for this machine. Projects can override in .bridgie/policy.yaml.
-# Adapters: claude-code, copilot, codex, antigravity, fake. Check them with: bridgie doctor
-version: 1
+const PREFERRED = `version: 1
 routing:
   tiers:
     judgment: { adapter: copilot, model: claude-opus-5.5, effort: xhigh }
@@ -22,36 +22,75 @@ routing:
   seats:
     reviewer: { adapter: copilot, model: claude-opus-5.5, effort: high }
 `;
+const single = a => `version: 1
+routing:
+  tiers:
+    judgment: { adapter: ${a}, model: default }
+    production: { adapter: ${a}, model: default }
+    scout: { adapter: ${a}, model: default }
+  seats:
+    reviewer: { adapter: ${a}, model: default }
+`;
+const HEAD = `# Bridgie routing for this machine. Projects can override in .bridgie/policy.yaml.
+# Adapters: claude-code, copilot, codex, antigravity, fake. Check them with: bridgie doctor
+`;
+
+// Pick a routing for the model CLIs installed here: Copilot judgment with Antigravity production when
+// both are present, otherwise everything on the first one found.
+function routing() {
+  const found = ['copilot', 'antigravity', 'claude-code', 'codex'].filter(a => {
+    const p = spawnSync(process.execPath, [join(HOME, 'adapters', a, 'run.mjs'), '--probe'], { encoding: 'utf8', timeout: 30000 });
+    return p.status === 0 && /OK/.test(p.stdout || '');
+  });
+  if (found.includes('copilot') && found.includes('antigravity')) return [PREFERRED, 'judgment and review on Copilot Claude, production on Antigravity'];
+  if (found.length) return [single(found[0]), `every seat on ${found[0]}`];
+  return [single('claude-code'), 'every seat on claude-code, but no model CLI was found: install one, then run bridgie doctor'];
+}
+
+const inside = (dir, parent) => { const r = relative(parent, dir); return r && !r.startsWith('..') && !isAbsolute(r); };
+const run = (cmd, args) => spawnSync(cmd, args, { stdio: 'inherit', shell: IS_WIN });   // npm/npx are .cmd files on Windows
+const q = s => (IS_WIN && /\s/.test(s) ? `"${s}"` : s);                                  // shell: true on Windows needs quoting
 
 export default async function setup(argv) {
-  const a = parseArgs(argv, { 'no-link': 'bool', 'no-policy': 'bool', path: 'bool', policy: 'bool' }, 'setup');
+  const a = parseArgs(argv, { 'no-link': 'bool', 'no-skill': 'bool', 'no-policy': 'bool', agent: 'list', path: 'bool', policy: 'bool' }, 'setup');
   const home = homedir();
   const say = s => process.stdout.write(`${s}\n`);
+  const npm = which('npm'), npx = which('npx');
 
-  // 1. skill, into every agent home that exists (see runner/skills.mjs)
-  const targets = skillTargets(home);
-  for (const t of targets) { installSkill(HOME, t.dir); say(`skill installed: ${join(t.dir, 'SKILL.md')}  (${t.who})`); }
-  if (!targets.length) say(`no agent home found (${SKILL_HOMES.map(([h]) => `~/${h}`).join(', ')}); copy skills/bridgie/ into your agent's skills folder by hand`);
-  say('Claude chat and cloud sessions: upload skills/bridgie/SKILL.md as the bridgie skill on claude.ai, so every Claude surface uses this same file');
-
-  // 2. command on PATH
+  // 1. command on PATH
   const oldShim = join(process.env.LOCALAPPDATA || join(home, 'AppData', 'Local'), 'Microsoft', 'WindowsApps', 'bridgie.cmd');
   if (existsSync(oldShim) && /bin[\\/]bridgie"/.test(readFileSync(oldShim, 'utf8'))) { rmSync(oldShim); say(`removed the old bash shim ${oldShim}`); }
   if (!a['no-link']) {
-    const npm = which('npm');
+    const fromClone = existsSync(join(HOME, '.git'));
+    const globalRoot = npm ? (spawnSync(npm, ['root', '-g'], { encoding: 'utf8', shell: IS_WIN }).stdout || '').trim() : '';
     if (!npm) say(`npm not found; put ${join(HOME, 'bin')} on your PATH to use bridgie`);
+    else if (!fromClone && globalRoot && inside(resolve(HOME), resolve(globalRoot))) say(`bridgie ${version()} is already installed with npm`);
     else {
-      const r = spawnSync(npm, ['install', '-g', HOME], { stdio: 'inherit', shell: IS_WIN });   // npm is npm.cmd on Windows
-      if (r.status === 0) say('bridgie linked with npm: works in PowerShell, cmd, Git Bash, macOS and Linux terminals');
+      const target = fromClone ? HOME : `bridgie@${version()}`;
+      const r = run(npm, ['install', '-g', q(target)]);
+      if (r.status === 0) say(`bridgie ${fromClone ? 'linked from this clone' : `${version()} installed`} with npm: works in PowerShell, cmd, Git Bash, macOS and Linux terminals`);
       else say(`npm install -g failed; put ${join(HOME, 'bin')} on your PATH instead, or fix npm's global prefix (npm config get prefix)`);
     }
+  }
+
+  // 2. agent skill, for every agent on this machine, through the skills installer
+  if (!a['no-skill']) {
+    const args = addArgs(HOME, a.agent);
+    const r = npx ? run(npx, args.map(q)) : { status: 1 };
+    if (r.status === 0) say('bridgie skill installed for the agents found on this machine (list them: npx skills ls -g)');
+    else say(`could not run the skills installer${npx ? '' : ' (npx not found)'}; install the skill by hand: npx ${args.join(' ')}`);
+    say('Claude chat and Claude cloud sessions read skills from claude.ai: upload skills/bridgie/SKILL.md there once (and again after it changes)');
   }
 
   // 3. routing policy
   if (!a['no-policy']) {
     const p = join(home, '.bridgie', 'policy.yaml');
     if (existsSync(p)) say(`${p} already exists; left unchanged`);
-    else { mkdirSync(join(home, '.bridgie'), { recursive: true }); writeFileSync(p, POLICY); say(`created ${p} (judgment and review on Copilot Claude, production on Antigravity; edit to taste)`); }
+    else {
+      const [body, why] = routing();
+      mkdirSync(join(home, '.bridgie'), { recursive: true }); writeFileSync(p, HEAD + body);
+      say(`created ${p} (${why}; edit to taste)`);
+    }
   }
   say('');
   say('Done. Open a NEW terminal and type:  bridgie        (then: bridgie new my-idea)');

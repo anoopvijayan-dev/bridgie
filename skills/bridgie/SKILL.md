@@ -11,20 +11,22 @@ Bridgie is a command-line tool that runs work through five loops: decide, build,
 
 Every command below is written `B <command>`. Work out once which case you are in, and use that form of `B` for the rest of the session.
 
+Bridgie is the npm package `bridgie` (Node 20+). Wherever there is a shell with node, `bridgie` works if it is installed, and `npx -y bridgie` works if it is not.
+
 **A. Claude chat with the person's computer** (you have a `device_bash` tool).
-- The tool lives in the person's bridgie clone on their computer (on Windows usually `~/source/repos/bridgie`). If `$HOME/mnt/bridgie` is missing, call `device_request_folder_access` for that folder first; do the same for each project folder (or its parent, to create one). Projects are their own folders, never inside the bridgie clone.
-- No state carries between calls, so `cd` in the same call: `cd $HOME/mnt/<project> && BRIDGIE_ADAPTER=claude-code node $HOME/mnt/bridgie/bin/bridgie.mjs <command>`.
+- Request folder access to each project folder (or its parent, to create one) with `device_request_folder_access`; it appears under `$HOME/mnt/`.
+- No state carries between calls, so `cd` in the same call: `cd $HOME/mnt/<project> && BRIDGIE_ADAPTER=claude-code npx -y bridgie <command>`.
 - Only the `claude-code` adapter works in that shell, so set `BRIDGIE_ADAPTER=claude-code` on seat-running commands (the person's own `~/.bridgie/policy.yaml` does not apply there).
 - Deleting is off by default, and git needs it for lock files and checkouts: before `init` in a new repo, or any `shape`, `build`, `run` or `verify`, call `device_request_delete_permission` once for the project folder with a one-line reason.
 - Calls are capped near 180s: pass `timeout_ms: 180000` on seat commands; if one still times out, start it with `nohup ... > .bridgie-chat.log 2>&1 &` and poll the log and `B status`.
 
-**B. A terminal on the person's computer** (Claude Code, Codex, Copilot CLI, Antigravity; `bridgie version` works).
-- `B` is just `bridgie`, run from the project folder. Routing comes from `~/.bridgie/policy.yaml`, so do not set `BRIDGIE_ADAPTER` unless asked.
-- If `bridgie` is not on PATH but a clone is, use `node <clone>/bin/bridgie.mjs`, and tell the person to run `node <clone>/bin/bridgie.mjs setup` and open a new terminal.
+**B. A terminal on the person's computer** (Claude Code, Codex, Copilot CLI, Antigravity, or any other agent).
+- `B` is `bridgie`, run from the project folder. Routing comes from `~/.bridgie/policy.yaml`, so do not set `BRIDGIE_ADAPTER` unless asked.
+- If `bridgie version` fails, use `npx -y bridgie` for now and suggest the person installs it once with `npx bridgie@latest setup` (puts `bridgie` on PATH, installs this skill for their agents, writes the routing policy), then opens a new terminal.
 
-**C. A Claude cloud session** (`CLAUDE_CODE_REMOTE` is set; no `device_bash`; `bridgie` not on PATH).
-- The container cannot reach the person's computer. Get the tool here: if `/home/user/bridge/bin/bridgie.mjs` is missing, call `add_repo` for `anoopvijayan-dev/bridge` and clone it to `/home/user/bridge` exactly as that tool's result says.
-- `B` is `BRIDGIE_ADAPTER=claude-code node /home/user/bridge/bin/bridgie.mjs`, run from the project. The project is the repository this session was started on (your working directory). For a brand-new company, ask the person which GitHub repository to use; a folder that is not pushed anywhere is lost when the container is reclaimed.
+**C. A Claude cloud session** (`CLAUDE_CODE_REMOTE` is set; no `device_bash`).
+- The container cannot reach the person's computer; Bridgie runs here. `B` is `BRIDGIE_ADAPTER=claude-code npx -y bridgie`, run from the project.
+- The project is the repository this session was started on (your working directory). For a brand-new company, ask the person which GitHub repository to use; a folder that is not pushed anywhere is lost when the container is reclaimed.
 - Long seat runs: start them with the Bash tool's `run_in_background`, writing to `.bridgie-chat.log`, and check `B status` when they finish.
 - The container is reclaimed after inactivity, so after each step that changed `.bridgie/`, commit it on the session's development branch and push that branch. Ask the person before pushing any other branch, including `bridgie/<slug>`.
 - `research` needs web access; if the environment's network policy blocks a site, say so rather than guessing facts.
@@ -77,4 +79,4 @@ After each command, say in two or three sentences what happened, what is waiting
 
 - Only edit a bet's markdown body and `.bridgie/learn/gotchas.md`; the runner refuses state changes it did not make and restores them.
 - Model routing is per machine in `~/.bridgie/policy.yaml` (`routing.tiers`, `routing.seats`), per project in `.bridgie/policy.yaml`. `BRIDGIE_ADAPTER=fake` runs the loop without models, for dry runs and demos.
-- This file is the only copy of the skill: `skills/bridgie/SKILL.md` in the bridgie repo. `B setup` installs it for local agents and `B doctor` warns when an installed copy is out of date. The claude.ai skill (chat and cloud sessions) is the same file uploaded by the person; re-upload it after it changes.
+- This skill ships inside the `bridgie` package (`skills/bridgie/SKILL.md`). `npx bridgie@latest setup` installs or updates it for every agent on the machine, and `B doctor` warns when an installed copy is out of date. Claude chat and cloud sessions use the copy the person uploaded to claude.ai; it needs re-uploading after it changes.

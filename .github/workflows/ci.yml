@@ -36,6 +36,8 @@ jobs:
         if: success() || failure()
         shell: bash
         run: node bin/bridgie.mjs setup --no-policy
+        env:
+          DISABLE_TELEMETRY: '1'
       - name: bridgie from PowerShell
         if: (success() || failure()) && runner.os == 'Windows'
         shell: pwsh
