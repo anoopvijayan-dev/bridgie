@@ -30,7 +30,7 @@ test('requirementIds reads R and P headings', () => {
 
 test('writeTasksFromPlan validates mapping, ids, deps and cycles', () => {
   const root = project();
-  assert.throws(() => fl.writeTasksFromPlan(root, 'b', planOutput(root, [T('T1', ['R1'])])), /not covered by any task: R2, P1/);
+  assert.throws(() => fl.writeTasksFromPlan(root, 'b', planOutput(root, [T('T1', ['R1'])])), /not covered by any task: R2, P1 \(P ids are correctness properties/);
   assert.throws(() => fl.writeTasksFromPlan(root, 'b', planOutput(root, [T('T1', ['R1', 'R2', 'P1', 'R9'])])), /unknown requirement R9/);
   assert.throws(() => fl.writeTasksFromPlan(root, 'b', planOutput(root, [T('T1', ['R1'], ['T2']), T('T2', ['R2', 'P1'], ['T1'])])), /cycle/);
   assert.throws(() => fl.writeTasksFromPlan(root, 'b', planOutput(root, [T('T1', ['R1', 'R2', 'P1'], ['T7'])])), /unknown task T7/);

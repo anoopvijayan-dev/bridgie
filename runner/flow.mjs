@@ -87,7 +87,10 @@ export function writeTasksFromPlan(root, slug, outputFile) {
   }
   for (const t of list) for (const dep of t.depends_on || []) if (!ids.has(dep)) throw new Error(`task ${t.id} depends on unknown task ${dep}`);
   const unmapped = reqs.filter(r => !list.some(t => t.requirements.includes(r)));
-  if (unmapped.length) throw new Error(`requirements not covered by any task: ${unmapped.join(', ')}`);
+  if (unmapped.length) {
+    const props = unmapped.filter(r => /^P\d+$/.test(r));
+    throw new Error(`requirements not covered by any task: ${unmapped.join(', ')}${props.length ? ' (P ids are correctness properties: each belongs in the task that builds what its Validates: line names)' : ''}`);
+  }
   // cycle check (depth-first)
   const deps = Object.fromEntries(list.map(t => [t.id, t.depends_on || []]));
   const seen = {}, visit = (id, path) => {
