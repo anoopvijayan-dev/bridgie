@@ -147,7 +147,13 @@ test('route picks the seat override, else the tier default; env overrides both',
   assert.deepEqual(st.route(root, { name: 'grill', tier: 'judgment' }), { adapter: 'claude-code', model: 'opus', effort: 'xhigh' });
   process.env.BRIDGIE_ADAPTER = 'fake';
   assert.equal(st.route(root, { name: 'grill', tier: 'judgment' }).adapter, 'fake');
-  delete process.env.BRIDGIE_ADAPTER;
+  // a pinned adapter other than the routed one never gets the routed CLI's model name or effort
+  process.env.BRIDGIE_ADAPTER = 'claude-code';
+  assert.deepEqual(st.route(root, { name: 'evidence', tier: 'production' }), { adapter: 'claude-code', model: 'default', effort: null });
+  assert.deepEqual(st.route(root, { name: 'grill', tier: 'judgment' }), { adapter: 'claude-code', model: 'opus', effort: 'xhigh' });
+  process.env.BRIDGIE_MODEL = 'sonnet';
+  assert.equal(st.route(root, { name: 'evidence', tier: 'production' }).model, 'sonnet');
+  delete process.env.BRIDGIE_ADAPTER; delete process.env.BRIDGIE_MODEL;
 });
 
 test('costAdd appends validated entries', () => {
