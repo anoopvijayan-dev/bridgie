@@ -262,7 +262,8 @@ export function answerDecision(root, slug, id, answer, opts = {}) {
   }
 
   let effect = 'recorded';
-  if (d.type === 'question' && answer === "don't know") {
+  // "Don't know", "don't know" and "Don't know (I'll ask them to time 3 files)" all mean the same thing
+  if (d.type === 'question' && /^don['’]t know\b/i.test(answer.trim())) {
     const n = doc.decisions.filter(x => x.effect && x.effect.startsWith('evidence task')).length + 1;
     appendBody(root, slug, 'Evidence tasks', `- [ ] E${n}: ${d.context} (from ${id})`);
     effect = `evidence task E${n} created`;
