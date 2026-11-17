@@ -4,8 +4,9 @@
 //   guard.mjs check    <root> <snapdir> [--exclude <rel>]...  → {"added":[],"removed":[],"changed":[]}
 //   guard.mjs restore  <root> <snapdir> [--exclude <rel>]...
 // Paths are relative to <root> with forward slashes. Always excluded: worktrees (seats work there),
-// rendered pages, the fake adapter's scratch state, the seat lock, and other runs' .snapshot dirs
-// (otherwise every snapshot would copy every earlier snapshot and grow without bound).
+// rendered pages, the fake adapter's scratch state, the seat lock, other runs' .snapshot dirs
+// (otherwise every snapshot would copy every earlier snapshot and grow without bound), and Python
+// __pycache__ dirs (a seat that imports a helper from a run folder makes one; it is not state).
 //
 // Size: run history (.bridgie/runs/) is append-only and can be large (prompts, logs, diffs), so it is
 // hashed but never copied. Tampering there is still detected and fails the run; it is reported as
@@ -28,7 +29,8 @@ function walk(root, excludes) {
     for (const name of readdirSync(dir)) {
       const p = join(dir, name), r = rel(root, p);
       const st = statSync(p);
-      if (st.isDirectory()) { if (name !== '.snapshot' && !ex.some(e => `${r}/`.startsWith(e))) visit(p); }   // never snapshot a snapshot
+      // never snapshot a snapshot; interpreter caches (Python's __pycache__) are not state
+      if (st.isDirectory()) { if (name !== '.snapshot' && name !== '__pycache__' && !ex.some(e => `${r}/`.startsWith(e))) visit(p); }
       else if (st.isFile() && !ex.some(e => r.startsWith(e))) out.push(r);
     }
   };

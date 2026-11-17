@@ -53,7 +53,7 @@ function launch(cmd, args, logFile) {
   return new Promise(res => {
     const fd = openSync(logFile, 'w');
     let child;
-    try { child = spawn(cmd, args, { stdio: ['ignore', fd, fd] }); } catch (e) { closeSync(fd); res(127); return; }
+    try { child = spawn(cmd, args, { stdio: ['ignore', fd, fd], env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' } }); } catch (e) { closeSync(fd); res(127); return; }
     child.on('error', () => { closeSync(fd); res(127); });
     child.on('close', code => { try { closeSync(fd); } catch { /* closed */ } res(code ?? 1); });
   });
