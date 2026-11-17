@@ -16,6 +16,7 @@ You produce the task list the runner will drive, one independently verifiable ta
 ## Judgment criteria
 - Each task is hours, not days; if you cannot name its test, it is too big.
 - Each task lists the requirement IDs it satisfies; every requirement appears in at least one task.
+- Correctness properties (`## P<n> · property` in requirements.md) count as requirements: put each `P<n>` in the task that builds what its `Validates:` line names, so the property's test is written with that code.
 - Dependencies are explicit and acyclic; the first task has none.
 - Risky tasks (money, data, security paths) are isolated so a human ack covers one task, not all.
 

@@ -23,6 +23,22 @@ setup() {
   grep -q 'feature-1.txt' "$P/.bridgie/runs/b/reviewer-01/diff.patch"
 }
 
+@test "a task built on another machine verifies after its branch is fetched (worktree re-created)" {
+  R="$(mktemp -d)/origin.git"; git init -q --bare "$R"
+  git -C "$P" push -q "$R" "bridgie-task/b/T1"
+  git -C "$P" worktree remove --force "$P/.bridgie/worktrees/b/T1"
+  git -C "$P" branch -q -D "bridgie-task/b/T1"
+  run bash -c "cd '$P' && bridgie verify b"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"no worktree or branch for T1"* ]]
+  git -C "$P" remote add other "$R" && git -C "$P" fetch -q other
+  run bash -c "cd '$P' && bridgie verify b"
+  echo "$output"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"T1: pass"* ]]
+  [ -f "$P/feature-1.txt" ]
+}
+
 @test "the diff packet never contains .bridgie run files (R8)" {
   run bash -c "cd '$P' && bridgie verify b"
   ! grep -q '\.bridgie/' "$P/.bridgie/runs/b/verify-01/diff.patch"

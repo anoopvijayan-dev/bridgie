@@ -262,7 +262,8 @@ export function answerDecision(root, slug, id, answer, opts = {}) {
   }
 
   let effect = 'recorded';
-  if (d.type === 'question' && answer === "don't know") {
+  // "Don't know", "don't know" and "Don't know (I'll ask them to time 3 files)" all mean the same thing
+  if (d.type === 'question' && /^don['’]t know\b/i.test(answer.trim())) {
     const n = doc.decisions.filter(x => x.effect && x.effect.startsWith('evidence task')).length + 1;
     appendBody(root, slug, 'Evidence tasks', `- [ ] E${n}: ${d.context} (from ${id})`);
     effect = `evidence task E${n} created`;
@@ -300,10 +301,13 @@ export function ingestQuestions(root, slug, outputFile, runId) {
 export function route(root, manifest) {
   const pol = loadPolicy(root);
   const r = (pol.routing?.seats || {})[manifest.name] || (pol.routing?.tiers || {})[manifest.tier] || {};
+  // BRIDGIE_ADAPTER pins the adapter. The routed model and effort name another CLI's model ("argon"
+  // is Antigravity's), so a pinned adapter that differs from the route runs its own default instead.
+  const pinned = process.env.BRIDGIE_ADAPTER, other = pinned && pinned !== r.adapter;
   return {
-    adapter: process.env.BRIDGIE_ADAPTER || r.adapter || 'none',
-    model: process.env.BRIDGIE_MODEL || r.model || 'default',
-    effort: r.effort || null,
+    adapter: pinned || r.adapter || 'none',
+    model: process.env.BRIDGIE_MODEL || (other ? 'default' : r.model) || 'default',
+    effort: other ? null : r.effort || null,
   };
 }
 // parentAdapter: the agent harness running Bridgie, when it can be told from the environment.

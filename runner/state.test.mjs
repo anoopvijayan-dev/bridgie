@@ -101,6 +101,17 @@ test('decisions: add, list, answer, don\'t-know creates an evidence task, sign g
   assert.throws(() => st.answerDecision(root, 'b', 'D2', 'sign', { by: 'tester' }), /already answered/);
 });
 
+test("decisions: the seats' own spellings of don't know also create evidence tasks", () => {
+  const root = project();
+  st.betNew(root, 'b', { title: 'B', lane: 'engineering', risk: 'none', owner: 'tester' });
+  st.betTransition(root, 'b', 'grilling');
+  const opts = ['1 to 3 hours', "Don't know", "Don't know (timing not done yet)", 'Don’t know'];
+  for (const o of opts.slice(1)) st.addDecision(root, 'b', { type: 'question', context: `Q ${o}`, options: opts, raised_by: { seat: 'grill', run: 'grill-1' } });
+  assert.match(st.answerDecision(root, 'b', 'D1', "Don't know", { by: 'tester' }).effect, /evidence task E1/);
+  assert.match(st.answerDecision(root, 'b', 'D2', "Don't know (timing not done yet)", { by: 'tester' }).effect, /evidence task E2/);
+  assert.match(st.answerDecision(root, 'b', 'D3', 'Don’t know', { by: 'tester' }).effect, /evidence task E3/);
+});
+
 test('decisions: defer keeps it in the inbox; kill and need-more-evidence effects', () => {
   const root = project();
   st.betNew(root, 'c', { title: 'C', lane: 'engineering', risk: 'none', owner: 'tester' });
@@ -136,7 +147,13 @@ test('route picks the seat override, else the tier default; env overrides both',
   assert.deepEqual(st.route(root, { name: 'grill', tier: 'judgment' }), { adapter: 'claude-code', model: 'opus', effort: 'xhigh' });
   process.env.BRIDGIE_ADAPTER = 'fake';
   assert.equal(st.route(root, { name: 'grill', tier: 'judgment' }).adapter, 'fake');
-  delete process.env.BRIDGIE_ADAPTER;
+  // a pinned adapter other than the routed one never gets the routed CLI's model name or effort
+  process.env.BRIDGIE_ADAPTER = 'claude-code';
+  assert.deepEqual(st.route(root, { name: 'evidence', tier: 'production' }), { adapter: 'claude-code', model: 'default', effort: null });
+  assert.deepEqual(st.route(root, { name: 'grill', tier: 'judgment' }), { adapter: 'claude-code', model: 'opus', effort: 'xhigh' });
+  process.env.BRIDGIE_MODEL = 'sonnet';
+  assert.equal(st.route(root, { name: 'evidence', tier: 'production' }).model, 'sonnet');
+  delete process.env.BRIDGIE_ADAPTER; delete process.env.BRIDGIE_MODEL;
 });
 
 test('costAdd appends validated entries', () => {

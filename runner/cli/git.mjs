@@ -57,6 +57,22 @@ export function taskWorktree(root, slug, task) {
   return wt;
 }
 
+// restoreTaskWorktree: the task's worktree, re-created from its branch when it was built on another
+// machine (the branch is local, or on a remote after a fetch). Null when the branch exists nowhere.
+export function restoreTaskWorktree(root, slug, task) {
+  const wt = taskWtPath(root, slug, task), tb = taskBranch(slug, task);
+  if (existsSync(wt) && isRepo(wt)) return wt;
+  const remote = git(['-C', root, 'for-each-ref', '--format=%(refname:short)', `refs/remotes/*/${tb}`]).out.trim().split('\n').filter(Boolean)[0];
+  if (!hasBranch(root, tb) && !remote) return null;
+  if (existsSync(wt)) rmSync(wt, { recursive: true, force: true });
+  ignoreWorktrees(root);
+  mkdirSync(dirname(wt), { recursive: true });
+  git(['-C', root, 'worktree', 'prune']);
+  if (hasBranch(root, tb)) gitOrDie(['-C', root, 'worktree', 'add', '-q', wt, tb]);
+  else gitOrDie(['-C', root, 'worktree', 'add', '-q', '--track', '-b', tb, wt, remote]);
+  return wt;
+}
+
 export function reviewWorktree(root, slug, task) {
   const rv = `${taskWtPath(root, slug, task)}-review`;
   if (existsSync(rv)) removeWorktree(root, rv);

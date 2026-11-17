@@ -63,8 +63,9 @@ export default async function verify(argv) {
     if (!task) die(`verify: no task of '${slug}' is waiting for verification (bridgie build ${slug})`);
   }
   if (fl.getTask(fl.loadTasks(root, slug), task).status !== 'verify') die(`verify: task ${task} is not in status verify`);
-  const wt = g.taskWtPath(root, slug, task);
-  if (!existsSync(wt)) die(`verify: worktree for ${task} is missing (${wt})`);
+  // The task may have been built on another machine: re-create its worktree from the task branch.
+  const wt = g.restoreTaskWorktree(root, slug, task);
+  if (!wt) die(`verify: no worktree or branch for ${task} (${g.taskBranch(slug, task)}); if it was built elsewhere, push that branch there and git fetch here`);
   g.commitAll(wt, `bridgie: ${task} manual changes before verify`);
 
   // 1. packet (R8) and risk paths (R9)
