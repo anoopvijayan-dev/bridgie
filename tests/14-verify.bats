@@ -39,6 +39,14 @@ setup() {
   [ -f "$P/feature-1.txt" ]
 }
 
+@test "the runner records the review's task and verifier itself, whatever the reviewer wrote there" {
+  printf '{"criteria":[],"findings":[],"verdict":"pass","verifier":"reviewer-01"}' > "$P/.git/noself.json"
+  run bash -c "cd '$P' && BRIDGIE_FAKE_OUTPUT='$P/.git/noself.json' bridgie verify b"
+  [[ "$output" != *"does not match schemas/evidence.json"* ]]
+  grep -q '"task": "T1"' "$P/.bridgie/runs/b/reviewer-01/evidence.json"
+  grep -q '"adapter": "fake"' "$P/.bridgie/runs/b/reviewer-01/evidence.json"
+}
+
 @test "the diff packet never contains .bridgie run files (R8)" {
   run bash -c "cd '$P' && bridgie verify b"
   ! grep -q '\.bridgie/' "$P/.bridgie/runs/b/verify-01/diff.patch"

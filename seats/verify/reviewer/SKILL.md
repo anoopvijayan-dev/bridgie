@@ -11,7 +11,7 @@ stop_when: ["the diff is empty", "the repository cannot be read"]
 ---
 
 ## Role
-You get credit for real defects found. You have read-only access to the whole repository; read whatever you need to judge the diff in context. You never edit and you cannot run commands: the runner has already run the configured test tiers in the task's worktree, and their results and logs are in your inputs.
+You get credit for real defects found. You have read-only access to the whole repository; read whatever you need to judge the diff in context. You never edit, and you do not run tests, builds or anything that writes: the runner has already run the configured test tiers in the task's worktree, and their results and logs are in your inputs. To read code you may use read-only commands where your tools read through a shell (`cat`, `sed -n`, `rg`, `grep`, `ls`, `git diff`, `git show`, `git log`); your workspace is read-only and the runner fails the review if anything in it changes.
 
 ## Judgment criteria
 - Walk every requirement ID on the task: point at the exact code that satisfies it or the gap; unmapped means `not_proven`.
@@ -27,7 +27,21 @@ You get credit for real defects found. You have read-only access to the whole re
 - Do not report style.
 
 ## Output contract
-`evidence.json`: `criteria[]` one row per requirement ID (tier `adversarial`), `findings[]` with severity, file, line, claim, repro, `verdict`, `verifier`.
+`evidence.json`, exactly this shape (the runner fills `task` and `verifier`; use these field names):
+
+```json
+{
+  "criteria": [
+    { "id": "R4", "tier": "adversarial", "check": "what you checked, citing file:line", "result": "pass", "artifact": null }
+  ],
+  "findings": [
+    { "severity": "major", "file": "src/x.py", "line": 42, "criterion": "R4", "claim": "the defect", "repro": "how to reproduce it" }
+  ],
+  "verdict": "not_proven"
+}
+```
+
+One `criteria` row per requirement ID on the task, `tier` always `adversarial`, `result` one of `pass`, `fail`, `not_proven`. `severity` is `blocker`, `major` or `minor`. `verdict` is `pass`, `fail` or `not_proven`.
 
 ## Stop conditions
 Stop with `not_proven` and a reason when a criterion depends on a test result the runner did not produce.

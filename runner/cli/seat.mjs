@@ -155,6 +155,18 @@ export async function runSeat(slug, seat, opts = {}) {
   // 5. output contract
   const outFile = join(runDir, output);
   if (!existsSync(outFile)) die(`seat ${name} produced no ${output}`);
+  // A review's task and verifier are facts the runner knows (which task, which CLI and model ran);
+  // the runner records them rather than trusting the model to report on itself.
+  if (output === 'evidence.json') {
+    try {
+      const ev = st.readJson(outFile);
+      if (ev && typeof ev === 'object' && !Array.isArray(ev)) {
+        if (opts.task) ev.task = opts.task;
+        ev.verifier = { seat: name, adapter, model };
+        writeFileSync(outFile, JSON.stringify(ev, null, 2) + '\n');
+      }
+    } catch { /* unreadable: the schema check below reports it */ }
+  }
   let errs;
   try { errs = validate(st.loadSchema(output.replace(/\.json$/, '')), st.readJson(outFile)); } catch (e) { errs = [e.message]; }
   if (errs.length) die(`seat ${name} output does not match schemas/${output}: ${errs.slice(0, 5).join('; ')}`);
