@@ -9,7 +9,8 @@ if (o.caps) A.caps({ vendor: 'openai', reads_repo: true, reads_web: true });
 A.requireRunArgs(o);
 if (!bin) { process.stderr.write('codex CLI not found on PATH\n'); process.exit(1); }
 const reply = A.replyPath(o);
-const args = ['exec', '--search', '-s', o.mode === 'write' ? 'workspace-write' : 'read-only', '-C', o.cwd, '--skip-git-repo-check', '-o', reply];   // --search: web search tool on
+// --search is a top-level codex option (0.169 refuses it after exec): web search tool on
+const args = ['--search', 'exec', '-s', o.mode === 'write' ? 'workspace-write' : 'read-only', '-C', o.cwd, '--skip-git-repo-check', '-o', reply];
 // ChatGPT-auth Codex rejects -m for models it does not offer: only pass it when one is configured.
 if (o.model !== 'default') args.push('-m', o.model);
 if (o.effort) args.push('-c', `model_reasoning_effort="${o.effort}"`);

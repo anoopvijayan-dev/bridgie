@@ -154,4 +154,6 @@ run_adapter() { node "$BRIDGIE_HOME/adapters/$1/run.mjs" --seat "$BRIDGIE_HOME/s
   run run_adapter codex --mode readonly --model default
   [ "$status" -eq 0 ]
   grep -qx -- '--search' "$STUB_LOG"
+  # codex-cli 0.169 accepts --search only before the exec subcommand
+  [ "$(grep -nx -- '--search' "$STUB_LOG" | cut -d: -f1)" -lt "$(grep -nx 'exec' "$STUB_LOG" | cut -d: -f1)" ]
 }
