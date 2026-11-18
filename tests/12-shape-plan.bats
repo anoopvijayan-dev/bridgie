@@ -75,6 +75,7 @@ setup() { export BRIDGIE_ADAPTER=fake; P="$(make_project --git)"; }
   run bash -c "cd '$P' && bridgie shape b --approve"
   [ "$status" -eq 0 ]
   [ -f "$P/.bridgie/specs/b/tasks.json" ]
+  [[ "$output" == *"the plan stands"* ]]
   run bash -c "cd '$P' && bridgie shape b --amend 'again'"
   [ "$status" -eq 0 ]
   run bash -c "cd '$P' && bridgie shape b --amend 'twice'"

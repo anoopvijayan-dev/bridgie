@@ -33,7 +33,7 @@ export default async function shape(argv) {
     const id = st.listDecisions(root, slug, { pending: true }).find(d => d.type === 'approve_design')?.id;
     if (!id) die(`shape: no design waiting for approval (run bridgie shape ${slug})`);
     try {
-      if (a.approve) { fl.answer(root, slug, id, 'approve', { by: user() }); log(`design approved (${id}). Next: bridgie plan ${slug}`); }
+      if (a.approve) { fl.answer(root, slug, id, 'approve', { by: user() }); log(`design approved (${id}). Next: ${existsSync(join(root, '.bridgie', 'specs', slug, 'tasks.json')) ? `the plan stands; bridgie run ${slug}` : `bridgie plan ${slug}`}`); }
       else { fl.answer(root, slug, id, 'request changes', { text: a.changes, by: user() }); log(`changes requested (${id}). Re-run: bridgie shape ${slug}`); }
     } catch (e) { die(e.message); }
     stateCommit(root, `shape ${slug}: ${a.approve ? 'approve' : 'changes'}`);
