@@ -112,6 +112,10 @@ setup() {
   bash -c "cd '$P' && bridgie verify b" >/dev/null 2>&1
   grep -q 'test results (runner-run, read-only)' "$P/.bridgie/runs/b/reviewer-01/prompt.md"
   grep -q '7 tests passed' "$P/.bridgie/runs/b/reviewer-01/prompt.md"
+  # each row points at the full log, so a named test can be confirmed beyond the 60-line tail
+  log="$(grep -o 'Full log: [^ ]*' "$P/.bridgie/runs/b/reviewer-01/prompt.md" | sed -n 2p | cut -d' ' -f3)"
+  [ -f "$log" ]
+  grep -q '7 tests passed' "$log"
 }
 
 @test "a reviewer that cannot read the repository is refused (R10)" {

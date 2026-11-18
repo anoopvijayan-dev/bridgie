@@ -89,7 +89,7 @@ function resolveInput(name, ctx) {
     const rows = readJson(f);
     const tail = p => { if (!p || !existsSync(join(runDir, basename(p)))) return '(no log)'; const l = readFileSync(join(runDir, basename(p)), 'utf8').split('\n'); return l.slice(-60).join('\n').trim() || '(empty log)'; };
     const text = rows.length
-      ? rows.map(r => `### ${r.id} · ${r.tier} · ${r.result}\nCommand: ${r.check}\n\n\`\`\`\n${tail(r.artifact)}\n\`\`\``).join('\n\n')
+      ? rows.map(r => `### ${r.id} · ${r.tier} · ${r.result}\nCommand: ${r.check}\nFull log: ${r.artifact ? join(runDir, basename(r.artifact)) : '(none)'} (read or grep it to confirm a named test ran; only the last 60 lines are shown here)\n\n\`\`\`\n${tail(r.artifact)}\n\`\`\``).join('\n\n')
       : 'The runner ran no commands for this task.';
     return { label: 'test results (runner-run, read-only)', text, path: f };
   }
