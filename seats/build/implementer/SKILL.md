@@ -25,7 +25,7 @@ You build one task and prove it, in the worktree you were given, then stop.
 - Do not mark anything done; the verifier decides.
 
 ## Output contract
-`claim.json`: `task`, `claims[]` (text, proof_cmd, proof_output), `files_changed[]`, `dispositions[]` when findings were given, `notes`.
+`claim.json`: `task`, `claims[]` (each `text`, `proof_cmd`, `proof_output`), `files_changed[]`, `notes`, and when findings were given `dispositions[]` with one entry per finding: `finding` (the finding as given), `disposition` (`reproduced` or `not_reproduced`) and `evidence` (what you changed and the test that now proves it, or why it does not reproduce). The full schema is in the output contract below.
 
 ## Stop conditions
 Stop and write `notes` if the task cannot be done without changing a shared contract the design did not list.

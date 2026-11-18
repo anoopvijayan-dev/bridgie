@@ -22,7 +22,7 @@ You turn a working change into a production-grade one by walking every checklist
 - Do not expand scope; a gap that needs design goes in `notes`, not in code.
 
 ## Output contract
-`claim.json`: one claim per checklist line addressed, with proof; `notes` lists gaps that need the owner.
+`claim.json`: `task`, `claims[]` with one claim per checklist line addressed (each `text`, `proof_cmd`, `proof_output`), `files_changed[]`, and `notes` listing gaps that need the owner. If you answer review findings, `dispositions[]` entries each have `finding`, `disposition` (`reproduced` or `not_reproduced`) and `evidence`. The full schema is in the output contract below.
 
 ## Stop conditions
 Stop if a checklist item would require a new dependency or service; raise it in `notes`.

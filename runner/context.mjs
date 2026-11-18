@@ -110,6 +110,14 @@ function resolveInput(name, ctx) {
   throw new Error(`unknown seat input "${name}"`);
 }
 
+// schemaText: the seat's output schema, compact, inlined in the prompt so every model sees the exact
+// field names without having to open the file (a builder once wrote "fix" where "evidence" was required).
+function schemaText(output) {
+  const f = join(HOME, 'schemas', output);
+  if (!existsSync(f)) return '{}';
+  return JSON.stringify(JSON.parse(readFileSync(f, 'utf8')));
+}
+
 export function assemble(root, slug, seatRel, opts = {}) {
   const { manifest, body, dir } = loadSeat(seatRel);
   // A bet-less run (bridgie scout) uses the project's default lane.
@@ -128,7 +136,7 @@ export function assemble(root, slug, seatRel, opts = {}) {
   const refs = (manifest.references || []).map(p => `## ${p}\n\n${readFileSync(join(dir, p), 'utf8').trim()}\n`);
   const writes = manifest.writes === 'worktree' ? ` and inside your worktree (${ctx.cwd})` : '';
   const outputNote = manifest.output === 'none' ? 'This seat produces no file; print your result.' :
-    `End your reply with exactly one fenced \`\`\`json block containing your ${manifest.output} (or write it to ${join(opts.runDir || '<run-dir>', manifest.output)}).\nIt must validate against ${join(HOME, 'schemas', manifest.output)}.` +
+    `End your reply with exactly one fenced \`\`\`json block containing your ${manifest.output} (or write it to ${join(opts.runDir || '<run-dir>', manifest.output)}).\nIt must validate against this JSON Schema (${join(HOME, 'schemas', manifest.output)}); use exactly these field names, and include every \`required\` field, at every level:\n\n\`\`\`json\n${schemaText(manifest.output)}\n\`\`\`` +
     (manifest.output === 'seat-output.json' ? `\nSet "seat": "${manifest.name}".` : '');
   const prompt = [
     `# Seat: ${manifest.name} (${manifest.loop})`, '', body.trim(), '',
