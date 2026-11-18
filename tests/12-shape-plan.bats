@@ -58,6 +58,40 @@ setup() { export BRIDGIE_ADAPTER=fake; P="$(make_project --git)"; }
   grep -q 'changes requested' "$P/.bridgie/runs/b/shaper-02/prompt.md"
 }
 
+@test "amend re-opens an approved design; the plan stays and a re-approval resumes it" {
+  signed_bet "$P" b
+  (cd "$P" && bridgie shape b && bridgie shape b --approve && bridgie plan b) >/dev/null 2>&1
+  run bash -c "cd '$P' && bridgie shape b --amend ''"
+  [ "$status" -ne 0 ]
+  run bash -c "cd '$P' && bridgie shape b --amend 'R2: ambiguous lines go to the queue'"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"re-opened"* ]]
+  grep -q 'changes requested: R2: ambiguous lines go to the queue' "$P/.bridgie/bets/b/bet.md"
+  [ "$(node "$BRIDGIE_HOME/runner/flow.mjs" design-approved "$P" b)" = "false" ]
+  run bash -c "cd '$P' && bridgie shape b"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"no longer has"* ]]
+  grep -q 'R2: ambiguous lines go to the queue' "$P/.bridgie/runs/b/shaper-02/prompt.md"
+  run bash -c "cd '$P' && bridgie shape b --approve"
+  [ "$status" -eq 0 ]
+  [ -f "$P/.bridgie/specs/b/tasks.json" ]
+  run bash -c "cd '$P' && bridgie shape b --amend 'again'"
+  [ "$status" -eq 0 ]
+  run bash -c "cd '$P' && bridgie shape b --amend 'twice'"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"not approved yet"* ]]
+}
+
+@test "a revision that drops a requirement the plan's tasks cite says to re-plan" {
+  signed_bet "$P" b
+  (cd "$P" && bridgie shape b && bridgie shape b --approve && bridgie plan b) >/dev/null 2>&1
+  node -e 'const f=process.argv[1],j=require(f); j.tasks[0].requirements.push("R99"); require("fs").writeFileSync(f,JSON.stringify(j,null,2))' "$P/.bridgie/specs/b/tasks.json"
+  (cd "$P" && bridgie shape b --amend 'drop it') >/dev/null 2>&1
+  run bash -c "cd '$P' && bridgie shape b"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"cite R99, which this revision no longer has"* ]]
+}
+
 @test "ack answers a pending risk acknowledgement" {
   signed_bet "$P" b
   printf '%s' '{"type":"ack_risk","context":"paths","options":["ack","decline"]}' | node "$BRIDGIE_HOME/runner/state.mjs" decision-add "$P" b - >/dev/null

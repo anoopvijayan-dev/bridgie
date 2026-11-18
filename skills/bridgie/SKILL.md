@@ -38,7 +38,7 @@ Then run `B doctor` to check the setup. A `[warn]` for an adapter that is not in
 Never answer a Bridgie decision yourself: grill questions, sign, design approval, risk acknowledgement, unblock, acceptance, confidence proposals.
 
 - In case B the person can use the decision page: `B open <slug>`.
-- In cases A and C the page is served inside a shell their browser cannot reach, so take decisions in chat: read the pending questions and options from the bet's files and `B status`, show them to the person (for several choices use AskUserQuestion or a short rendered page, not raw markdown), and only after they answer in this conversation run `B decide <slug> <id> <answer> [--text "..."]`, `B sign`, `B ack`, `B shape --approve|--changes` or `B accept --approve|--conditions|--reject`, exactly as they said.
+- In cases A and C the page is served inside a shell their browser cannot reach, so take decisions in chat: read the pending questions and options from the bet's files and `B status`, show them to the person (for several choices use AskUserQuestion or a short rendered page, not raw markdown), and only after they answer in this conversation run `B decide <slug> <id> <answer> [--text "..."]`, `B sign`, `B ack`, `B shape --approve|--changes|--amend` or `B accept --approve|--conditions|--reject`, exactly as they said.
 
 Never put figures the person did not give you into `customer.yaml`, `pitch.md` or `numbers.yaml`, and never write a buyer's answer or an evidence note yourself.
 
