@@ -69,3 +69,24 @@ setup() {
   [ "$status" -ne 0 ]
   [[ "$output" == *"bridgie/b"* ]]
 }
+
+@test "re-plan: refused while tasks have progress; --replan archives task branches and supersedes their decisions" {
+  planned_bet "$P" b
+  run bash -c "cd '$P' && bridgie plan b"
+  [ "$status" -eq 0 ]                                       # nothing started yet: a plain re-plan is fine
+  (cd "$P" && bridgie build b) >/dev/null 2>&1
+  [ "$(task_field "$P" b T1 status)" = '"verify"' ]
+  run bash -c "cd '$P' && bridgie plan b"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"already has task progress"* ]]
+  [[ "$output" == *"--replan"* ]]
+  run bash -c "cd '$P' && bridgie plan b --replan"
+  echo "$output"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"archived under bridgie-task-archive/b/"* ]]
+  [ "$(task_field "$P" b T1 status)" = '"todo"' ]
+  [ "$(task_field "$P" b T1 attempts)" = '0' ]
+  ! git -C "$P" rev-parse -q --verify "refs/heads/bridgie-task/b/T1" >/dev/null
+  git -C "$P" for-each-ref --format='%(refname:short)' 'refs/heads/bridgie-task-archive/b/' | grep -q '/T1$'
+  [ ! -d "$P/.bridgie/worktrees/b/T1" ]
+}

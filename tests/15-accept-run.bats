@@ -87,7 +87,7 @@ setup() {
   signed_bet "$P" b
   bash -c "cd '$P' && bridgie shape b && bridgie shape b --approve && bridgie run b" >/dev/null 2>&1
   [ "$(fm "$P/.bridgie/acceptance/b.md" decision)" = '"pending"' ]
-  bash -c "cd '$P' && bridgie plan b" >/dev/null 2>&1
+  bash -c "cd '$P' && bridgie plan b --replan" >/dev/null 2>&1
   [ "$(fm "$P/.bridgie/acceptance/b.md" decision)" = '"superseded"' ]
   run bash -c "cd '$P' && bridgie accept b --approve"
   [ "$status" -ne 0 ]

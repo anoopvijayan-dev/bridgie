@@ -195,3 +195,15 @@ test('user policy sits between defaults and the project', () => {
   assert.equal(p.routing.tiers.judgment.adapter, 'copilot');                          // from user
   assert.equal(p.lanes.engineering.by_risk.money.min_confidence_to_sign, 'test');     // project wins
 });
+
+test('supersedeDecisions closes matching pending decisions, keeps them, and logs why', () => {
+  const root = project();
+  st.betNew(root, 'b', { title: 'B', lane: 'engineering', risk: 'none', owner: 'tester' });
+  const u = st.addDecision(root, 'b', { type: 'unblock', context: 'T1 blocked', options: ['retry with guidance', 'kill task'], task: 'T1' });
+  const q = st.addDecision(root, 'b', { type: 'question', context: 'Q?', options: ['yes', 'no'] });
+  assert.deepEqual(st.supersedeDecisions(root, 'b', d => d.type === 'unblock', 're-planned', { by: 'tester' }), [u.id]);
+  const ds = st.loadDecisions(root, 'b').decisions;
+  assert.equal(ds.find(d => d.id === u.id).status, 'superseded');
+  assert.equal(ds.find(d => d.id === q.id).status, 'pending');
+  assert.match(st.readFm(st.betPath(root, 'b')).body, new RegExp(`${u.id}: superseded \\(re-planned\\)`));
+});

@@ -286,6 +286,22 @@ export function answerDecision(root, slug, id, answer, opts = {}) {
   return d;
 }
 
+// supersedeDecisions: close pending decisions that no longer apply (a re-plan replaces the tasks they
+// were about). They are kept, marked superseded with the reason, and logged.
+export function supersedeDecisions(root, slug, pred, why, opts = {}) {
+  const doc = loadDecisions(root, slug);
+  const closed = [];
+  for (const d of doc.decisions) {
+    if (d.status !== 'pending' || !pred(d)) continue;
+    d.status = 'superseded'; d.effect = why; d.decided_by = opts.by || 'bridgie'; d.decided_at = now();
+    closed.push(d.id);
+  }
+  if (!closed.length) return closed;
+  saveDecisions(root, slug, doc);
+  for (const id of closed) appendBody(root, slug, 'Decision log', `- ${today()} ${id}: superseded (${why}) [${opts.by || 'bridgie'}]`);
+  return closed;
+}
+
 export function ingestQuestions(root, slug, outputFile, runId) {
   const o = assertValid(loadSchema('seat-output'), readJson(outputFile), outputFile);
   const ids = [];

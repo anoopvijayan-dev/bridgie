@@ -12,7 +12,7 @@ Decide   bet new <slug> [--from <scout>/O<n>] [--risk R]   create a bet (optiona
          evidence <slug>          plan real-world evidence; with material, synthesise and propose confidence
          decide <slug> <id> <answer> [--text "..."]
          sign <slug> [--kill | --more-evidence]
-Build    shape | plan | build | run
+Build    shape | plan [--replan] | build | run
 Verify   verify
 Accept   accept
 Learn    learn

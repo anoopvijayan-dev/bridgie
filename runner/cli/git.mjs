@@ -73,6 +73,24 @@ export function restoreTaskWorktree(root, slug, task) {
   return wt;
 }
 
+// archiveTaskBranches: before a re-plan, move every task branch of the bet to
+// bridgie-task-archive/<slug>/<stamp>/<task> (worktrees removed), so new tasks that reuse an id
+// start from the feature branch instead of an old task's code. Returns [[old, new], ...].
+export function archiveTaskBranches(root, slug, stamp) {
+  const prefix = `bridgie-task/${slug}/`;
+  const names = git(['-C', root, 'for-each-ref', '--format=%(refname:short)', `refs/heads/${prefix}`]).out.trim().split('\n').filter(Boolean);
+  const moved = [];
+  for (const b of names) {
+    const task = b.slice(prefix.length), wt = taskWtPath(root, slug, task);
+    if (existsSync(wt)) removeWorktree(root, wt);
+    const to = `bridgie-task-archive/${slug}/${stamp}/${task}`;
+    gitOrDie(['-C', root, 'branch', '-m', b, to]);
+    moved.push([b, to]);
+  }
+  git(['-C', root, 'worktree', 'prune']);
+  return moved;
+}
+
 export function reviewWorktree(root, slug, task) {
   const rv = `${taskWtPath(root, slug, task)}-review`;
   if (existsSync(rv)) removeWorktree(root, rv);
