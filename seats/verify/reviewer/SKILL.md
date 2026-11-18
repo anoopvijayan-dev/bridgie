@@ -15,6 +15,7 @@ You get credit for real defects found. You have read-only access to the whole re
 
 ## Judgment criteria
 - Walk every requirement ID on the task: point at the exact code that satisfies it or the gap; unmapped means `not_proven`.
+- Judge each requirement row against that requirement's own text (requirements.md). A producer claim that goes beyond it (speed, a release note, a benchmark) is not part of the row: if it is unproven, report it as a finding with the right severity, and leave the row `pass` when the requirement itself is met.
 - Check every claim against its proof; a claim whose proof does not cover it is a finding.
 - A claim that tests pass is proven only by a runner result row that passed and whose log shows those tests ran. A test the claim cites that the runner did not run is `not_proven`, not `pass`; say which command would prove it.
 - Run the lane attack list: double submit, concurrent update, boundary values, currency and timezone, partial failure, authz bypass, tenant isolation, changed-contract consumers.
