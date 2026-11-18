@@ -287,13 +287,13 @@ export function answerDecision(root, slug, id, answer, opts = {}) {
 }
 
 // supersedeDecisions: close pending decisions that no longer apply (a re-plan replaces the tasks they
-// were about). They are kept, marked superseded with the reason, and logged.
+// were about). Like supersedeDecision: answered with answer 'superseded' and the reason, and logged.
 export function supersedeDecisions(root, slug, pred, why, opts = {}) {
   const doc = loadDecisions(root, slug);
   const closed = [];
   for (const d of doc.decisions) {
-    if (d.status !== 'pending' || !pred(d)) continue;
-    d.status = 'superseded'; d.effect = why; d.decided_by = opts.by || 'bridgie'; d.decided_at = now();
+    if (d.status === 'answered' || !pred(d)) continue;   // same convention as supersedeDecision
+    Object.assign(d, { status: 'answered', answer: 'superseded', free_text: null, decided_by: opts.by || 'bridgie', decided_at: now(), effect: why });
     closed.push(d.id);
   }
   if (!closed.length) return closed;

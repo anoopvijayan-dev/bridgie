@@ -72,8 +72,7 @@
             "enum": [
               "pending",
               "answered",
-              "deferred",
-              "superseded"
+              "deferred"
             ]
           },
           "answer": {
