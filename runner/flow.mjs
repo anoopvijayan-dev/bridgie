@@ -34,14 +34,36 @@ export function requirementRisks(root, slug) {
 }
 
 // writeSpecFiles: requirements.md and design.md from the shaper's output.
+// applyEdits: each {old, new} replaces text that occurs exactly once in the file as it stands
+// after the edits before it, so a revision names only what changes (a whole long spec can be
+// more than a model returns in one reply).
+export function applyEdits(text, edits, name) {
+  edits.forEach((e, i) => {
+    const at = text.indexOf(e.old);
+    const where = `edits["${name}"][${i}] (${JSON.stringify(e.old.slice(0, 60))})`;
+    if (at < 0) throw new Error(`${where}: old text not found in ${name}`);
+    if (text.indexOf(e.old, at + 1) >= 0) throw new Error(`${where}: old text occurs more than once in ${name}; include more context`);
+    text = text.slice(0, at) + e.new + text.slice(at + e.old.length);
+  });
+  return text;
+}
+
 export function writeSpecFiles(root, slug, outputFile) {
   const o = assertValid(st.loadSchema('seat-output'), st.readJson(outputFile), outputFile);
-  const files = o.files || {};
-  const req = files['requirements.md'], design = files['design.md'] ?? o.artifact_md;
-  if (!req) throw new Error('shaper output has no files["requirements.md"]');
-  if (!/^## R[0-9]+\b/m.test(req)) throw new Error('requirements.md has no "## R<n>" requirement headings');
-  if (!design) throw new Error('shaper output has no files["design.md"]');
+  const files = o.files || {}, edits = o.edits || {};
   const dir = join(root, '.bridgie', 'specs', slug);
+  // A file comes whole (files), or as edits to the one already there (a revision).
+  const spec = name => {
+    if (files[name] !== undefined) return files[name];
+    if (!edits[name]) return undefined;
+    const f = join(dir, name);
+    if (!existsSync(f)) throw new Error(`shaper output edits ${name}, which does not exist yet; send it whole in files`);
+    return applyEdits(readFileSync(f, 'utf8'), edits[name], name);
+  };
+  const req = spec('requirements.md'), design = spec('design.md') ?? o.artifact_md;
+  if (!req) throw new Error('shaper output has no files["requirements.md"] (or edits to it)');
+  if (!/^## R[0-9]+\b/m.test(req)) throw new Error('requirements.md has no "## R<n>" requirement headings');
+  if (!design) throw new Error('shaper output has no files["design.md"] (or edits to it)');
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, 'requirements.md'), req.endsWith('\n') ? req : `${req}\n`);
   writeFileSync(join(dir, 'design.md'), design.endsWith('\n') ? design : `${design}\n`);

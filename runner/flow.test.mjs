@@ -182,6 +182,28 @@ test('writeSpecFiles writes requirements and design from the shaper output', () 
   assert.throws(() => fl.writeSpecFiles(root, 'b', f), /no "## R<n>"/);
 });
 
+test('writeSpecFiles applies a revision sent as edits to the files already there', () => {
+  const root = project();
+  const f = join(root, 'shape.json');
+  const out = o => writeFileSync(f, JSON.stringify({ seat: 'shaper', summary_md: 's', ...o }));
+  out({ edits: { 'design.md': [{ old: 'x', new: 'y' }] }, files: { 'requirements.md': '## R1 · event\nWHEN a THE SYSTEM SHALL b\n' } });
+  assert.throws(() => fl.writeSpecFiles(root, 'b', f), /does not exist yet/);
+  out({ files: { 'requirements.md': '## R1 · event\nWHEN a THE SYSTEM SHALL b\n', 'design.md': '# Design\n\nOption A wins.\nRollback: flag.\n' } });
+  fl.writeSpecFiles(root, 'b', f);
+  out({ edits: { 'design.md': [{ old: 'Option A wins.', new: 'Option B wins.' }],
+                 'requirements.md': [{ old: '## R1 · event\nWHEN a THE SYSTEM SHALL b\n', new: '## R1 · event\nWHEN a THE SYSTEM SHALL b\n\n## R2 · event\nWHEN c THE SYSTEM SHALL d\n' }] } });
+  assert.deepEqual(fl.writeSpecFiles(root, 'b', f).ids, ['R1', 'R2']);
+  const dir = join(root, '.bridgie', 'specs', 'b');
+  assert.equal(readFileSync(join(dir, 'design.md'), 'utf8'), '# Design\n\nOption B wins.\nRollback: flag.\n');
+  out({ edits: { 'design.md': [{ old: 'not there', new: 'z' }] } });
+  assert.throws(() => fl.writeSpecFiles(root, 'b', f), /old text not found in design\.md/);
+  out({ edits: { 'design.md': [{ old: 'o', new: 'z' }] } });
+  assert.throws(() => fl.writeSpecFiles(root, 'b', f), /more than once/);
+  out({ edits: { 'design.md': [{ old: '', new: 'z' }] } });
+  assert.throws(() => fl.writeSpecFiles(root, 'b', f));
+  assert.equal(readFileSync(join(dir, 'design.md'), 'utf8'), '# Design\n\nOption B wins.\nRollback: flag.\n');  // a refused revision changes nothing
+});
+
 test('failAttempt fails, then blocks on the last attempt with an unblock decision', () => {
   const root = project();
   fl.writeTasksFromPlan(root, 'b', planOutput(root, [T('T1', ['R1', 'R2', 'P1'])]));
