@@ -46,6 +46,7 @@ import { writeFileSync, readFileSync } from 'node:fs';
 const [name, ...args] = process.argv.slice(2);
 const log = process.env.STUB_LOG, lines = [...args];
 if (name === 'claude' || name === 'copilot') lines.push(`cwd=${process.cwd()}`);
+if (name === 'claude') lines.push(`max_output=${process.env.CLAUDE_CODE_MAX_OUTPUT_TOKENS ?? ''}`);
 writeFileSync(log, lines.join('\n') + '\n');
 if (name === 'claude' || name === 'codex') writeFileSync(log + '.stdin', readFileSync(0));
 const json = s => '```json\n{"seat":"grill","summary_md":"from ' + s + '"}\n```\n';
@@ -69,6 +70,16 @@ run_adapter() { node "$BRIDGIE_HOME/adapters/$1/run.mjs" --seat "$BRIDGIE_HOME/s
   ! grep -qx -- '--model' "$STUB_LOG"
   grep -q 'PROMPT-BODY' "${STUB_LOG}.stdin"
   has_path_line "$STUB_LOG" "cwd=" "$W"
+}
+
+@test "claude-code: asks for the model's output ceiling unless one is already set" {
+  stub_env
+  run env -u CLAUDE_CODE_MAX_OUTPUT_TOKENS bash -c "$(declare -f run_adapter); W='$W' BRIDGIE_HOME='$BRIDGIE_HOME' run_adapter claude-code --mode readonly --model default"
+  [ "$status" -eq 0 ]
+  grep -qx 'max_output=128000' "$STUB_LOG"
+  CLAUDE_CODE_MAX_OUTPUT_TOKENS=64000 run run_adapter claude-code --mode readonly --model default
+  [ "$status" -eq 0 ]
+  grep -qx 'max_output=64000' "$STUB_LOG"
 }
 
 @test "claude-code: write mode uses acceptEdits, passes model and effort, blocks push" {

@@ -21,6 +21,11 @@ if (o.mode === 'readonly') {
     '--allowedTools', 'Read', 'Grep', 'Glob', 'LS', 'Edit', 'Write', 'Bash',
     '--disallowedTools', 'Bash(git push:*)', 'Bash(git remote:*)', 'Bash(git checkout:*)', 'Bash(git switch:*)');
 }
+// A seat's whole reply is one JSON block (a shaper's carries the full requirements and
+// design). Past Claude Code's default output cap the CLI makes the model resume in a new
+// message, and print mode returns only that last part, so the JSON is lost. Ask for the
+// model's ceiling instead (the CLI clamps it to the model's limit); a value already set wins.
+process.env.CLAUDE_CODE_MAX_OUTPUT_TOKENS ||= process.env.BRIDGIE_CLAUDE_MAX_OUTPUT_TOKENS || '128000';
 const reply = A.replyPath(o);
 const rc = A.run(bin, args, { cwd: o.cwd, stdin: o.prompt, stdout: reply });
 A.finish(o, reply, rc);
