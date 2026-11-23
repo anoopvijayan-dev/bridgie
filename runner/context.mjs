@@ -6,6 +6,17 @@ import { splitFrontmatter } from './yaml.mjs';
 import { assertValid } from './schema.mjs';
 import { HOME, loadSchema, loadPolicy, betPath, readFm, readJson, tasksPath, runsDir } from './state.mjs';
 
+// limitationsOf: flow.mjs's limitationsText without importing flow (flow imports nothing from here,
+// but the seat runner loads both; kept local to stay a leaf module).
+function limitationsOf(root, slug) {
+  const tp = tasksPath(root, slug);
+  if (!existsSync(tp)) return '';
+  return readJson(tp).tasks.filter(t => t.accepted && ((t.accepted.findings || []).length || (t.accepted.criteria || []).length)).map(t => [
+    `### ${t.id}: accepted by ${t.accepted.by} on ${String(t.accepted.at).slice(0, 10)}`, `Reason: ${t.accepted.reason}`,
+    ...(t.accepted.findings || []).map(f => `- ${f.severity}: ${f.claim}${f.file ? ` (${f.file}:${f.line ?? '?'})` : ''}`),
+    ...(t.accepted.criteria || []).map(c => `- ${c.id} ${c.result}: ${c.check}`)].join('\n')).join('\n\n');
+}
+
 const REQUIRED = new Set(['bet', 'requirements', 'design', 'task']);
 
 export function loadSeat(seatRel) {
@@ -104,6 +115,12 @@ function resolveInput(name, ctx) {
     const l = join(HOME, 'lanes', lane, 'gotchas.md'); if (existsSync(l)) parts.push(readFileSync(l, 'utf8'));
     return parts.length ? { label: 'gotchas (project, then lane)', text: parts.join('\n\n') } : null;
   }
+  if (name === 'limitations') {
+    // Findings the owner accepted as known limitations, so a later review does not raise them again.
+    const all = limitationsOf(root, slug);
+    return all ? { label: 'known limitations the owner accepted (do not raise these again; a new instance elsewhere is a new finding)', text: all } : null;
+  }
+  if (name === 'review_note') return file(join(runDir, 'review-note.md'), 'note from the runner about this review');
   if (name === 'agents_md') return file(join(root, 'AGENTS.md'), 'AGENTS.md');
   if (name === 'acceptance_packet') return file(join(runDir, 'acceptance-packet.md'), 'acceptance packet (runner-built)');
   if (name === 'acceptance') return file(join(root, '.bridgie', 'acceptance', `${slug}.md`), `.bridgie/acceptance/${slug}.md`);

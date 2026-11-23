@@ -58,6 +58,18 @@ export function runMechanical(root, slug, wt, vdir, skip = []) {
   return rows;
 }
 
+// reviewRecord: who reviewed a passing attempt, and whether that was another model family than the
+// producer's — facts the runner knows from the adapters it launched, kept on the task so a
+// same-family review is visible debt instead of a silent pass.
+export function reviewRecord(root, slug, task, adapter = null, rvDir = null) {
+  const producer = fl.producerVendor(root, slug, task) || null;
+  let vendor = null;
+  if (rvDir) { try { const caps = st.readJson(join(rvDir, 'adapter.json')); vendor = caps.vendor || null; } catch { /* unknown */ } }
+  if (rvDir && !adapter) { try { adapter = st.readJson(join(rvDir, 'evidence.json')).verifier?.adapter || null; } catch { /* unknown */ } }
+  if (!vendor && adapter) { try { vendor = adapterCapabilities(adapter, join(HOME, 'seats', 'verify', 'reviewer')).caps.vendor || null; } catch { /* unknown */ } }
+  return { adapter, vendor, producer_vendor: producer, cross_family: vendor && producer ? vendor !== producer : null, at: st.now() };
+}
+
 // mechanicalKey: what the tier results depend on — the task, the commit tested and the commands.
 export function mechanicalKey(root, slug, wt, task, skip = []) {
   const sha = git(['-C', wt, 'rev-parse', 'HEAD']).out.trim();
@@ -129,6 +141,31 @@ export default async function verify(argv) {
   } else runMechanical(root, slug, wt, vdir, profile.skip_tiers);
   writeFileSync(join(vdir, 'mechanical-key.json'), JSON.stringify(key) + '\n');
 
+  // 3b. The owner accepted the last review's findings as known limitations for this commit: the
+  // tiers must still pass, and then the task merges without asking the reviewer again. A commit
+  // that changed since is reviewed afresh.
+  const acc = fl.getTask(fl.loadTasks(root, slug), task).accepted;
+  if (acc && fl.getTask(fl.loadTasks(root, slug), task).status === 'verify' && !acc.merged) {
+    const rows = st.readJson(join(vdir, 'mechanical.json'));
+    if (acc.sha && acc.sha !== key.sha) {
+      fl.setTask(root, slug, task, { accepted: null });
+      log(`  the accepted limitations were for commit ${acc.sha.slice(0, 10)}; the task is now at ${key.sha.slice(0, 10)}, so it is reviewed again`);
+    } else if (rows.some(r => r.result !== 'pass')) {
+      fl.setTask(root, slug, task, { accepted: null });
+      log(`  a tier no longer passes (${rows.filter(r => r.result !== 'pass').map(r => r.id).join(', ')}): accepted limitations cannot cover it, so the task is reviewed again`);
+    } else {
+      const prev = st.readJson(acc.evidence);
+      const evidence = { ...prev, task, criteria: [...prev.criteria.filter(c => c.tier === 'adversarial'), ...rows],
+        accepted_limitations: { by: acc.by, at: acc.at, reason: acc.reason, sha: key.sha } };
+      st.writeJsonAtomic(join(vdir, 'evidence.json'), evidence, 'evidence');
+      g.mergeTask(root, slug, task);
+      fl.markPassed(root, slug, task, join(vdir, 'evidence.json'), { accepted: { ...acc, sha: key.sha, merged: true }, review: reviewRecord(root, slug, task, prev.verifier?.adapter) });
+      stateCommit(root, `verify ${slug} ${task}: pass with accepted limitations`);
+      log(`verified ${task}: pass with ${acc.findings.length} accepted limitation(s) (${acc.by}: ${acc.reason}); merged into bridgie/${slug}`);
+      return;
+    }
+  }
+
   // 4. reviewer in a detached, read-only worktree (R3)
   const rv = g.reviewWorktree(root, slug, task);
   let rvDir, failure = null;
@@ -148,9 +185,12 @@ export default async function verify(argv) {
   try { verdict = fl.reconcile(root, slug, task, join(rvDir, 'evidence.json'), st.readJson(join(vdir, 'mechanical.json')), join(vdir, 'evidence.json')).verdict; }
   catch (e) { die(`verify: reconcile failed: ${e.message}`); }
   if (verdict === 'pass') {
+    // Who reviewed, read before the merge removes nothing it needs: the reviewer's run folder stays.
+    const review = reviewRecord(root, slug, task, null, rvDir);
     g.mergeTask(root, slug, task);
-    fl.markPassed(root, slug, task, join(vdir, 'evidence.json'));
+    fl.markPassed(root, slug, task, join(vdir, 'evidence.json'), { review });
     stateCommit(root, `verify ${slug} ${task}: pass`);
+    if (review.cross_family === false) log(`  note: ${task} was reviewed by ${review.adapter}, the producer's own model family (${review.vendor}); bridgie rereview ${slug} gives it a second-family review`);
     log(`verified ${task}: pass; merged into bridgie/${slug}`);
     return;
   }

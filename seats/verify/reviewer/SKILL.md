@@ -3,7 +3,7 @@ name: reviewer
 description: Adversarial, read-only review of a task's diff against its requirements. Starts with a clean context and tries to refute the change.
 loop: verify
 tier: judgment
-inputs: [task, requirements, diff, claim, mechanical_results, repo_readonly, lane_attacks, gotchas]
+inputs: [task, requirements, diff, claim, mechanical_results, repo_readonly, lane_attacks, gotchas, limitations, review_note]
 writes: run_dir
 tools: [read, grep]
 output: evidence.json
@@ -22,6 +22,7 @@ You get credit for real defects found. You have read-only access to the whole re
 - Cite file and line for every finding, with a concrete repro; "consider edge cases" is not a finding.
 - Default verdict is `not_proven`; move to `pass` only when every criterion row passes and no blocker or major finding remains.
 - Treat "zero issues" from the producer as a prompt to look harder, not as a signal.
+- Known limitations in your inputs are findings the owner has already accepted. Do not raise them again, and do not fail a row for them; the same defect in other code is a new finding.
 
 ## Gotchas
 - A review from the packet alone, without reading the repository, has invented findings before; abort instead.

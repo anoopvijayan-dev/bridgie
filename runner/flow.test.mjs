@@ -306,3 +306,60 @@ test('taskProfile follows the project policy: the floor and what small drops', (
   fl.writeTasksFromPlan(low, 'b', planOutput(low, [{ ...T('T1', ['R1']), size: 'small' }]));
   assert.deepEqual(fl.taskProfile(low, 'b', 'T1').skip_tiers, ['dual_run']);   // ux is below the floor (data)
 });
+
+function blockedByReview(root, mechanical = [row('mechanical:1', 'pass', 'mechanical')]) {
+  fl.writeTasksFromPlan(root, 'b', planOutput(root, [T('T1', ['R1', 'R2', 'P1'])]));
+  const dir = join(root, '.bridgie', 'runs', 'b', 'verify-03'); mkdirSync(dir, { recursive: true });
+  const out = join(dir, 'evidence.json');
+  writeFileSync(join(dir, 'mechanical-key.json'), JSON.stringify({ task: 'T1', sha: 'abc123', plan: 'p' }));
+  for (let i = 0; i < 3; i++) {
+    fl.startAttempt(root, 'b', 'T1', 'br'); fl.setTask(root, 'b', 'T1', { status: 'verify' });
+    fl.reconcile(root, 'b', 'T1', verifyOut(root, [row('R1'), row('R2', 'not_proven'), row('P1')], [
+      { severity: 'major', file: 'src/a.py', line: 7, claim: 'a save can race another window', repro: 'two posts' },
+      { severity: 'minor', file: 'src/a.py', line: 9, claim: 'naming', repro: 'n/a' }]), mechanical, out);
+  }
+  return st.loadDecisions(root, 'b').decisions.find(d => d.type === 'unblock' && d.status !== 'answered');
+}
+
+test('a task blocked by the reviewer alone can be accepted with its findings as known limitations', () => {
+  const root = project();
+  const d = blockedByReview(root);
+  assert.equal(fl.loadTasks(root, 'b').tasks[0].status, 'blocked');
+  assert.ok(d.options.includes('accept as limitations'));
+  // a reason is required
+  assert.throws(() => fl.answer(root, 'b', d.id, 'accept as limitations', { by: 'Ann' }), /needs the reason/);
+  const done = fl.answer(root, 'b', d.id, 'accept as limitations', { by: 'Ann', text: 'one window at a time in practice' });
+  assert.match(done.effect, /1 finding\(s\) and 1 unproven row\(s\) accepted as known limitations by Ann/);
+  const t = fl.loadTasks(root, 'b').tasks[0];
+  assert.equal(t.status, 'verify');                      // verify re-checks the tiers and merges
+  assert.equal(t.accepted.sha, 'abc123');                // bound to the commit that was reviewed
+  assert.deepEqual(t.accepted.findings, [{ severity: 'major', claim: 'a save can race another window', file: 'src/a.py', line: 7 }]);
+  assert.deepEqual(t.accepted.criteria.map(c => c.id), ['R2']);
+  // later reviewers and the acceptance package see it
+  assert.match(fl.limitationsText(root, 'b'), /T1: accepted by Ann[\s\S]*Reason: one window at a time in practice[\s\S]*major: a save can race another window \(src\/a\.py:7\)[\s\S]*R2 not_proven/);
+  fl.markPassed(root, 'b', 'T1', t.evidence);
+  assert.match(fl.acceptancePacket(root, 'b').md, /## Accepted limitations[\s\S]*a save can race another window/);
+});
+
+test('findings cannot be accepted over a failing tier, and a build failure offers no such option', () => {
+  const root = project();
+  const d = blockedByReview(root, [row('specified:1', 'fail', 'specified')]);
+  assert.ok(!d.options.includes('accept as limitations'));
+  assert.throws(() => fl.acceptLimitations(root, 'b', 'T1', { by: 'Ann', text: 'r' }), /failing tiers \(specified:1\); a limitation cannot cover a failing check/);
+  const other = project();
+  fl.writeTasksFromPlan(other, 'b', planOutput(other, [T('T1', ['R1', 'R2', 'P1'])]));
+  for (let i = 0; i < 3; i++) { fl.startAttempt(other, 'b', 'T1', 'br'); fl.failAttempt(other, 'b', 'T1', 'boom'); }
+  assert.ok(!st.loadDecisions(other, 'b').decisions.find(x => x.type === 'unblock').options.includes('accept as limitations'));
+});
+
+test('reviewDebt lists passed tasks reviewed by their producer\'s own family until a second-family review', () => {
+  const root = project();
+  fl.writeTasksFromPlan(root, 'b', planOutput(root, [T('T1', ['R1']), T('T2', ['R2'], ['T1']), T('T3', ['P1'], ['T1']), T('T4', ['R1'], ['T1'])]));
+  fl.setTask(root, 'b', 'T1', { status: 'passed', review: { adapter: 'claude-code', vendor: 'anthropic', producer_vendor: 'anthropic', cross_family: false } });
+  fl.setTask(root, 'b', 'T2', { status: 'passed', review: { adapter: 'codex', vendor: 'openai', producer_vendor: 'anthropic', cross_family: true } });
+  fl.setTask(root, 'b', 'T3', { status: 'passed' });   // passed before reviews were recorded
+  assert.deepEqual(fl.reviewDebt(root, 'b'), { same: ['T1'], unknown: ['T3'] });
+  assert.match(fl.acceptancePacket(root, 'b').md, /## Review debt[\s\S]*T1 \(bridgie rereview b\)/);
+  fl.setTask(root, 'b', 'T1', { review: { adapter: 'claude-code', vendor: 'anthropic', producer_vendor: 'anthropic', cross_family: false, rereview: { adapter: 'antigravity', vendor: 'google', cross_family: true, verdict: 'pass' } } });
+  assert.deepEqual(fl.reviewDebt(root, 'b').same, []);
+});

@@ -156,3 +156,72 @@ setup() {
   [ "$(wc -l < "$P/.git/tier-runs")" -eq 1 ]
   [ "$(task_field "$P" b T1 status)" = '"passed"' ]
 }
+
+blocked_by_review() {   # three reviews that fail on a finding, every tier passing
+  F="$BRIDGIE_HOME/adapters/fake/fixtures/reviewer-fail.json"
+  bash -c "cd '$P' && BRIDGIE_FAKE_OUTPUT='$F' bridgie verify b" >/dev/null 2>&1 || true
+  bash -c "cd '$P' && bridgie build b && BRIDGIE_FAKE_OUTPUT='$F' bridgie verify b" >/dev/null 2>&1 || true
+  bash -c "cd '$P' && bridgie build b && BRIDGIE_FAKE_OUTPUT='$F' bridgie verify b" >/dev/null 2>&1 || true
+  [ "$(task_field "$P" b T1 status)" = '"blocked"' ]
+}
+
+@test "a task blocked by review findings can be accepted with them as known limitations, then merges without a new review" {
+  blocked_by_review
+  D="$(node -e 'const d=require(process.argv[1]).decisions.find(x=>x.type==="unblock"&&x.status!=="answered"); console.log(d.id)' "$P/.bridgie/decisions/b.json")"
+  grep -q 'accept as limitations' "$P/.bridgie/decisions/b.json"
+  run bash -c "cd '$P' && bridgie decide b $D 'accept as limitations'"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"needs the reason"* ]]
+  run bash -c "cd '$P' && bridgie decide b $D 'accept as limitations' --text 'acceptable for the pilot'"
+  echo "$output"
+  [ "$status" -eq 0 ]
+  [ "$(task_field "$P" b T1 status)" = '"verify"' ]
+  reviews="$(ls -d "$P"/.bridgie/runs/b/reviewer-* | wc -l)"
+  run bash -c "cd '$P' && bridgie verify b"
+  echo "$output"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"pass with 1 accepted limitation(s)"* ]]
+  [ "$(task_field "$P" b T1 status)" = '"passed"' ]
+  [ -f "$P/feature-1.txt" ]
+  [ "$(ls -d "$P"/.bridgie/runs/b/reviewer-* | wc -l)" -eq "$reviews" ]          # no new review
+  grep -q '"accepted_limitations"' "$(node -e 'console.log(require(process.argv[1]).tasks[0].evidence)' "$P/.bridgie/specs/b/tasks.json")"
+  grep -q '"verdict": "fail"' "$(node -e 'console.log(require(process.argv[1]).tasks[0].evidence)' "$P/.bridgie/specs/b/tasks.json")"   # the reviewer's verdict is kept
+  # the next task's reviewer is told
+  bash -c "cd '$P' && bridgie build b && bridgie verify b" >/dev/null 2>&1
+  grep -q 'known limitations the owner accepted' "$(ls -d "$P"/.bridgie/runs/b/reviewer-* | tail -1)/prompt.md"
+  grep -q 'acceptable for the pilot' "$(ls -d "$P"/.bridgie/runs/b/reviewer-* | tail -1)/prompt.md"
+}
+
+@test "accepted limitations do not survive a changed commit: the task is reviewed again" {
+  blocked_by_review
+  D="$(node -e 'const d=require(process.argv[1]).decisions.find(x=>x.type==="unblock"&&x.status!=="answered"); console.log(d.id)' "$P/.bridgie/decisions/b.json")"
+  bash -c "cd '$P' && bridgie decide b $D 'accept as limitations' --text 'ok'" >/dev/null 2>&1
+  echo changed > "$P/.bridgie/worktrees/b/T1/extra.txt"
+  run bash -c "cd '$P' && bridgie verify b"
+  echo "$output"
+  [[ "$output" == *"so it is reviewed again"* ]]
+  [ "$status" -eq 0 ]                                # the default reviewer fixture passes
+  [[ "$output" != *"accepted limitation(s)"* ]]
+}
+
+@test "a same-family review is recorded as review debt, shown in status, and cleared by rereview" {
+  printf 'lanes:\n  engineering:\n    cross_family: false\n' >> "$P/.bridgie/policy.yaml"
+  sed -i.bak 's/fake-producer/fake/' "$P/.bridgie/runs/b/implementer-01/adapter.json"   # the producer was the same family
+  run bash -c "cd '$P' && BRIDGIE_FAKE_SAME_VENDOR=1 bridgie verify b"
+  echo "$output"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"the producer's own model family"* ]]
+  node -e 'const t=require(process.argv[1]).tasks[0]; process.exit(t.review && t.review.cross_family === false ? 0 : 1)' "$P/.bridgie/specs/b/tasks.json"
+  sed -i.bak '/^lanes:$/,$d' "$P/.bridgie/policy.yaml"; all_tiers "$P" 2>/dev/null || true
+  run bash -c "cd '$P' && bridgie status"
+  [[ "$output" == *"review debt on 1 task(s)"* ]]
+  run bash -c "cd '$P' && bridgie rereview b"
+  echo "$output"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"T1: pass by fake"* ]]
+  [[ "$output" == *"Review debt left: none"* ]]
+  [ "$(task_field "$P" b T1 status)" = '"passed"' ]
+  run bash -c "cd '$P' && bridgie status"
+  [[ "$output" != *"review debt"* ]]
+  grep -q 'second review of task T1' "$(ls -d "$P"/.bridgie/runs/b/reviewer-* | tail -1)/prompt.md"
+}

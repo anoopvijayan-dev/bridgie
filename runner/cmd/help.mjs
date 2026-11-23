@@ -15,6 +15,7 @@ Decide   bet new <slug> [--from <scout>/O<n>] [--risk R]   create a bet (optiona
 Build    shape | plan [--replan] | build | run
          recover <slug>           after a killed run: clear its lock, make its task buildable again
 Verify   verify
+         rereview <slug> [--task T] [--all]   a second-family review of tasks that passed with a same-family reviewer
 Accept   accept
 Learn    learn
 Tool     new <folder> [--lane L]   new project in one step        next (or just: bridgie)   what to do next

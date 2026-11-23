@@ -259,8 +259,11 @@ export function reconcile(root, slug, id, reviewerFile, mechanicalRows, outFile)
       t.status = 'blocked';
       t.escalation = `blocked after ${t.attempts} attempts. Last verdict ${verdict}: ${why}`;
       saveTasks(root, slug, doc);
+      // What stands between the task and a pass is the reviewer's findings alone when every tier
+      // the runner ran passed: only then can the owner accept them as known limitations.
+      const tiersPassed = mechanicalRows.every(r => r.result === 'pass');
       ensureDecision(root, slug, 'unblock', `Task ${id} "${t.title}" is ${t.escalation}`,
-        ['retry with guidance', 'take over manually', 'kill task'], { task: id, allow_free_text: true });
+        ['retry with guidance', 'take over manually', ...(tiersPassed ? [ACCEPT_LIMITATIONS] : []), 'kill task'], { task: id, allow_free_text: true });
     } else {
       t.status = 'failed';
       t.escalation = `attempt ${t.attempts} of ${t.max_attempts} ${verdict}: ${why}`;
@@ -273,8 +276,57 @@ export function reconcile(root, slug, id, reviewerFile, mechanicalRows, outFile)
   return { verdict, evidence };
 }
 
-export function markPassed(root, slug, id, evidenceFile) {
-  return setTask(root, slug, id, { status: 'passed', evidence: evidenceFile, escalation: null });
+export function markPassed(root, slug, id, evidenceFile, extra = {}) {
+  return setTask(root, slug, id, { status: 'passed', evidence: evidenceFile, escalation: null, ...extra });
+}
+
+// ---------- accepted limitations ----------
+// A review that never converges is a decision the owner has not been offered. When a task is
+// blocked by the reviewer's findings alone (every tier the runner ran passed), the owner can accept
+// those findings as known limitations, with a reason. The acceptance is bound to the commit that
+// was reviewed: verify then re-checks the tiers for that commit and merges without asking the
+// reviewer again. The findings stay on the task, are shown to later reviewers so they are not
+// raised again, and are listed in the acceptance package. Nothing is hidden: the evidence keeps
+// the reviewer's verdict.
+export const ACCEPT_LIMITATIONS = 'accept as limitations';
+export function acceptLimitations(root, slug, id, { by, text }) {
+  if (!text) throw new Error(`"${ACCEPT_LIMITATIONS}" needs the reason (--text): why these findings are acceptable`);
+  const t = getTask(loadTasks(root, slug), id);
+  if (!t.evidence || !existsSync(t.evidence)) throw new Error(`task ${id} has no review evidence to accept findings from`);
+  const ev = st.readJson(t.evidence);
+  const failedTiers = ev.criteria.filter(c => c.tier !== 'adversarial' && c.result !== 'pass');
+  if (failedTiers.length) throw new Error(`task ${id} has failing tiers (${failedTiers.map(c => c.id).join(', ')}); a limitation cannot cover a failing check`);
+  let sha = null;
+  try { sha = st.readJson(join(resolve(t.evidence, '..'), 'mechanical-key.json')).sha || null; } catch { /* a review from before tier results were keyed by commit */ }
+  const findings = ev.findings.filter(f => f.severity === 'blocker' || f.severity === 'major').map(f => ({ severity: f.severity, claim: f.claim, file: f.file ?? null, line: f.line ?? null }));
+  const rows = ev.criteria.filter(c => c.tier === 'adversarial' && c.result !== 'pass').map(c => ({ id: c.id, result: c.result, check: c.check }));
+  setTask(root, slug, id, { status: 'verify', accepted: { by, at: st.now(), reason: text, sha, evidence: t.evidence, findings, criteria: rows } });
+  return `task ${id}: ${findings.length} finding(s) and ${rows.length} unproven row(s) accepted as known limitations by ${by}; bridgie verify ${slug} --task ${id} re-checks the tiers and merges`;
+}
+// limitations: every accepted limitation of a bet, for the reviewer's context and the acceptance package.
+export function limitations(root, slug) {
+  if (!existsSync(st.tasksPath(root, slug))) return [];
+  return loadTasks(root, slug).tasks.filter(t => t.accepted && (t.accepted.findings?.length || t.accepted.criteria?.length))
+    .map(t => ({ task: t.id, title: t.title, ...t.accepted }));
+}
+export function limitationsText(root, slug) {
+  const all = limitations(root, slug);
+  if (!all.length) return '';
+  return all.map(l => [`### ${l.task}: accepted by ${l.by} on ${String(l.at).slice(0, 10)}`, `Reason: ${l.reason}`,
+    ...l.findings.map(f => `- ${f.severity}: ${f.claim}${f.file ? ` (${f.file}:${f.line ?? '?'})` : ''}`),
+    ...l.criteria.map(c => `- ${c.id} ${c.result}: ${c.check}`)].join('\n')).join('\n\n');
+}
+
+// ---------- review record and review debt ----------
+// reviewDebt: passed tasks whose review was by the producer's own model family (same), and ones
+// passed before Bridgie recorded who reviewed (unknown). A second-family review clears the debt.
+export function reviewDebt(root, slug) {
+  if (!existsSync(st.tasksPath(root, slug))) return { same: [], unknown: [] };
+  const passed = loadTasks(root, slug).tasks.filter(t => t.status === 'passed');
+  return {
+    same: passed.filter(t => t.review && t.review.cross_family === false && !t.review.rereview?.cross_family).map(t => t.id),
+    unknown: passed.filter(t => !t.review).map(t => t.id),
+  };
 }
 
 // ---------- verification planning ----------
@@ -400,6 +452,7 @@ function effectFor(root, slug, extra) {
         setTask(root, slug, id, { status: 'failed', max_attempts: t.max_attempts + 1, escalation: `${t.escalation || ''}${text ? ` | guidance: ${text}` : ''}` });
         return `task ${id} gets one more attempt`;
       }
+      if (answer === ACCEPT_LIMITATIONS) return acceptLimitations(root, slug, id, { by, text });
       if (answer === 'take over manually') { setTask(root, slug, id, { status: 'verify' }); return `task ${id} handed to ${by}; commit in its worktree, then bridgie verify ${slug} --task ${id}`; }
       if (answer === 'kill task') { setTask(root, slug, id, { escalation: `killed by ${by}` }); return `task ${id} killed; re-plan the bet to continue`; }
     }
@@ -448,6 +501,10 @@ export function acceptancePacket(root, slug, diffStat = '') {
   }
   for (const t of doc.tasks) retries += Math.max(0, t.attempts - 1);
   const cost = { seat_runs: entries, seconds, attempts_total: doc.tasks.reduce((n, t) => n + t.attempts, 0), retries, usd: null };
+  const lim = limitationsText(root, slug);
+  if (lim) details.push('## Accepted limitations', '', 'Findings the owner accepted instead of fixing. They are part of what is being accepted.', '', lim, '');
+  const debt = reviewDebt(root, slug);
+  if (crossFamily(root, slug) && debt.same.length) details.push('## Review debt', '', `Policy asks for a reviewer from another model family. These tasks passed with a reviewer of the producer's own family and have not been re-reviewed: ${debt.same.join(', ')} (bridgie rereview ${slug}).`, '');
   lines.push('', ...details, '## Change', '', '```', diffStat.trim() || '(no diff stat)', '```', '',
     '## Cost', '', `${cost.seat_runs} seat runs, ${cost.seconds}s, ${cost.attempts_total} attempts (${cost.retries} retries). Token cost not reported by all adapters.`, '');
   return { md: lines.join('\n'), cost };

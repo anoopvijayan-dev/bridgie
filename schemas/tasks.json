@@ -86,6 +86,20 @@
               "medium",
               "large"
             ]
+          },
+          "accepted": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "Findings of the last review that the owner accepted as known limitations, for the commit named."
+          },
+          "review": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "Who reviewed the passing attempt, and whether that was another model family than the producer's."
           }
         }
       }
