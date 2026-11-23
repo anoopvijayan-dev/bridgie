@@ -69,6 +69,17 @@ export function doctor(root) {
     const rv = st.route(root, loadSeat('verify/reviewer').manifest).adapter;
     if (rv && rv !== 'none' && rv !== 'fake') (calibration(rv) ? ok : warn)(`reviewer ${calibrationText(rv)}`);
   } catch { /* routing problems are reported by the seat run */ }
+  try {   // do the seats that write code run in a sandbox on this machine?
+    const pol = st.loadPolicy(root), sbMode = pol.sandbox?.build || 'auto';
+    const impl = st.route(root, loadSeat('build/implementer').manifest).adapter;
+    if (impl && impl !== 'none' && impl !== 'fake' && existsSync(join(st.HOME, 'adapters', impl, 'run.mjs'))) {
+      const c = spawnSync(process.execPath, [join(st.HOME, 'adapters', impl, 'run.mjs'), '--capabilities', '--seat', join(st.HOME, 'seats', 'build', 'implementer')], { encoding: 'utf8', timeout: 30000 });
+      const caps = JSON.parse(c.stdout || '{}'), has = caps.sandbox && caps.sandbox !== 'none';
+      if (sbMode === 'off') warn(`build seats (${impl}) run without a sandbox: policy sandbox.build is off`);
+      else if (has) ok(`build seats (${impl}) run in ${caps.sandbox === 'os' ? `an OS sandbox; network: ${(pol.sandbox?.network || []).join(', ') || 'none'}` : "the CLI's own sandbox"}`);
+      else (sbMode === 'required' ? fail : warn)(`build seats (${impl}) have no OS sandbox on this machine${caps.sandbox_note ? ` (${caps.sandbox_note})` : ''}${sbMode === 'required' ? '; policy requires one, so builds will stop' : '; they run with your full access'}`);
+    }
+  } catch { /* the adapter's own probe line says what is wrong */ }
   try {   // Antigravity runs only in a folder one of its projects covers; say so before a seat fails
     const pol = st.loadPolicy(root), routes = [...Object.values(pol.routing?.tiers || {}), ...Object.values(pol.routing?.seats || {})];
     if (!process.env.BRIDGIE_ADAPTER && routes.some(x => x.adapter === 'antigravity')) {

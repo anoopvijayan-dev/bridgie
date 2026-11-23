@@ -109,6 +109,7 @@ What keeps a bet of dozens of tasks moving, and honest, over days:
 - **Provenance.** Every decision records how it arrived: the page or the command line, the agent the command ran inside (Claude Code, Codex, …) if any, the OS user and the machine. The bet's decision log names the agent.
 - **Decisions for a person.** `humans_only` in policy (default: acceptance and governance decisions) names decisions an agent's command line may not answer on its own. With `relay: true` (the default) the agent must pass `--relayed`, saying it passes on a person's answer, and the record says so; with `relay: false` it is refused and the person answers in their own terminal or on `bridgie open`. This stops an agent approving its own work by accident and keeps the record truthful. It is not proof of who typed.
 - **Governance lock.** Signing a bet stores the rules it is held to: required tiers, approvers, cross-family review, who may decide, task-size rules, the verify commands. If `policy.yaml` later asks for less, `build`, `verify` and `accept` stop with a decision only the bet's owner can answer: accept the change for this bet, or keep the signed rules and put the file back. Stricter rules never stop anything.
+- **Sandboxed build seats.** A git worktree keeps an agent's changes apart; it does not stop the agent's shell commands from writing elsewhere or calling out. So the seats that write code are asked to run inside an OS sandbox: shell commands can write only in the task worktree (plus the run folder and temp) and reach only the hosts in `sandbox.network` (package registries by default). Policy `sandbox.build` is `auto` (use a sandbox where the model CLI has one, and warn where it does not), `required` (refuse to build without one; nothing runs and no attempt is used) or `off`. Claude Code uses the operating system's sandbox (built in on macOS; needs `bubblewrap` and `socat` on Linux and WSL2; none on native Windows); Codex always runs in its own, with no network; Antigravity and Copilot have none that Bridgie can turn on. Each run records whether it was sandboxed, `bridgie doctor` says what this machine will do, the acceptance package counts the runs, and loosening the setting after a bet is signed is a governance decision. Limits: the allowlist is by host name, so a broad entry (a code host, say) is a way out; Docker does not work inside the sandbox; the reviewer and other read-only seats are held by tool permissions, not the sandbox.
 - **Owner override.** A solo founder has no second approver. `bridgie accept <slug> --override "<reason>"` lets the bet's owner deliver with fewer approvals than policy asks for; the acceptance record says who, why and how many approved. `acceptance: { owner_override: false }` turns it off.
 
 Verification commands live in `.bridgie/policy.yaml` (`verify.commands.<tier>`; see the comment `bridgie init`
@@ -160,7 +161,7 @@ v0.7.0 (long runs and governance), from running a 41-task money-risk bet end to 
 interrupted runs, usage-limit waits, task sizes, test results reused per commit, accepted limitations,
 review debt and `rereview`, decision provenance, decisions reserved for a person, the governance lock, the
 owner override, parallel builds of independent tasks, `run --pause-before-verify`, plan-order warnings,
-`status --cost`, Python projects, run logs out of git. tokens and cost per task, a planted-bug test for reviewers. Not yet: verifying tasks in parallel (verification and
+`status --cost`, Python projects, run logs out of git. tokens and cost per task, a planted-bug test for reviewers, sandboxed build seats. Not yet: verifying tasks in parallel (verification and
 merging are one at a time). See `CHANGELOG.md`.
 
 v0.4.0 (M3 decide loop): scout, frame, research, lenses, panel, numbers, evidence; swarm seats and web
@@ -171,7 +172,7 @@ reconciliation, effective risk and mandatory tiers, state guard and seat lock, a
 server, reviewer works from runner-run test results). v0.2.0 (M1): the whole loop runs end to end on the
 fake adapter and is covered by tests for spec requirements R1–R14 and properties P1–P3. Real adapters are verified against stub CLIs with the
 flags of Claude Code 2.1, Codex 0.167 and Copilot CLI 1.0; Antigravity follows the v1 notes and its
-write mode is unverified (see `adapters/antigravity/gotchas.md`). Next: sandboxed build seats, mutation testing, marketing and sales lanes (see `docs/agentic-landscape-2026-11.md`).
+write mode is unverified (see `adapters/antigravity/gotchas.md`). Next: mutation testing, marketing and sales lanes (see `docs/agentic-landscape-2026-11.md`).
 
 ## Tests
 

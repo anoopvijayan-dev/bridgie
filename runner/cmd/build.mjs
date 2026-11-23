@@ -49,7 +49,7 @@ async function produce(root, slug, task, seat, wt, packet, seatOpts = {}) {
   catch (e) {
     if (!(e instanceof BridgieExit)) throw e;
     g.resetTask(wt, at);
-    if (e.code === 3) throw new TaskFail(e.message, { reason: `${name} did not run: a model CLI was at its usage limit; the attempt is not counted`, commit: `${name} waiting`, code: 3 });
+    if (e.code === 3) throw new TaskFail(e.message, { reason: `${name} did not run (${/usage limit/.test(e.message) ? 'a model CLI was at its usage limit' : e.message.split('\n')[0].slice(0, 160)}); the attempt is not counted`, commit: `${name} waiting`, code: 3 });
     throw new TaskFail(`${e.message}\nbuild: ${name} failed for ${task}; attempt recorded`, { reason: `${name} run failed (see .bridgie/runs/${slug})`, commit: `${name} failed` });
   }
   const changes = g.bridgieChanges(root, slug, task);

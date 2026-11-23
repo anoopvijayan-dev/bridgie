@@ -30,7 +30,7 @@ const name = basename(o.seat), loop = basename(dirname(o.seat));
 if (o.caps) {
   let vendor = loop === 'verify' ? 'fake-verifier' : 'fake-producer';
   if (process.env.BRIDGIE_FAKE_SAME_VENDOR === '1') vendor = 'fake';
-  process.stdout.write(JSON.stringify({ vendor, reads_repo: process.env.BRIDGIE_FAKE_READS_REPO !== '0', reads_web: process.env.BRIDGIE_FAKE_READS_WEB !== '0' }) + '\n');
+  process.stdout.write(JSON.stringify({ vendor, reads_repo: process.env.BRIDGIE_FAKE_READS_REPO !== '0', reads_web: process.env.BRIDGIE_FAKE_READS_WEB !== '0', sandbox: process.env.BRIDGIE_FAKE_SANDBOX || 'builtin' }) + '\n');
   process.exit(0);
 }
 if (!o.prompt || !existsSync(o.prompt)) { process.stderr.write(`fake: prompt file missing: ${o.prompt}\n`); process.exit(2); }

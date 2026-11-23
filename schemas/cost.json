@@ -12,7 +12,7 @@
           "started_at": { "type": "string" }, "duration_s": { "type": "number" }, "attempt": { "type": "integer" },
           "tokens_in": { "type": ["integer", "null"] }, "tokens_out": { "type": ["integer", "null"] },
           "tokens_cache_read": { "type": ["integer", "null"] }, "tokens_cache_write": { "type": ["integer", "null"] }, "tokens_total": { "type": ["integer", "null"] }, "usd": { "type": ["number", "null"] },
-          "exit_code": { "type": "integer" }
+          "exit_code": { "type": "integer" }, "sandbox": { "type": "string", "enum": ["os", "builtin", "none", "off"] }
         }
       }
     }

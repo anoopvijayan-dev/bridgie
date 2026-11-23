@@ -13,7 +13,7 @@ const vendorOf = m => {
   return `copilot-${m || 'default'}`;
 };
 if (o.probe) A.probe(bin, 'copilot CLI');
-if (o.caps) A.caps({ vendor: vendorOf(o.model), reads_repo: true, reads_web: process.env.BRIDGIE_COPILOT_WEB === '1' });
+if (o.caps) A.caps({ vendor: vendorOf(o.model), reads_repo: true, reads_web: process.env.BRIDGIE_COPILOT_WEB === '1', sandbox: 'none' });
 A.requireRunArgs(o);
 if (!bin) { process.stderr.write('copilot CLI not found on PATH\n'); process.exit(1); }
 const instruction = `Read ${o.prompt} in full. It contains your role, inputs and output contract. Do the work now in ${o.cwd}, then end your reply with the fenced json block it asks for.`;

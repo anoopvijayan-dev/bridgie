@@ -159,6 +159,8 @@ export function governanceRules(root, lane, risk) {
     floor_risk: policy.sizes?.floor_risk || 'data',
     sizes,
     commands: policy.verify?.commands ? short(policy.verify.commands) : null,
+    sandbox: ['off', 'auto', 'required'].includes(policy.sandbox?.build) ? policy.sandbox.build : 'auto',
+    sandbox_network: [...(policy.sandbox?.network || [])].sort(),
   };
 }
 // governanceDrift: every way `now` is weaker than `signed` (or, for verify commands, different:
@@ -182,6 +184,9 @@ export function governanceDrift(signed, now) {
     if (a.harden === true && b.harden !== true) out.push(`${k} tasks are no longer always hardened`);
   }
   if ((s.commands ?? null) !== (now.commands ?? null)) out.push('the verify commands in policy.yaml changed');
+  const SB = ['off', 'auto', 'required'];
+  if (s.sandbox && SB.indexOf(now.sandbox) < SB.indexOf(s.sandbox)) out.push(`the sandbox for build seats went from ${s.sandbox} to ${now.sandbox}`);
+  if (s.sandbox_network) { const more = (now.sandbox_network || []).filter(h => !s.sandbox_network.includes(h)); if (more.length && now.sandbox !== 'off') out.push(`sandboxed seats may now reach ${more.join(', ')}`); }
   return out;
 }
 

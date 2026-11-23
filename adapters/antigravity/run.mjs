@@ -42,7 +42,7 @@ if (cc >= 0) {
   process.stdout.write(`no Antigravity project covers ${dir}\n`); process.exit(1);
 }
 if (o.probe) A.probe(bin, 'agy (PATH or %LOCALAPPDATA%/agy/bin)');
-if (o.caps) A.caps({ vendor: 'google', reads_repo: true, reads_web: false });
+if (o.caps) A.caps({ vendor: 'google', reads_repo: true, reads_web: false, sandbox: 'none' });
 A.requireRunArgs(o);
 if (!bin) { process.stderr.write('agy not found\n'); process.exit(1); }
 const project = findProject(o.cwd);

@@ -13,6 +13,11 @@ sizes:
   small: { harden: false, skip_tiers: [behavioural, dual_run] }   # one module, no shared state: no hardener, no whole-system tiers
   medium: {}                                                      # what the bet's risk asks for, no more
   large: { harden: true }                                         # shared state, locks, money arithmetic across modules: always hardened
+# Seats that write code (implementer, hardener) run inside an OS sandbox where the model CLI has one:
+# their shell commands can write only in the task worktree and reach only these hosts.
+# auto: use it where there is one, and say so where there is not. required: refuse to build
+# without one. off: never. Claude Code needs bubblewrap and socat on Linux; Codex always has its own.
+sandbox: { build: auto, network: [registry.npmjs.org, pypi.org, files.pythonhosted.org, api.nuget.org] }
 # Decisions a person must answer. Inside an agent (Claude Code, Codex, ...) the command line refuses
 # them unless the agent says it is relaying a person's answer (--relayed), and the record says so.
 # relay: false refuses the agent outright: the person answers in their own terminal or on bridgie open.

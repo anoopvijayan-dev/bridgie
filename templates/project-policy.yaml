@@ -15,6 +15,8 @@ default_lane: {{lane}}
 # humans_only: { decisions: [accept, governance], relay: true }
 # The owner may deliver with fewer approvals than required, on the record (false forbids it):
 # acceptance: { owner_override: true }
+# The sandbox for seats that write code (auto | required | off) and the hosts they may reach:
+# sandbox: { build: required, network: [registry.npmjs.org] }
 # Build up to this many independent tasks at the same time (verification stays one at a time):
 # build: { parallel: 3 }
 # What a task's size adds or drops (see policy/default.yaml):

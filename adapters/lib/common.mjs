@@ -81,6 +81,22 @@ export function finish(o, reply, cliStatus = 0) {
   }
 }
 
+// osSandbox: can an OS-level sandbox start on this machine? macOS has one built in (Seatbelt);
+// Linux and WSL2 need bubblewrap and socat; native Windows has none.
+export function osSandbox() {
+  if (process.platform === 'darwin') return { ok: true, why: '' };
+  if (process.platform === 'linux') {
+    const missing = [['bwrap', 'bubblewrap'], ['socat', 'socat']].filter(([c]) => !which(c)).map(([, n]) => n);
+    return missing.length ? { ok: false, why: `${missing.join(' and ')} not installed` } : { ok: true, why: '' };
+  }
+  return { ok: false, why: 'no OS sandbox on native Windows (WSL2 has one)' };
+}
+// sandboxAsk: what the runner asks for (BRIDGIE_SANDBOX: off | auto | required; the hosts a
+// sandboxed seat may reach in BRIDGIE_SANDBOX_NETWORK). An adapter run by hand gets none.
+export function sandboxAsk() {
+  const mode = ['auto', 'required'].includes(process.env.BRIDGIE_SANDBOX) ? process.env.BRIDGIE_SANDBOX : 'off';
+  return { mode, hosts: (process.env.BRIDGIE_SANDBOX_NETWORK || '').split(',').map(s => s.trim()).filter(Boolean) };
+}
 export const replyPath = o => join(dirname(o.out), 'reply.txt');
 // usage: what the model CLI reported the run used, written beside --out as usage.json for the
 // runner to record. Every field is optional; only what the CLI itself said is written, never an

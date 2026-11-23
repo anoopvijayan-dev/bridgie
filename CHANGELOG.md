@@ -20,6 +20,13 @@ Changes that came out of running a 41-task, money-risk bet from start to finish.
 - A planted bug counts as caught only when a blocker or major finding names it (the right file within a few lines, or words that describe it); failing the change for another reason is a miss. A clean change that is failed, or given a serious finding, is a false alarm.
 - Results are stored per machine (`~/.bridgie/evals/reviewer.json`, or `$BRIDGIE_EVALS_HOME`). `bridgie doctor` shows the routed reviewer's last result or warns that it was never tested; the acceptance package lists it for every reviewer that passed a task.
 
+### Sandbox
+- Policy `sandbox: { build: auto | required | off, network: [hosts] }` (default `auto`, with the npm, PyPI and NuGet registries). Seats that write code are launched with `BRIDGIE_SANDBOX` and `BRIDGIE_SANDBOX_NETWORK`; adapters report `sandbox: os | builtin | none` in their capabilities.
+- Claude Code: write-mode runs get a settings file (in the run folder) that turns the OS sandbox on, forbids unsandboxed commands, allows the listed hosts, and holds Edit and Write to the working directories. `required` also makes the CLI refuse to start without a sandbox. Codex already runs in its own sandbox.
+- `required` with an adapter that has no sandbox here: Bridgie falls back to one that has, or stops with exit 3 before anything runs; the attempt is not used. `auto` warns and runs.
+- Each write run's cost entry records `sandbox` (`os`, `builtin`, `none`, `off`); when the CLI itself says it ran without a sandbox, that is what is recorded. `bridgie doctor` reports the build adapter's sandbox; the acceptance package has an Isolation line; a looser sandbox or a longer host list after signing is governance drift.
+- Checked for real on Linux with Claude Code: a write outside the worktree failed (read-only file system) and a host off the list was refused, while a write inside and a listed host worked.
+
 ### Governance
 - **Provenance.** Answered decisions record `via`: channel (`cli` or `surface`), the agent harness (`$BRIDGIE_HARNESS`, else detected from the environment), OS user and host. Approvals in the acceptance record carry it too.
 - **`humans_only`.** Policy `humans_only: { decisions: [accept, governance], relay: true }`. Inside an agent, the command line refuses these decisions unless `--relayed` is passed (recorded); `relay: false` refuses outright. The page (`bridgie open`) is not affected.

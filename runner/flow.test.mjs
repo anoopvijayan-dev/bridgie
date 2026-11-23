@@ -624,3 +624,18 @@ test('cost: tokens and money are summed per task from what each CLI reported; co
   assert.equal(packet.cost.tokens, 300015);
   assert.match(packet.md, /300k tokens\. \$2\.00 at list price/);
 });
+
+test('governance: a looser sandbox for build seats, or more hosts it may reach, is drift; a stricter one is not', () => {
+  const root = signedMoney();
+  const signed = st.readFm(st.betPath(root, 'b')).data.governance.rules;
+  assert.equal(signed.sandbox, 'auto');
+  assert.ok(signed.sandbox_network.includes('pypi.org'));
+  const drift = now => st.governanceDrift(signed, { ...signed, ...now });
+  assert.deepEqual(drift({ sandbox: 'off' }), ['the sandbox for build seats went from auto to off']);
+  assert.deepEqual(drift({ sandbox: 'required' }), []);
+  assert.deepEqual(drift({ sandbox_network: [...signed.sandbox_network, 'evil.example'] }), ['sandboxed seats may now reach evil.example']);
+  assert.deepEqual(drift({ sandbox_network: [] }), []);
+  assert.deepEqual(st.governanceDrift({ ...signed, sandbox: 'required' }, { ...signed, sandbox: 'auto' }), ['the sandbox for build seats went from required to auto']);
+  const { sandbox, sandbox_network, ...old } = signed;                 // a bet signed before sandbox rules were recorded
+  assert.deepEqual(st.governanceDrift(old, { ...signed, sandbox: 'off' }), []);
+});

@@ -6,7 +6,8 @@ import * as A from '../lib/common.mjs';
 const o = A.parse(process.argv.slice(2));
 const bin = A.which(process.env.BRIDGIE_CODEX_BIN || 'codex');
 if (o.probe) A.probe(bin, 'codex CLI');
-if (o.caps) A.caps({ vendor: 'openai', reads_repo: true, reads_web: true });
+// Codex always runs in its own sandbox (-s workspace-write: writes in --cwd only, no network).
+if (o.caps) A.caps({ vendor: 'openai', reads_repo: true, reads_web: true, sandbox: 'builtin' });
 A.requireRunArgs(o);
 if (!bin) { process.stderr.write('codex CLI not found on PATH\n'); process.exit(1); }
 const reply = A.replyPath(o);

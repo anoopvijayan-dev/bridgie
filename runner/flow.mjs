@@ -594,6 +594,18 @@ export function costByTask(root, slug) {
   return out;
 }
 const dur = s => s >= 3600 ? `${Math.floor(s / 3600)}h${String(Math.round((s % 3600) / 60)).padStart(2, '0')}m` : s >= 60 ? `${Math.round(s / 60)}m` : `${s}s`;
+// isolation: of the runs that wrote code and recorded it, how many were sandboxed.
+export function isolation(root, slug) {
+  let runs = 0, sandboxed = 0;
+  const d = st.runsDir(root, slug);
+  for (const run of existsSync(d) ? readdirSync(d) : []) {
+    const c = join(d, run, 'cost.json');
+    if (!existsSync(c)) continue;
+    let entries; try { entries = st.readJson(c).entries; } catch { continue; }
+    for (const e of entries) if (e.sandbox) { runs++; if (e.sandbox === 'os' || e.sandbox === 'builtin') sandboxed++; }
+  }
+  return { runs, sandboxed };
+}
 export const tokensText = n => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : String(n));
 // costTotals: the bet's totals, and cost per accepted task — everything spent (failed attempts,
 // planning and review included) divided by the tasks that passed.
@@ -686,6 +698,9 @@ export function acceptancePacket(root, slug, diffStat = '') {
   if (lim) details.push('## Accepted limitations', '', 'Findings the owner accepted instead of fixing. They are part of what is being accepted.', '', lim, '');
   const debt = reviewDebt(root, slug);
   if (crossFamily(root, slug) && debt.same.length) details.push('## Review debt', '', `Policy asks for a reviewer from another model family. These tasks passed with a reviewer of the producer's own family and have not been re-reviewed: ${debt.same.join(', ')} (bridgie rereview ${slug}).`, '');
+  // Isolation: how many of the runs that wrote code ran inside a sandbox (recorded since 0.7.0).
+  const iso = isolation(root, slug);
+  if (iso.runs) details.push('## Isolation', '', `${iso.sandboxed} of ${iso.runs} runs that wrote code ran in a sandbox (shell commands held to the task worktree and an allowlist of hosts)${iso.runs > iso.sandboxed ? `; ${iso.runs - iso.sandboxed} ran with the full access of the account that started Bridgie` : ''}.`, '');
   // Which reviewers passed these tasks, and what is known about how well each finds bugs.
   const reviewers = [...new Set(doc.tasks.flatMap(t => [t.review?.adapter, t.review?.rereview?.adapter]).filter(a => a && a !== 'fake'))].sort();
   if (reviewers.length) details.push('## Reviewer calibration', '', 'How each reviewer that passed these tasks did when last tested on changes with a planted bug (bridgie eval reviewer):', '', ...reviewers.map(a => `- ${calibrationText(a)}`), '');

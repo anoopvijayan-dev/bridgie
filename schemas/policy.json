@@ -4,6 +4,22 @@
     "version"
   ],
   "properties": {
+    "sandbox": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "build": {
+          "type": "string",
+          "enum": ["off", "auto", "required"]
+        },
+        "network": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
     "build": {
       "type": "object",
       "additionalProperties": false,

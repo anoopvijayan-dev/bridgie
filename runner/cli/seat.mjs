@@ -50,11 +50,11 @@ function nextRunDir(runs, name) {
   return { n, dir: join(runs, `${name}-${String(n).padStart(2, '0')}`) };
 }
 
-function launch(cmd, args, logFile) {
+function launch(cmd, args, logFile, extraEnv = {}) {
   return new Promise(res => {
     const fd = openSync(logFile, 'w');
     let child;
-    try { child = spawn(cmd, args, { stdio: ['ignore', fd, fd], env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' } }); } catch (e) { closeSync(fd); res(127); return; }
+    try { child = spawn(cmd, args, { stdio: ['ignore', fd, fd], env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1', ...extraEnv } }); } catch (e) { closeSync(fd); res(127); return; }
     child.on('error', () => { closeSync(fd); res(127); });
     child.on('close', code => { try { closeSync(fd); } catch { /* closed */ } res(code ?? 1); });
   });
@@ -92,11 +92,17 @@ export async function runSeat(slug, seat, opts = {}) {
   const needsWeb = (manifest.tools || []).includes('web');
   // fits: can this adapter take the seat? (web for research; repo access and another model family
   // for the reviewer, when the caller says so)
-  const fits = caps => (!needsWeb || caps.reads_web === true) && (!opts.needsRepo || caps.reads_repo === true) && (!opts.avoidVendor || caps.vendor !== opts.avoidVendor);
+  // Sandbox (policy sandbox.build) applies to seats that write code. `required`: an adapter with no
+  // sandbox on this machine does not fit the seat.
+  const sandbox = st.loadPolicy(root).sandbox || {};
+  const sbMode = mode === 'write' ? (['off', 'auto', 'required'].includes(sandbox.build) ? sandbox.build : 'auto') : 'off';
+  const hasSandbox = caps => !!caps.sandbox && caps.sandbox !== 'none';
+  const fits = caps => (!needsWeb || caps.reads_web === true) && (!opts.needsRepo || caps.reads_repo === true) && (!opts.avoidVendor || caps.vendor !== opts.avoidVendor) && (sbMode !== 'required' || hasSandbox(caps));
   let { adapter, model = 'default', effort } = route;
   let { raw, caps } = adapterCapabilities(adapter, seatDir, model);
   if (needsWeb && caps.reads_web !== true) die(`seat ${name} needs web access; adapter '${adapter}' has none (route it to one that does: routing.seats.${name})`);
   const spare = st.fallbacks(root, adapter);
+  let sandboxMiss = sbMode === 'required' && !hasSandbox(caps) ? { adapter, note: caps.sandbox_note || '' } : null;
   const exhausted = [];   // adapters skipped or failed because they are at a usage limit
   // waiting: every adapter that could take the seat is at its usage limit. Not an error and not a
   // verdict: exit 3, naming when to come back, so `bridgie run` stops cleanly and nothing is consumed.
@@ -132,6 +138,14 @@ export async function runSeat(slug, seat, opts = {}) {
     const snap = opts.snapshot || join(runDir, '.snapshot');
     if (!opts.snapshot) { try { snapshot(root, snap, excludes()); } catch (e) { die(e.message); } }
     const fellBack = [];
+    if (sandboxMiss) {   // policy requires a sandbox and the routed adapter has none here: another adapter, or stop
+      const next = nextFallback();
+      if (!next) die(`policy requires an OS sandbox for seats that write (sandbox.build: required), and adapter '${sandboxMiss.adapter}' has none on this machine${sandboxMiss.note ? ` (${sandboxMiss.note})` : ''}. Install it, route build seats to an adapter that has one, or change sandbox.build. Nothing was run`, 3);
+      process.stderr.write(`bridgie: warning: adapter ${adapter} has no OS sandbox here${sandboxMiss.note ? ` (${sandboxMiss.note})` : ''}; using ${next.adapter} for seat ${name}\n`);
+      fellBack.push(adapter);
+      writeFileSync(join(runDir, 'fallback.json'), JSON.stringify({ routed: route.adapter, failed: fellBack, used: next.adapter }, null, 2) + '\n');
+      ({ adapter, raw, caps } = next); model = 'default'; effort = null; sandboxMiss = null;
+    }
     if (st.exhaustedUntil(root, adapter)) {   // known to be at its limit: do not launch it to find out again
       exhausted.push(adapter);
       const next = nextFallback();
@@ -147,13 +161,17 @@ export async function runSeat(slug, seat, opts = {}) {
       const startedAt = new Date().toISOString().replace(/\.\d+Z$/, 'Z'), start = Date.now();
       const args = [...pre, '--seat', seatDir, '--prompt', join(runDir, 'prompt.md'), '--out', join(runDir, output), '--cwd', cwd, '--mode', mode, '--model', model, ...(effort ? ['--effort', effort] : [])];
       rmSync(join(runDir, 'usage.json'), { force: true });
-      const rc = await launch(cmd, args, join(runDir, 'adapter.log'));
+      if (sbMode === 'auto' && !hasSandbox(caps)) process.stderr.write(`bridgie: warning: seat ${name} runs without an OS sandbox (adapter ${adapter}${caps.sandbox_note ? `: ${caps.sandbox_note}` : ' has none'}); set sandbox.build: required to refuse that\n`);
+      const rc = await launch(cmd, args, join(runDir, 'adapter.log'), { BRIDGIE_SANDBOX: sbMode, BRIDGIE_SANDBOX_NETWORK: (sandbox.network || []).join(',') });
+      // What actually happened: the adapter's capability, unless its CLI said it ran without one.
+      let sandboxed = sbMode === 'off' ? 'off' : hasSandbox(caps) ? caps.sandbox : 'none';
+      try { if (sandboxed !== 'off' && /WITHOUT sandboxing|Sandbox disabled/i.test(readFileSync(join(runDir, 'adapter.log'), 'utf8'))) sandboxed = 'none'; } catch { /* no log */ }
       // What the model CLI said the run used (adapters write usage.json when their CLI reports it).
       let used = {};
       try { const u = st.readJson(join(runDir, 'usage.json')); if (u && typeof u === 'object' && !Array.isArray(u)) used = u; } catch { /* the CLI reported nothing */ }
       const num = v => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : null), int = v => (num(v) === null ? null : Math.round(v));
       st.costAdd(runDir, { seat: name, ...(opts.task ? { task: opts.task } : {}), adapter, model, started_at: startedAt, duration_s: Math.round((Date.now() - start) / 1000), attempt: n, exit_code: rc,
-        tokens_in: int(used.tokens_in), tokens_out: int(used.tokens_out), tokens_cache_read: int(used.tokens_cache_read), tokens_cache_write: int(used.tokens_cache_write), tokens_total: int(used.tokens_total), usd: num(used.usd) });
+        tokens_in: int(used.tokens_in), tokens_out: int(used.tokens_out), tokens_cache_read: int(used.tokens_cache_read), tokens_cache_write: int(used.tokens_cache_write), tokens_total: int(used.tokens_total), usd: num(used.usd), ...(mode === 'write' ? { sandbox: sandboxed } : {}) });
 
       // 4. single-writer guard (P1): any added, removed or changed state file fails the run
       const d = check(root, snap, excludes());
