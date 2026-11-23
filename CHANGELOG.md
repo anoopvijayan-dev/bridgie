@@ -34,6 +34,7 @@ Changes that came out of running a 41-task, money-risk bet from start to finish.
 - `bridgie run <slug> --pause-before-verify` stops after each build.
 - `plan` warns when a task builds a requirement whose text names one built by a task it does not depend on.
 - `bridgie status --cost [slug]`: attempts, runs and time per task (build, review, checks). Cost entries name their task; the command tiers are timed.
+- **Tokens and cost.** Adapters write `usage.json` beside their output when their CLI reports usage, and the runner records it on the run's cost entry: Claude Code (now run with `--output-format json`) gives input, output and cache tokens and a list-price cost; Codex gives a token total. The cost view adds Tokens and Cost columns and the cost per passed task, and says how many model runs reported nothing. Nothing is estimated. The acceptance package and record carry the totals.
 - Python projects are detected and get compile and pytest commands from the engineering lane.
 - Hardener: seeded sweeps and real two-writer runs. Decomposer: sizes, and ordering by what requirements mention.
 
@@ -43,4 +44,4 @@ Changes that came out of running a 41-task, money-risk bet from start to finish.
 
 ### Not in this release
 - Verifying tasks in parallel, and starting the next build while another task is being verified: verification and merging are one task at a time.
-- Token and money cost: no adapter reports it yet.
+- Tokens and cost from Antigravity and Copilot: their CLIs do not report them.

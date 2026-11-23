@@ -541,13 +541,15 @@ test('costByTask: time per task split into build, review and checks; old runs ar
   const t1 = rows.find(r => r.task === 'T1');
   assert.deepEqual({ runs: t1.runs, build: t1.build, review: t1.review, checks: t1.checks, seconds: t1.seconds, attempts: t1.attempts, size: t1.size, usd: t1.usd },
     { runs: 4, build: 900, review: 240, checks: 90, seconds: 1230, attempts: 2, size: 'small', usd: 0.5 });
+  assert.equal(t1.tokens, null);
+  assert.equal(t1.unreported, 2, 'the two implementer runs said nothing about usage; the tiers are not model runs');
   assert.equal(rows.find(r => r.task === 'T2').runs, 0);
   assert.equal(rows.find(r => r.task === '(bet)').other, 100);
   assert.equal(rows.find(r => r.task === 'T9').title, 'not in the current plan');
   const table = fl.costTable(rows).split('\n');
-  assert.match(table[0], /^Task\s+Size\s+Status\s+Attempts\s+Runs\s+Build\s+Review\s+Checks\s+Other\s+Total$/);
-  assert.match(table[1], /^T1\s+small\s+passed\s+2\s+4\s+15m\s+4m\s+2m\s+0s\s+21m$/);     // the costliest task first
-  assert.match(table.at(-1), /^6 runs, 23m of agent and check time; \$0\.50 reported$/);
+  assert.match(table[0], /^Task\s+Size\s+Status\s+Attempts\s+Runs\s+Build\s+Review\s+Checks\s+Other\s+Total\s+Cost$/);
+  assert.match(table[1], /^T1\s+small\s+passed\s+2\s+4\s+15m\s+4m\s+2m\s+0s\s+21m\s+\$0\.50$/);     // the costliest task first
+  assert.match(table.at(-1), /^6 runs, 23m of agent and check time; \$0\.50 at list price \(\$0\.50 per passed task, everything included\)\. 4 model run\(s\) reported no usage, so the real figures are higher\. Cost is what the CLI computed from list prices: on a subscription it is not a bill$/);
 });
 
 test('mechanicalPlan: a Python project gets compile and pytest commands from the lane', () => {
@@ -593,4 +595,32 @@ test('unstartAttempt: an attempt that never ran is not counted', () => {
   t = fl.unstartAttempt(root, 'b', 'T1');
   assert.deepEqual({ attempts: t.attempts, status: t.status }, { attempts: 1, status: 'failed' });
   assert.equal(fl.unstartAttempt(root, 'b', 'T1').attempts, 1, 'only an attempt in progress is undone');
+});
+
+test('cost: tokens and money are summed per task from what each CLI reported; cost per passed task counts everything', () => {
+  const root = project();
+  fl.writeTasksFromPlan(root, 'b', planOutput(root, [T('T1', ['R1']), T('T2', ['R2', 'P1'])]));
+  fl.setTask(root, 'b', 'T1', { status: 'passed', attempts: 1 });
+  fl.setTask(root, 'b', 'T2', { status: 'failed', attempts: 2 });
+  const run = (name, e) => { const d = join(st.runsDir(root, 'b'), name); mkdirSync(d, { recursive: true }); st.costAdd(d, { adapter: 'x', model: 'm', started_at: '2026-01-01T00:00:00Z', attempt: 1, duration_s: 60, ...e }); };
+  run('implementer-01', { seat: 'implementer', task: 'T1', tokens_in: 1000, tokens_out: 500, tokens_cache_read: 200000, tokens_cache_write: 30000, tokens_total: 231500, usd: 1.25 });
+  run('reviewer-01', { seat: 'reviewer', task: 'T1', tokens_total: 68485, usd: null });         // a CLI that reports a total and no cost
+  run('implementer-02', { seat: 'implementer', task: 'T2', tokens_in: 10, tokens_out: 20, usd: 0.75 });   // no total given: the parts are summed
+  run('shaper-01', { seat: 'shaper', tokens_in: null, tokens_out: null, usd: null });
+  const rows = fl.costByTask(root, 'b');
+  assert.equal(rows.find(r => r.task === 'T1').tokens, 299985);
+  assert.equal(rows.find(r => r.task === 'T1').usd, 1.25);
+  assert.equal(rows.find(r => r.task === 'T2').tokens, 30);
+  const t = fl.costTotals(rows);
+  assert.deepEqual({ tokens: t.tokens, usd: t.usd, unreported: t.unreported, passed: t.passed, per: t.usd_per_passed }, { tokens: 300015, usd: 2, unreported: 1, passed: 1, per: 2 });
+  const table = fl.costTable(rows).split('\n');
+  assert.match(table[0], /Total\s+Tokens\s+Cost$/);
+  assert.ok(table.some(l => /^T1\s.*\s300k\s+\$1\.25$/.test(l)), table.join('|'));
+  assert.match(table.at(-1), /; 300k tokens; \$2\.00 at list price \(\$2\.00 per passed task, everything included\)\. 1 model run\(s\) reported no usage/);
+  assert.equal(fl.tokensText(1234567), '1.2M');
+  assert.equal(fl.tokensText(999), '999');
+  const packet = fl.acceptancePacket(root, 'b');
+  assert.equal(packet.cost.usd, 2);
+  assert.equal(packet.cost.tokens, 300015);
+  assert.match(packet.md, /300k tokens\. \$2\.00 at list price/);
 });

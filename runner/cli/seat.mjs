@@ -146,8 +146,14 @@ export async function runSeat(slug, seat, opts = {}) {
       const [cmd, pre] = adapterCommand(adapter);
       const startedAt = new Date().toISOString().replace(/\.\d+Z$/, 'Z'), start = Date.now();
       const args = [...pre, '--seat', seatDir, '--prompt', join(runDir, 'prompt.md'), '--out', join(runDir, output), '--cwd', cwd, '--mode', mode, '--model', model, ...(effort ? ['--effort', effort] : [])];
+      rmSync(join(runDir, 'usage.json'), { force: true });
       const rc = await launch(cmd, args, join(runDir, 'adapter.log'));
-      st.costAdd(runDir, { seat: name, ...(opts.task ? { task: opts.task } : {}), adapter, model, started_at: startedAt, duration_s: Math.round((Date.now() - start) / 1000), attempt: n, exit_code: rc, tokens_in: null, tokens_out: null, usd: null });
+      // What the model CLI said the run used (adapters write usage.json when their CLI reports it).
+      let used = {};
+      try { const u = st.readJson(join(runDir, 'usage.json')); if (u && typeof u === 'object' && !Array.isArray(u)) used = u; } catch { /* the CLI reported nothing */ }
+      const num = v => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : null), int = v => (num(v) === null ? null : Math.round(v));
+      st.costAdd(runDir, { seat: name, ...(opts.task ? { task: opts.task } : {}), adapter, model, started_at: startedAt, duration_s: Math.round((Date.now() - start) / 1000), attempt: n, exit_code: rc,
+        tokens_in: int(used.tokens_in), tokens_out: int(used.tokens_out), tokens_cache_read: int(used.tokens_cache_read), tokens_cache_write: int(used.tokens_cache_write), tokens_total: int(used.tokens_total), usd: num(used.usd) });
 
       // 4. single-writer guard (P1): any added, removed or changed state file fails the run
       const d = check(root, snap, excludes());

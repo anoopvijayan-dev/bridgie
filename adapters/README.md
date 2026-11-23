@@ -20,6 +20,7 @@ Rules:
   adapter as a reviewer.
 - Exit 0 only when `--out` exists. Any other exit code with a reason on stderr.
 - Exit 6 when the CLI itself failed (signed out, over its usage limit, crashed) and left no JSON; put the CLI's last words on stderr. Exit 4 means no reply at all, exit 5 a reply with no valid JSON block.
+- When the CLI reports what the run used, write it beside `--out` as `usage.json` with `writeUsage` from `adapters/lib/common.mjs`: `tokens_in`, `tokens_out`, `tokens_cache_read`, `tokens_cache_write`, `tokens_total`, `usd`, each optional. Write only what the CLI itself said; never estimate. The runner copies it onto the run's cost entry.
 - Keep the traps you learn in `gotchas.md` next to the adapter.
 
 Adapters: `fake` (tests), `claude-code` (anthropic), `codex` (openai), `antigravity` (google).

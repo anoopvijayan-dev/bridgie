@@ -48,6 +48,8 @@ if (existsSync(vars)) { card = JSON.parse(readFileSync(vars, 'utf8')).id || ''; 
 let src = process.env.BRIDGIE_FAKE_OUTPUT || '';
 if (!src) { src = join(dir, `${name}.${n}.json`); if (!existsSync(src)) src = join(dir, `${name}.json`); }
 if (!existsSync(src)) { process.stderr.write(`fake: no fixture for seat ${name} at ${src}\n`); process.exit(3); }
+// BRIDGIE_FAKE_USAGE: a usage.json to leave beside the output, as a real adapter does (tests only)
+if (process.env.BRIDGIE_FAKE_USAGE) writeFileSync(join(dirname(o.out), 'usage.json'), process.env.BRIDGIE_FAKE_USAGE + '\n');
 if (process.env.BRIDGIE_FAKE_SCRIPT) spawnSync('bash', [process.env.BRIDGIE_FAKE_SCRIPT, name, String(n)], { cwd: o.cwd, stdio: 'inherit' });
 if (process.env.BRIDGIE_FAKE_STDOUT === '1') {
   const reply = join(dirname(o.out), 'reply.txt');

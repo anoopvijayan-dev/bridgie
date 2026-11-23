@@ -1,5 +1,6 @@
 // Codex CLI adapter (openai). Prompt on stdin; last message written with -o; JSON extracted to --out.
 import { dirname, join } from 'node:path';
+import { readFileSync } from 'node:fs';
 import * as A from '../lib/common.mjs';
 
 const o = A.parse(process.argv.slice(2));
@@ -16,4 +17,11 @@ if (o.model !== 'default') args.push('-m', o.model);
 if (o.effort) args.push('-c', `model_reasoning_effort="${o.effort}"`);
 const log = join(dirname(o.out), 'codex.log');
 const rc = A.run(bin, args, { stdin: o.prompt, stdout: log, stderr: log + '.err' });
+// Codex ends its log with "tokens used" and a total (no split, no cost): record what it said.
+for (const f of [log + '.err', log]) {
+  let tail = '';
+  try { tail = readFileSync(f, 'utf8').slice(-400); } catch { continue; }
+  const m = tail.match(/tokens used\s*:?\s*([\d,]+)\s*$/i);
+  if (m) { A.writeUsage(o, { tokens_total: Number(m[1].replace(/,/g, '')) }); break; }
+}
 A.finish(o, reply, rc);

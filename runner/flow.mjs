@@ -552,11 +552,18 @@ export function planWarnings(root, slug) {
 // costByTask: where a bet's time went. One row per task (and one for the bet's own seats: shaping,
 // planning, packaging): attempts, seat runs, and seconds split into build (implementer, hardener),
 // review, and checks (the command tiers). Tokens and money are summed when adapters report them.
+// entryTokens: every token a run used (input, output, cache reads and writes), or null when its CLI
+// reported none.
+export function entryTokens(e) {
+  if (typeof e.tokens_total === 'number') return e.tokens_total;
+  const parts = [e.tokens_in, e.tokens_out, e.tokens_cache_read, e.tokens_cache_write].filter(v => typeof v === 'number');
+  return parts.length ? parts.reduce((a, b) => a + b, 0) : null;
+}
 const COST_KIND = { implementer: 'build', hardener: 'build', reviewer: 'review', tiers: 'checks' };
 export function costByTask(root, slug) {
   const tasks = existsSync(st.tasksPath(root, slug)) ? loadTasks(root, slug).tasks : [];
   const rows = new Map();
-  const row = id => { if (!rows.has(id)) rows.set(id, { task: id, runs: 0, build: 0, review: 0, checks: 0, other: 0, seconds: 0, usd: null }); return rows.get(id); };
+  const row = id => { if (!rows.has(id)) rows.set(id, { task: id, runs: 0, build: 0, review: 0, checks: 0, other: 0, seconds: 0, tokens: null, usd: null, unreported: 0 }); return rows.get(id); };
   const taskOf = dir => {
     for (const f of ['claim.json', 'evidence.json']) {
       const p = join(dir, f);
@@ -575,6 +582,9 @@ export function costByTask(root, slug) {
       const s = e.duration_s || 0;
       r.runs++; r.seconds += s; r[COST_KIND[e.seat] || 'other'] += s;
       if (typeof e.usd === 'number') r.usd = (r.usd || 0) + e.usd;
+      const tok = entryTokens(e);
+      if (tok !== null) r.tokens = (r.tokens || 0) + tok;
+      else if (e.seat !== 'tiers' && typeof e.usd !== 'number') r.unreported++;       // a model run whose CLI said nothing about usage
     }
   }
   const out = [];
@@ -583,13 +593,32 @@ export function costByTask(root, slug) {
   return out;
 }
 const dur = s => s >= 3600 ? `${Math.floor(s / 3600)}h${String(Math.round((s % 3600) / 60)).padStart(2, '0')}m` : s >= 60 ? `${Math.round(s / 60)}m` : `${s}s`;
+export const tokensText = n => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : String(n));
+// costTotals: the bet's totals, and cost per accepted task — everything spent (failed attempts,
+// planning and review included) divided by the tasks that passed.
+export function costTotals(rows) {
+  const sum = k => rows.reduce((n, r) => n + (r[k] || 0), 0);
+  const usd = rows.some(r => r.usd !== null) ? sum('usd') : null, tokens = rows.some(r => r.tokens !== null) ? sum('tokens') : null;
+  const passed = rows.filter(r => r.status === 'passed').length;
+  return { runs: sum('runs'), seconds: sum('seconds'), tokens, usd, unreported: sum('unreported'), passed, usd_per_passed: usd !== null && passed ? usd / passed : null };
+}
 export function costTable(rows) {
-  const head = ['Task', 'Size', 'Status', 'Attempts', 'Runs', 'Build', 'Review', 'Checks', 'Other', 'Total'];
-  const body = [...rows].sort((a, b) => b.seconds - a.seconds).map(r => [r.task, r.size || '-', r.status || '-', r.attempts ?? '-', r.runs, dur(r.build), dur(r.review), dur(r.checks), dur(r.other), dur(r.seconds)].map(String));
-  const total = rows.reduce((n, r) => n + r.seconds, 0), usd = rows.some(r => r.usd !== null) ? rows.reduce((n, r) => n + (r.usd || 0), 0) : null;
+  const t = costTotals(rows);
+  const money = t.usd !== null, toks = t.tokens !== null;
+  const head = ['Task', 'Size', 'Status', 'Attempts', 'Runs', 'Build', 'Review', 'Checks', 'Other', 'Total', ...(toks ? ['Tokens'] : []), ...(money ? ['Cost'] : [])];
+  const body = [...rows].sort((a, b) => b.seconds - a.seconds).map(r => [r.task, r.size || '-', r.status || '-', r.attempts ?? '-', r.runs, dur(r.build), dur(r.review), dur(r.checks), dur(r.other), dur(r.seconds),
+    ...(toks ? [r.tokens === null ? '-' : tokensText(r.tokens)] : []), ...(money ? [r.usd === null ? '-' : `$${r.usd.toFixed(2)}`] : [])].map(String));
   const w = head.map((h, i) => Math.max(h.length, ...body.map(b => b[i].length)));
   const line = cells => cells.map((c, i) => c.padEnd(w[i])).join('  ').trimEnd();
-  return [line(head), ...body.map(line), '', `${rows.reduce((n, r) => n + r.runs, 0)} runs, ${dur(total)} of agent and check time${usd === null ? '; adapters did not report token cost' : `; $${usd.toFixed(2)} reported`}`].join('\n');
+  let foot = `${t.runs} runs, ${dur(t.seconds)} of agent and check time`;
+  if (!toks && !money) foot += '; the model CLIs did not report tokens or cost';
+  else {
+    if (toks) foot += `; ${tokensText(t.tokens)} tokens`;
+    if (money) foot += `; $${t.usd.toFixed(2)} at list price${t.usd_per_passed !== null ? ` ($${t.usd_per_passed.toFixed(2)} per passed task, everything included)` : ''}`;
+    if (t.unreported) foot += `. ${t.unreported} model run(s) reported no usage, so the real figures are higher`;
+    if (money) foot += '. Cost is what the CLI computed from list prices: on a subscription it is not a bill';
+  }
+  return [line(head), ...body.map(line), '', foot].join('\n');
 }
 
 // ---------- governance lock ----------
@@ -648,21 +677,16 @@ export function acceptancePacket(root, slug, diffStat = '') {
       ...ev.criteria.map(c => `| ${c.id} | ${c.tier} | ${String(c.check).replace(/\|/g, '/')} | ${c.result} |`), '');
     if (ev.findings.length) details.push(`Findings for ${t.id}:`, ...ev.findings.map(f => `- ${f.severity}: ${f.claim}${f.file ? ` (${f.file}:${f.line ?? '?'})` : ''}`), '');
   }
-  let entries = 0, seconds = 0, retries = 0;
-  const d = st.runsDir(root, slug);
-  for (const run of existsSync(d) ? readdirSync(d) : []) {
-    const c = join(d, run, 'cost.json');
-    if (!existsSync(c)) continue;
-    for (const e of st.readJson(c).entries) { entries++; seconds += e.duration_s || 0; }
-  }
+  let retries = 0;
   for (const t of doc.tasks) retries += Math.max(0, t.attempts - 1);
-  const cost = { seat_runs: entries, seconds, attempts_total: doc.tasks.reduce((n, t) => n + t.attempts, 0), retries, usd: null };
+  const tot = costTotals(costByTask(root, slug));
+  const cost = { seat_runs: tot.runs, seconds: tot.seconds, attempts_total: doc.tasks.reduce((n, t) => n + t.attempts, 0), retries, tokens: tot.tokens, usd: tot.usd, runs_without_usage: tot.unreported };
   const lim = limitationsText(root, slug);
   if (lim) details.push('## Accepted limitations', '', 'Findings the owner accepted instead of fixing. They are part of what is being accepted.', '', lim, '');
   const debt = reviewDebt(root, slug);
   if (crossFamily(root, slug) && debt.same.length) details.push('## Review debt', '', `Policy asks for a reviewer from another model family. These tasks passed with a reviewer of the producer's own family and have not been re-reviewed: ${debt.same.join(', ')} (bridgie rereview ${slug}).`, '');
   lines.push('', ...details, '## Change', '', '```', diffStat.trim() || '(no diff stat)', '```', '',
-    '## Cost', '', `${cost.seat_runs} seat runs, ${cost.seconds}s, ${cost.attempts_total} attempts (${cost.retries} retries). Token cost not reported by all adapters.`, '');
+    '## Cost', '', `${cost.seat_runs} runs, ${cost.seconds}s, ${cost.attempts_total} attempts (${cost.retries} retries).${cost.tokens !== null ? ` ${tokensText(cost.tokens)} tokens.` : ''}${cost.usd !== null ? ` $${cost.usd.toFixed(2)} at list price (what the model CLIs computed; on a subscription it is not a bill).` : ''}${cost.tokens === null && cost.usd === null ? ' The model CLIs did not report tokens or cost.' : cost.runs_without_usage ? ` ${cost.runs_without_usage} model run(s) reported no usage, so the real figures are higher.` : ''}`, '');
   return { md: lines.join('\n'), cost };
 }
 

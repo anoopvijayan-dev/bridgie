@@ -51,6 +51,12 @@ writeFileSync(log, lines.join('\n') + '\n');
 if (name === 'claude' || name === 'codex') writeFileSync(log + '.stdin', readFileSync(0));
 const json = s => '```json\n{"seat":"grill","summary_md":"from ' + s + '"}\n```\n';
 if (process.env.STUB_FAIL) { process.stdout.write(process.env.STUB_FAIL + '\n'); process.exit(1); }
+if (name === 'codex' && process.env.STUB_TOKENS) process.stderr.write(`some log\ntokens used\n${process.env.STUB_TOKENS}\n`);
+if (name === 'claude' && process.env.STUB_RESULT === '1') {   // the real CLI's --output-format json: one result object
+  process.stdout.write(JSON.stringify({ type: 'result', subtype: 'success', is_error: false, result: 'Done.\n' + json('claude'), total_cost_usd: 0.4215,
+    usage: { input_tokens: 12, output_tokens: 340, cache_creation_input_tokens: 2000, cache_read_input_tokens: 50000 } }) + '\n');
+  process.exit(0);
+}
 if (process.env.STUB_NOJSON === '1') process.stdout.write('no json here\n');
 else if (name === 'codex') writeFileSync(args[args.indexOf('-o') + 1], json('codex'));
 else process.stdout.write((name === 'claude' ? 'Done.\n' : name === 'copilot' ? 'ok\n' : '') + json(name));
@@ -167,4 +173,34 @@ run_adapter() { node "$BRIDGIE_HOME/adapters/$1/run.mjs" --seat "$BRIDGIE_HOME/s
   grep -qx -- '--search' "$STUB_LOG"
   # codex-cli 0.169 accepts --search only before the exec subcommand
   [ "$(grep -nx -- '--search' "$STUB_LOG" | cut -d: -f1)" -lt "$(grep -nx 'exec' "$STUB_LOG" | cut -d: -f1)" ]
+}
+
+@test "claude-code: asks for the JSON result, keeps the reply as before and records tokens and cost" {
+  stub_env
+  STUB_RESULT=1 run run_adapter claude-code --mode readonly --model default
+  [ "$status" -eq 0 ]
+  grep -qx -- '--output-format' "$STUB_LOG"; grep -qx 'json' "$STUB_LOG"
+  grep -q '"summary_md": "from claude"' "$W/run/seat-output.json"
+  grep -q '^Done\.$' "$W/run/reply.txt"
+  [ ! -e "$W/run/claude.json" ]
+  [ "$(node -e 'const u=require(process.argv[1]); console.log([u.tokens_in,u.tokens_out,u.tokens_cache_read,u.tokens_cache_write,u.tokens_total,u.usd].join(" "))' "$W/run/usage.json")" = "12 340 50000 2000 52352 0.4215" ]
+}
+
+@test "claude-code: a CLI that prints plain text (older, or failing before the run) still works and records no usage" {
+  stub_env
+  run run_adapter claude-code --mode readonly --model default
+  [ "$status" -eq 0 ]
+  grep -q '"summary_md": "from claude"' "$W/run/seat-output.json"
+  [ ! -e "$W/run/usage.json" ]
+}
+
+@test "codex: the token total at the end of its log is recorded; no cost is invented" {
+  stub_env
+  STUB_TOKENS="68,485" run run_adapter codex --mode readonly --model default
+  [ "$status" -eq 0 ]
+  [ "$(node -e 'const u=require(process.argv[1]); console.log(u.tokens_total, u.usd, u.tokens_in)' "$W/run/usage.json")" = "68485 null null" ]
+  rm -f "$W/run/usage.json" "$W/run/seat-output.json"
+  run run_adapter codex --mode readonly --model default
+  [ "$status" -eq 0 ]
+  [ ! -e "$W/run/usage.json" ]
 }

@@ -245,3 +245,22 @@ delivered_package() {       # a risk-none bet built, verified and packaged, wait
   run bash -c "cd '$P' && bridgie status --cost nope"
   [ "$status" -ne 0 ]
 }
+
+@test "what the model CLIs report (tokens, cost) reaches the cost view and the acceptance package" {
+  export BRIDGIE_FAKE_USAGE='{"tokens_in":100,"tokens_out":900,"tokens_cache_read":9000,"tokens_total":10000,"usd":0.25}'
+  planned_bet "$P" b
+  bash -c "cd '$P' && bridgie run b" >/dev/null 2>&1
+  [ -f "$P/.bridgie/acceptance/b.md" ]
+  run bash -c "cd '$P' && bridgie status --cost b"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Tokens"*"Cost"* ]]
+  [[ "$output" == *"per passed task, everything included"* ]]
+  [[ "$output" == *"on a subscription it is not a bill"* ]]
+  [[ "$output" != *"reported no usage"* ]]
+  node -e '
+    const e = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).entries[0];
+    process.exit(e.tokens_total === 10000 && e.usd === 0.25 && e.tokens_cache_read === 9000 && e.task === "T1" ? 0 : 1)' "$P/.bridgie/runs/b/implementer-01/cost.json"
+  grep -q 'tokens\. \$[0-9.]* at list price' "$P/.bridgie/runs/b/packager-01/acceptance-packet.md"
+  # the stored acceptance record carries the totals
+  node "$BRIDGIE_HOME/runner/state.mjs" fm-get "$P/.bridgie/acceptance/b.md" cost | node -e 'const c=JSON.parse(require("fs").readFileSync(0,"utf8")); process.exit(c.usd > 0 && c.tokens > 0 ? 0 : 1)'
+}

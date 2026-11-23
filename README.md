@@ -100,7 +100,7 @@ What keeps a bet of dozens of tasks moving, and honest, over days:
 - **Review debt.** If the reviewer had to fall back to the builder's own model family, the task still passes but is recorded as review debt (`bridgie status`, and in the acceptance package). `bridgie rereview <slug>` has a second family read those tasks later and raises a decision for each serious finding.
 - **Building tasks side by side.** `bridgie run <slug> --parallel 3` (or `build: { parallel: 3 }` in policy) builds up to that many independent tasks at the same time, each in its own worktree and branch. Independent means every task it depends on has passed. Verification and merging stay one task at a time: before a task is verified it is brought up to date with what was merged since it was built, so its tests run on the code as it will be. If two tasks changed the same lines, the second goes back to its builder with the conflict named. The planner can give each task `touches` (the files it will change); tasks that declare the same files are not built together. If any seat edits Bridgie state during a batch, the whole batch is discarded, because the runner cannot tell which seat did it. On a real 41-task bet, three at a time would have cut about 30 hours of agent time to about 19; more than three or four added little, because the dependency chain and one-at-a-time verification set the floor. Running several model CLIs at once also uses their quota faster.
 - **Reading before verifying.** `bridgie run <slug> --pause-before-verify` stops after each build so you read the change first; run it again to verify that task and build the next.
-- **Where the time went.** `bridgie status --cost [slug]` lists attempts, runs and time per task, split into build, review and checks.
+- **Where the time and money went.** `bridgie status --cost [slug]` lists attempts, runs and time per task, split into build, review and checks, with tokens and cost where the model CLI reports them, and the cost per passed task (everything spent, failed attempts included, divided by the tasks that passed). Claude Code reports tokens and a list-price cost; Codex reports a token total; Antigravity and Copilot report nothing yet, and the view says how many runs are missing. The cost is what the CLI computed from list prices: on a subscription it is not a bill. The acceptance package carries the totals.
 - **Run logs.** Test and adapter logs, diffs and raw replies stay on disk but out of git (they were 97% of a real bet's committed run folder). Evidence, claims and cost records are committed. Set `commit_transcripts: true` to commit everything.
 
 ### Who decided, and under which rules
@@ -158,8 +158,8 @@ v0.7.0 (long runs and governance), from running a 41-task money-risk bet end to 
 interrupted runs, usage-limit waits, task sizes, test results reused per commit, accepted limitations,
 review debt and `rereview`, decision provenance, decisions reserved for a person, the governance lock, the
 owner override, parallel builds of independent tasks, `run --pause-before-verify`, plan-order warnings,
-`status --cost`, Python projects, run logs out of git. Not yet: verifying tasks in parallel (verification and
-merging are one at a time), and token cost (no adapter reports it yet, so the cost view is time and attempts). See `CHANGELOG.md`.
+`status --cost`, Python projects, run logs out of git. tokens and cost per task. Not yet: verifying tasks in parallel (verification and
+merging are one at a time). See `CHANGELOG.md`.
 
 v0.4.0 (M3 decide loop): scout, frame, research, lenses, panel, numbers, evidence; swarm seats and web
 capability in the runner; confidence decisions. Borrowed with thanks from
@@ -170,7 +170,7 @@ server, reviewer works from runner-run test results). v0.2.0 (M1): the whole loo
 fake adapter and is covered by tests for spec requirements R1–R14 and properties P1–P3. Real adapters are verified against stub CLIs with the
 flags of Claude Code 2.1, Codex 0.167 and Copilot CLI 1.0; Antigravity follows the v1 notes and its
 write mode is unverified (see `adapters/antigravity/gotchas.md`). Next: seeded-bug evals for the reviewer,
-token and money cost per task, sandboxed build seats, marketing and sales lanes.
+sandboxed build seats, mutation testing, marketing and sales lanes (see `docs/agentic-landscape-2026-11.md`).
 
 ## Tests
 
