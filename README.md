@@ -84,13 +84,33 @@ What each step guarantees:
 | Step | What happens | Guards |
 |---|---|---|
 | `shape` | branch `bridgie/<slug>`, `requirements.md` (EARS) and `design.md` | signed bet, clean tree |
-| `plan` | `tasks.json`, every requirement mapped | approved design, no cycles; a requirement tagged `risk: money` raises the bet's risk; re-planning supersedes any acceptance package |
-| `build` | one task per run in `.bridgie/worktrees/<slug>/<task>` | human ack for risky bets; `.bridgie/` edits discarded; only declared inputs reach the model |
-| `verify` | the runner runs every required test tier, then a read-only reviewer reads the results in a detached worktree | changed risk paths raise the bet's risk (logged, never lowered) and need a fresh ack; a required tier with no command is not proven; every evidence row counts and the reviewer's verdict can only tighten the result; different vendor from the producer; 3 attempts then blocked |
-| `accept` | one-page acceptance package, bound to the branch commit and a digest of spec, tasks and evidence | every task passed, re-checked at the moment of approval; a stale package is refused and rebuilt by `bridgie accept`; approvers per the current risk (2 for money), each a different person |
+| `plan` | `tasks.json`, every requirement mapped, each task sized `small`, `medium` or `large` | approved design, no cycles; a requirement tagged `risk: money` raises the bet's risk; a warning when a task's requirement names one that a task it does not depend on builds; re-planning supersedes any acceptance package |
+| `build` | one task per run in `.bridgie/worktrees/<slug>/<task>`; a hardener pass when the task's size or the bet's risk asks for one | human ack for risky bets; `.bridgie/` edits discarded; only declared inputs reach the model; a task a killed run left half-built is picked up again without using an attempt |
+| `verify` | the runner runs every required test tier, then a read-only reviewer reads the results in a detached worktree | changed risk paths raise the bet's risk (logged, never lowered) and need a fresh ack; a required tier with no command is not proven; every evidence row counts and the reviewer's verdict can only tighten the result; different vendor from the producer; 3 attempts then blocked; a retry for the same commit reuses the test results instead of running them again |
+| `accept` | one-page acceptance package, bound to the branch commit and a digest of spec, tasks and evidence | every task passed, re-checked at the moment of approval; a stale package is refused and rebuilt by `bridgie accept`; approvers per the current risk (2 for money), each a different person; inside an agent the approval must say it is relayed from a person, and the record says so |
+
+### Long runs
+
+What keeps a bet of dozens of tasks moving, and honest, over days:
+
+- **Interrupted runs.** A run killed mid-task (closed laptop, reclaimed cloud container) leaves a lock and a task marked in progress. The next `bridgie build` or `bridgie run` sees that the process is gone, removes the lock and builds the task again without counting the lost attempt. `bridgie recover <slug>` does the same on its own.
+- **Usage limits.** When a model CLI says it is out of quota, Bridgie notes when it resets, uses the next CLI that fits, and — when the reviewer has no other model family to go to — stops with exit 3 and "waiting … until <time>", the task still in verify and its attempt unused. `bridgie status` shows which CLIs are at a limit.
+- **Task size.** The planner gives every task a size. A `small` task (one module, no shared state, no money arithmetic) skips the hardener and the whole-system tiers; a `large` one is always hardened. Risk sets the floor: a task that builds a requirement tagged `data` or higher, or changes a risk path, is never treated as small. Tune it under `sizes:` in policy.
+- **Findings you choose to live with.** When a task is blocked on review findings and every test tier passed, the unblock decision offers `accept as limitations` with a reason. The task merges without another review round, and the findings are listed in the acceptance package as accepted limitations and given to later reviewers as known.
+- **Review debt.** If the reviewer had to fall back to the builder's own model family, the task still passes but is recorded as review debt (`bridgie status`, and in the acceptance package). `bridgie rereview <slug>` has a second family read those tasks later and raises a decision for each serious finding.
+- **Reading before verifying.** `bridgie run <slug> --pause-before-verify` stops after each build so you read the change first; run it again to verify that task and build the next.
+- **Where the time went.** `bridgie status --cost [slug]` lists attempts, runs and time per task, split into build, review and checks.
+- **Run logs.** Test and adapter logs, diffs and raw replies stay on disk but out of git (they were 97% of a real bet's committed run folder). Evidence, claims and cost records are committed. Set `commit_transcripts: true` to commit everything.
+
+### Who decided, and under which rules
+
+- **Provenance.** Every decision records how it arrived: the page or the command line, the agent the command ran inside (Claude Code, Codex, …) if any, the OS user and the machine. The bet's decision log names the agent.
+- **Decisions for a person.** `humans_only` in policy (default: acceptance and governance decisions) names decisions an agent's command line may not answer on its own. With `relay: true` (the default) the agent must pass `--relayed`, saying it passes on a person's answer, and the record says so; with `relay: false` it is refused and the person answers in their own terminal or on `bridgie open`. This stops an agent approving its own work by accident and keeps the record truthful. It is not proof of who typed.
+- **Governance lock.** Signing a bet stores the rules it is held to: required tiers, approvers, cross-family review, who may decide, task-size rules, the verify commands. If `policy.yaml` later asks for less, `build`, `verify` and `accept` stop with a decision only the bet's owner can answer: accept the change for this bet, or keep the signed rules and put the file back. Stricter rules never stop anything.
+- **Owner override.** A solo founder has no second approver. `bridgie accept <slug> --override "<reason>"` lets the bet's owner deliver with fewer approvals than policy asks for; the acceptance record says who, why and how many approved. `acceptance: { owner_override: false }` turns it off.
 
 Verification commands live in `.bridgie/policy.yaml` (`verify.commands.<tier>`; see the comment `bridgie init`
-writes). Without them Bridgie uses the lane's commands for the stacks it detects; a tier the risk requires
+writes). Without them Bridgie uses the lane's commands for the stacks it detects (.NET, Node, Python); a tier the risk requires
 but nobody configured is never skipped silently.
 
 Which model CLI runs each seat is set in `~/.bridgie/policy.yaml` (`routing.tiers`, `routing.seats`). When the
@@ -133,6 +153,13 @@ In an agent harness, say `/bridgie` (the installed skill drives the CLI and leav
 
 ## Status
 
+v0.7.0 (long runs and governance), from running a 41-task money-risk bet end to end: recovery for
+interrupted runs, usage-limit waits, task sizes, test results reused per commit, accepted limitations,
+review debt and `rereview`, decision provenance, decisions reserved for a person, the governance lock, the
+owner override, `run --pause-before-verify`, plan-order warnings, `status --cost`, Python projects, run logs
+out of git. Not yet: building independent tasks in parallel (one seat runs at a time per project), and token
+cost (no adapter reports it yet, so the cost view is time and attempts). See `CHANGELOG.md`.
+
 v0.4.0 (M3 decide loop): scout, frame, research, lenses, panel, numbers, evidence; swarm seats and web
 capability in the runner; confidence decisions. Borrowed with thanks from
 [founder-skill](https://github.com/Jakeschincariol/founder-skill) (MIT): the three-lens board, the
@@ -141,8 +168,8 @@ reconciliation, effective risk and mandatory tiers, state guard and seat lock, a
 server, reviewer works from runner-run test results). v0.2.0 (M1): the whole loop runs end to end on the
 fake adapter and is covered by tests for spec requirements R1–R14 and properties P1–P3. Real adapters are verified against stub CLIs with the
 flags of Claude Code 2.1, Codex 0.167 and Copilot CLI 1.0; Antigravity follows the v1 notes and its
-write mode is unverified (see `adapters/antigravity/gotchas.md`). Next: a first real run of the decide loop on live
-models, recovery for interrupted runs, seeded-bug evals for the reviewer, marketing and sales lanes.
+write mode is unverified (see `adapters/antigravity/gotchas.md`). Next: parallel builds of independent
+tasks, seeded-bug evals for the reviewer, marketing and sales lanes.
 
 ## Tests
 
