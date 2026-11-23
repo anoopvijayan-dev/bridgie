@@ -411,7 +411,10 @@ function detectStacks(wt) {
 }
 
 // Tiers the runner runs as commands; "adversarial" is the reviewer seat and "human" is acceptance.
-export const COMMAND_TIERS = ['mechanical', 'specified', 'contracts', 'invariants', 'behavioural', 'dual_run'];
+export const COMMAND_TIERS = ['mechanical', 'specified', 'contracts', 'invariants', 'behavioural', 'dual_run', 'mutation'];
+// The mutation tier needs no project setup: with no command of its own it runs Bridgie's built-in
+// check (runner/mutate.mjs) with the specified tier's test commands.
+export const BUILTIN_MUTATION = `"${process.execPath}" "${join(st.HOME, 'bin', 'bridgie.mjs')}" mutate`;
 
 // mechanicalPlan: commands for every command tier the policy requires at the bet's risk.
 // A required tier with no command is returned as { tier, cmd: null, missing: true } so verify
@@ -437,6 +440,7 @@ export function mechanicalPlan(root, slug, wt, skip = []) {
   }
   return commandTiers.flatMap(t => {
     const cmds = byTier(t);
+    if (!cmds.length && t === 'mutation') return [{ tier: t, cmd: BUILTIN_MUTATION, builtin: true }];
     return cmds.length ? cmds.map(cmd => ({ tier: t, cmd })) : [{ tier: t, cmd: null, missing: true }];
   });
 }

@@ -16,6 +16,7 @@ Build    shape | plan [--replan] | build [--parallel N] | run [--pause-before-ve
          --parallel N: build N independent tasks at once, each in its own worktree; --pause-before-verify: you read each change first
          recover <slug>           after a killed run: clear its lock, make its task buildable again
 Verify   verify
+         mutate --base <commit> --test "<command>"   would the tests notice a small change to the new code? (the mutation tier, by hand)
          rereview <slug> [--task T] [--all]   a second-family review of tasks that passed with a same-family reviewer
          eval reviewer [--adapter A] [--cases a,b] [--parallel N]   test a reviewer on changes with planted bugs: how many it catches
 Accept   accept <slug> [--approve | --conditions "..." | --reject "..."] [--relayed]

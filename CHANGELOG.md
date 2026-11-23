@@ -27,6 +27,14 @@ Changes that came out of running a 41-task, money-risk bet from start to finish.
 - Each write run's cost entry records `sandbox` (`os`, `builtin`, `none`, `off`); when the CLI itself says it ran without a sandbox, that is what is recorded. `bridgie doctor` reports the build adapter's sandbox; the acceptance package has an Isolation line; a looser sandbox or a longer host list after signing is governance drift.
 - Checked for real on Linux with Claude Code: a write outside the worktree failed (read-only file system) and a host off the list was refused, while a write inside and a listed host worked.
 
+### Mutation tier
+- New command tier `mutation`, last in the order and required for money and data bets. With no command of its own it runs Bridgie's built-in check (`bridgie mutate`), so nothing needs configuring.
+- The check makes single small edits to lines the task added (comparison, equality and logic operators, booleans, `+ - *`, whole numbers, a removed `not`/`!`), in code files only, never in strings, comments or tests; runs the specified tier's commands (or `mutation.test`) for each; and restores the file. A journal in the git dir lets the next run, and `verify` before it commits, put back a mutant a killed run left behind.
+- Passes at `mutation.min_score` (default 0.6) of `mutation.max_mutants` (default 20) noticed. Survivors are listed in the tier's log, which the reviewer reads; the reviewer and implementer seats are told what they mean.
+- Tier commands now get `BRIDGIE_TASK` and `BRIDGIE_BASE_SHA` (the commit the task branched from).
+- `bridgie mutate --base <commit> --test "<command>" [--max N] [--min S] [--timeout S]` runs it by hand in any git repository.
+- Upgrading: money and data bets gain this tier. A task whose tests do not notice 60% of the changes now fails verify until its tests are strengthened, or the bar is lowered in policy.
+
 ### Governance
 - **Provenance.** Answered decisions record `via`: channel (`cli` or `surface`), the agent harness (`$BRIDGIE_HARNESS`, else detected from the environment), OS user and host. Approvals in the acceptance record carry it too.
 - **`humans_only`.** Policy `humans_only: { decisions: [accept, governance], relay: true }`. Inside an agent, the command line refuses these decisions unless `--relayed` is passed (recorded); `relay: false` refuses outright. The page (`bridgie open`) is not affected.

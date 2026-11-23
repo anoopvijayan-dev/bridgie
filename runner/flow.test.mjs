@@ -291,9 +291,9 @@ test('taskProfile: size sets the extras and risk sets the floor', () => {
   assert.equal(fl.taskProfile(root, 'b', 'T1', ['docs/readme.md']).size, 'small');
   // the tiers a small task drops; lint, build and tests are never dropped
   const tiers = skip => fl.mechanicalPlan(root, 'b', root, skip).map(x => x.tier);
-  assert.deepEqual(tiers([]), ['mechanical', 'specified', 'contracts', 'invariants', 'behavioural', 'dual_run']);
-  assert.deepEqual(tiers(['behavioural', 'dual_run']), ['mechanical', 'specified', 'contracts', 'invariants']);
-  assert.deepEqual(tiers(['mechanical', 'specified', 'invariants']), ['mechanical', 'specified', 'contracts', 'behavioural', 'dual_run']);
+  assert.deepEqual(tiers([]), ['mechanical', 'specified', 'contracts', 'invariants', 'behavioural', 'dual_run', 'mutation']);
+  assert.deepEqual(tiers(['behavioural', 'dual_run']), ['mechanical', 'specified', 'contracts', 'invariants', 'mutation']);
+  assert.deepEqual(tiers(['mechanical', 'specified', 'invariants']), ['mechanical', 'specified', 'contracts', 'behavioural', 'dual_run', 'mutation']);
 });
 
 test('taskProfile follows the project policy: the floor and what small drops', () => {

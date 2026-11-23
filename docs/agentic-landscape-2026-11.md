@@ -121,7 +121,7 @@ verification and merging that brings each task up to date first. The placement t
 9. **Export acceptance as in-toto plus Agent Trace, with an optional PR output**, putting evidence where SOC 2 auditors look (finding 5).
 10. **Package the flow as Agent Skills and add OTel spans behind a flag**; skills are stable and widely adopted, the OTel conventions are not yet (findings 6 and 7).
 
-The working order is 1, 2, 4, 5, then 6 to 10.
+The working order is 1, 2, 4, 5, then 6 to 10. Items 1 to 5 are done in 0.7.0: tokens and cost per task, `bridgie eval reviewer`, parallel builds, sandboxed build seats, and the mutation tier.
 
 ## C. Unverified or conflicting
 

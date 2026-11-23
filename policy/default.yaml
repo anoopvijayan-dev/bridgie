@@ -18,6 +18,10 @@ sizes:
 # auto: use it where there is one, and say so where there is not. required: refuse to build
 # without one. off: never. Claude Code needs bubblewrap and socat on Linux; Codex always has its own.
 sandbox: { build: auto, network: [registry.npmjs.org, pypi.org, files.pythonhosted.org, api.nuget.org] }
+# The mutation tier (required for money and data bets): small changes are made to the new code one
+# at a time, and the tests must notice at least min_score of them. `test` replaces the specified
+# tier's commands when those are too slow to run max_mutants times.
+mutation: { max_mutants: 20, min_score: 0.6 }
 # Decisions a person must answer. Inside an agent (Claude Code, Codex, ...) the command line refuses
 # them unless the agent says it is relaying a person's answer (--relayed), and the record says so.
 # relay: false refuses the agent outright: the person answers in their own terminal or on bridgie open.
@@ -32,8 +36,8 @@ lanes:
     cross_family: true
     min_confidence_to_sign: anecdote
     by_risk:
-      money: { tiers: [mechanical, specified, contracts, invariants, adversarial, behavioural, dual_run], approvers: 2, auto_accept: false, min_confidence_to_sign: data, human_ack_before_build: true, require_numbers: true }
-      data: { tiers: [mechanical, specified, contracts, adversarial, behavioural], approvers: 1, auto_accept: false, min_confidence_to_sign: anecdote, human_ack_before_build: true }
+      money: { tiers: [mechanical, specified, contracts, invariants, adversarial, behavioural, dual_run, mutation], approvers: 2, auto_accept: false, min_confidence_to_sign: data, human_ack_before_build: true, require_numbers: true }
+      data: { tiers: [mechanical, specified, contracts, adversarial, behavioural, mutation], approvers: 1, auto_accept: false, min_confidence_to_sign: anecdote, human_ack_before_build: true }
       security: { tiers: [mechanical, specified, adversarial, behavioural], approvers: 1, auto_accept: false, min_confidence_to_sign: anecdote, human_ack_before_build: true }
       infra: { tiers: [mechanical, adversarial], approvers: 1, auto_accept: false, min_confidence_to_sign: anecdote, human_ack_before_build: true }
       ux: { tiers: [mechanical, specified, adversarial], approvers: 1, auto_accept: false, min_confidence_to_sign: opinion, human_ack_before_build: false }

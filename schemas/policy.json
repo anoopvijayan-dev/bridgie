@@ -4,6 +4,21 @@
     "version"
   ],
   "properties": {
+    "mutation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "max_mutants": {
+          "type": "integer"
+        },
+        "min_score": {
+          "type": "number"
+        },
+        "test": {
+          "type": "string"
+        }
+      }
+    },
     "sandbox": {
       "type": "object",
       "additionalProperties": false,

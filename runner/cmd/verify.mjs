@@ -12,6 +12,7 @@ import * as g from '../cli/git.mjs';
 import { HOME, BridgieExit, die, log, waitHuman, parseArgs, projectRoot, stateCommit, git } from '../cli/core.mjs';
 import { loadSeat } from '../context.mjs';
 import { requireGovernance } from './build.mjs';
+import { restorePending } from '../mutate.mjs';
 
 function nextRunDir(root, slug, name) {
   const runs = join(root, '.bridgie', 'runs', slug); mkdirSync(runs, { recursive: true });
@@ -38,7 +39,14 @@ export function runMechanical(root, slug, wt, vdir, skip = [], task = null) {
   const rows = [];
   let n = 0;
   const startedAt = new Date().toISOString().replace(/\.\d+Z$/, 'Z'), start = Date.now();
-  for (const x of fl.mechanicalPlan(root, slug, wt, skip)) {
+  const plan = fl.mechanicalPlan(root, slug, wt, skip);
+  // What every tier command may use: the task, the commit it branched from, and (for the mutation
+  // tier) the tests to run against each small change, the number of changes to try and the bar.
+  const mut = st.loadPolicy(root).mutation || {};
+  const env = { ...process.env, PYTHONDONTWRITEBYTECODE: '1', ...(task ? { BRIDGIE_TASK: task, BRIDGIE_BASE_SHA: g.taskBase(root, slug, task) } : {}),
+    BRIDGIE_MUTATION_TEST: mut.test || plan.filter(p => p.tier === 'specified' && p.cmd).map(p => p.cmd).join(' && '),
+    BRIDGIE_MUTATION_MAX: String(mut.max_mutants ?? 20), BRIDGIE_MUTATION_MIN: String(mut.min_score ?? 0.6) };
+  for (const x of plan) {
     n++;
     const logf = join(vdir, `${x.tier}-${n}.log`);
     let check = x.cmd, result;
@@ -50,7 +58,7 @@ export function runMechanical(root, slug, wt, vdir, skip = [], task = null) {
     } else {
       log(`  ${x.tier}: ${x.cmd}`);
       const fd = openSync(logf, 'w');
-      const r = spawnSync(x.cmd, { cwd: wt, shell: true, stdio: ['ignore', fd, fd] });   // cmd.exe on Windows, sh elsewhere
+      const r = spawnSync(x.cmd, { cwd: wt, shell: true, stdio: ['ignore', fd, fd], env });   // cmd.exe on Windows, sh elsewhere
       closeSync(fd);
       result = r.status === 0 ? 'pass' : 'fail';
     }
@@ -111,6 +119,8 @@ export default async function verify(argv) {
   // The task may have been built on another machine: re-create its worktree from the task branch.
   const wt = g.restoreTaskWorktree(root, slug, task);
   if (!wt) die(`verify: no worktree or branch for ${task} (${g.taskBranch(slug, task)}); if it was built elsewhere, push that branch there and git fetch here`);
+  const left = restorePending(wt);   // a mutation check that was killed mid-run left a mutant in the file
+  if (left) log(`  put back ${left}: an interrupted mutation check had left it changed`);
   g.commitAll(wt, `bridgie: ${task} manual changes before verify`);
   // Other tasks may have been merged since this one branched (tasks built side by side): verify
   // the code as it will be after the merge. A conflict sends the task back to its builder.

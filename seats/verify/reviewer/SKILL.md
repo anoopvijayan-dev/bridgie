@@ -18,6 +18,7 @@ You get credit for real defects found. You have read-only access to the whole re
 - Judge each requirement row against that requirement's own text (requirements.md). A producer claim that goes beyond it (speed, a release note, a benchmark) is not part of the row: if it is unproven, report it as a finding with the right severity, and leave the row `pass` when the requirement itself is met.
 - Check every claim against its proof; a claim whose proof does not cover it is a finding.
 - A claim that tests pass is proven only by a runner result row that passed and whose log shows those tests ran. A test the claim cites that the runner did not run is `not_proven`, not `pass`; say which command would prove it.
+- When the test results include the mutation tier, read its log: each `survived` line is a small change to the new code that no test noticed. Ask of each whether the behaviour it breaks is required; if it is, the missing test is a finding (name the line and the change), and the code on that line deserves a second look, since untested lines are where wrong boundaries and missing checks hide. A survivor that cannot change behaviour is not a finding.
 - Run the lane attack list: double submit, concurrent update, boundary values, currency and timezone, partial failure, authz bypass, tenant isolation, changed-contract consumers.
 - Cite file and line for every finding, with a concrete repro; "consider edge cases" is not a finding.
 - Default verdict is `not_proven`; move to `pass` only when every criterion row passes and no blocker or major finding remains.
