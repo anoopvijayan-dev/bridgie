@@ -146,7 +146,7 @@ teardown() { if [[ -n "${SERVER_PID:-}" ]]; then kill "$SERVER_PID" 2>/dev/null 
 @test "decisions are refused while an agent runs, and the page says why" {
   start_server
   mkdir "$P/.bridgie/.seat-lock"
-  printf '{"seat":"implementer","run_dir":"x","since":"%s","pid":1}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$P/.bridgie/.seat-lock/owner.json"
+  printf '{"seat":"implementer","run_dir":"x","since":"%s","pid":1,"host":"another-machine"}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$P/.bridgie/.seat-lock/owner.json"
   run curl -s -b "$JAR" -X POST "$URL/decide" --data "csrf=$TOKEN&slug=b&id=D1&answer=no"
   [[ "$output" == *"agent run is in progress"* ]]
   ! grep -q '"answer": "no"' "$P/.bridgie/decisions/b.json"

@@ -109,7 +109,7 @@ setup() {
   planned_bet "$P" b
   node "$BRIDGIE_HOME/runner/flow.mjs" start-attempt "$P" b T1 bridgie-task/b/T1 >/dev/null
   mkdir "$P/.bridgie/.seat-lock"
-  printf '{"seat":"implementer","run_dir":"x","since":"%s","pid":%s}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$$" > "$P/.bridgie/.seat-lock/owner.json"
+  printf '{"seat":"implementer","run_dir":"x","since":"%s","pid":1,"host":"another-machine"}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$P/.bridgie/.seat-lock/owner.json"
   run bash -c "cd '$P' && bridgie recover b"
   [ "$status" -ne 0 ]
   [[ "$output" == *"in progress"* ]]

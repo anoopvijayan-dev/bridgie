@@ -79,7 +79,7 @@ J
       review: { adapter: "codex", vendor: "openai", cross_family: true } }, { id: "T2", title: "t", requirements: ["R1"], depends_on: [], status: "passed", attempts: 1, max_attempts: 3, branch: null, evidence: null, escalation: null,
       review: { adapter: "antigravity", vendor: "google", cross_family: true } }] }, null, 2));' "$P/.bridgie/specs/b/tasks.json"
   run node -e '
-    import(process.argv[1] + "/runner/flow.mjs").then(fl => process.stdout.write(fl.acceptancePacket(process.argv[2], "b").md))' "$BRIDGIE_HOME" "$P"
+    import(require("node:url").pathToFileURL(process.argv[1] + "/runner/flow.mjs").href).then(fl => process.stdout.write(fl.acceptancePacket(process.argv[2], "b").md))' "$BRIDGIE_HOME" "$P"
   [[ "$output" == *"## Reviewer calibration"* ]]
   [[ "$output" == *"- codex: caught 8 of 10 planted bugs; 1 false alarm on 4 clean changes, tested 2026-11-23"* ]]
   [[ "$output" == *"- antigravity: never tested with planted bugs"* ]]

@@ -148,7 +148,7 @@ setup() {
 
 @test "a verify retried for the same commit reuses the tier results instead of running them again" {
   # the tier command counts its own runs; the reviewer's output is malformed the first time
-  sed -i.bak "s|    mechanical: \['node -e 0'\]|    mechanical: ['echo run >> \"$P/.git/tier-runs\"']|" "$P/.bridgie/policy.yaml"
+  sed -i.bak "s|    mechanical: \['node -e 0'\]|    mechanical: ['echo run >> \"$(mixed "$P")/.git/tier-runs\"']|" "$P/.bridgie/policy.yaml"
   policy_changed "$P" b
   printf 'not json' > "$P/.git/bad.json"
   run bash -c "cd '$P' && BRIDGIE_FAKE_OUTPUT='$P/.git/bad.json' bridgie verify b"

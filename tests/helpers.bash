@@ -75,6 +75,9 @@ on_windows() { [[ "${OSTYPE:-}" == msys* || "${OSTYPE:-}" == cygwin* ]]; }
 native() {                  # native <path>: the form a Node process sees (C:\... on Windows)
   if command -v cygpath >/dev/null 2>&1; then cygpath -w "$1"; else printf '%s\n' "$1"; fi
 }
+mixed() {                   # mixed <path>: C:/x/y on Windows (every shell there takes it), unchanged elsewhere
+  if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else printf '%s\n' "$1"; fi
+}
 has_path_line() {           # has_path_line <file> <prefix> <path>: a line equal to prefix+path in any spelling
   local alts=("$3")
   command -v cygpath >/dev/null 2>&1 && alts+=("$(cygpath -m "$3")" "$(cygpath -w "$3")")

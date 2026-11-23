@@ -96,7 +96,7 @@ setup() {
   bash -c "cd '$P' && BRIDGIE_FAKE_EXIT=1 bridgie seat-run b decide/grill" >/dev/null 2>&1 || true
   [ ! -d "$P/.bridgie/.seat-lock" ]
   mkdir "$P/.bridgie/.seat-lock"
-  printf '{"seat":"implementer","run_dir":"x","since":"%s","pid":1}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$P/.bridgie/.seat-lock/owner.json"
+  printf '{"seat":"implementer","run_dir":"x","since":"%s","pid":1,"host":"another-machine"}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$P/.bridgie/.seat-lock/owner.json"
   run bash -c "cd '$P' && bridgie seat-run b decide/grill"
   [ "$status" -ne 0 ]
   [[ "$output" == *"another agent run is in progress"* ]]
