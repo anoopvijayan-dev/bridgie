@@ -70,6 +70,7 @@ export function user() {
 // packets, raw replies). On a real bet these were 97% of the committed run folder. Evidence,
 // claims, cost and mechanical results are small and stay committed.
 export const RUN_LOG_IGNORES = ['runs/**/*.log', 'runs/**/*.log.err', 'runs/**/diff.patch', 'runs/**/reply.txt'];
+const LOCAL_ONLY = ['.adapter-state.json'];   // this machine's notes, never state
 
 // ignoreRunLogs: keep those out of git unless the project asks for them (commit_transcripts: true).
 // Adds the lines to .bridgie/.gitignore once; files already tracked stay tracked (bridgie doctor
@@ -79,12 +80,15 @@ export function ignoreRunLogs(root) {
   if (!existsSync(join(root, '.bridgie'))) return false;
   let commit = false;
   try { commit = st.loadPolicy(root).commit_transcripts === true; } catch { /* an invalid policy is reported elsewhere */ }
-  if (commit) return false;
   const cur = existsSync(gi) ? readFileSync(gi, 'utf8') : '';
   const have = cur.split(/\r?\n/);
+  const local = LOCAL_ONLY.filter(l => !have.includes(l));
+  if (local.length) appendFileSync(gi, `${cur && !cur.endsWith('\n') ? '\n' : ''}${local.join('\n')}\n`);
+  if (commit) return false;
   const missing = RUN_LOG_IGNORES.filter(l => !have.includes(l));
   if (!missing.length) return false;
-  appendFileSync(gi, `${cur && !cur.endsWith('\n') ? '\n' : ''}${missing.join('\n')}\n`);
+  const sep = local.length || !cur || cur.endsWith('\n') ? '' : '\n';
+  appendFileSync(gi, `${sep}${missing.join('\n')}\n`);
   return true;
 }
 

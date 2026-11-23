@@ -5,6 +5,10 @@ import { projectRoot } from '../cli/core.mjs';
 export default async function status() {
   const root = projectRoot();
   process.stdout.write(`${st.statusTable(st.status(root))}\n`);
+  // Adapters at a usage limit on this machine: seats routed to them wait or fall back until then.
+  for (const [a, v] of Object.entries(st.adapterState(root))) {
+    if (st.exhaustedUntil(root, a)) process.stdout.write(`\n${a} is at its usage limit until ${v.exhausted_until.replace(/\.\d+Z$/, 'Z')}; seats routed to it fall back or wait until then\n`);
+  }
   const pending = st.listDecisions(root, null, { pending: true });
   if (pending.length) {
     process.stdout.write(`\n${pending.length} decision(s) waiting: bridgie open\n`);

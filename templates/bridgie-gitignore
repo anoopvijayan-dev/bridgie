@@ -12,3 +12,4 @@ runs/**/diff.patch
 runs/**/reply.txt
 worktrees/
 .fake-state/
+.adapter-state.json

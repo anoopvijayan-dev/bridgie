@@ -209,3 +209,31 @@ test('supersedeDecisions closes matching pending decisions, keeps them, and logs
   assert.equal(ds.find(d => d.id === q.id).status, 'pending');
   assert.match(st.readFm(st.betPath(root, 'b')).body, new RegExp(`${u.id}: superseded \\(re-planned\\)`));
 });
+
+test('quotaFromText reads a usage limit and its reset time from an adapter log', () => {
+  const now = Date.parse('2026-11-22T22:22:00Z');
+  assert.equal(st.quotaFromText('adapter: the CLI is signed out\nsome other failure', now), null);
+  const agy = st.quotaFromText('AGY_ERROR: {"short_error":"RESOURCE_EXHAUSTED (code 429): Individual quota reached. Please upgrade. Resets in 3h8m35s."}', now);
+  assert.equal(agy.until, '2026-11-23T01:30:35.000Z');
+  assert.match(agy.why, /RESOURCE_EXHAUSTED/);
+  assert.equal(st.quotaFromText("You've hit your usage limit. Try again at 2026-11-25 08:25 UTC.", now).until, '2026-11-25T08:25:00.000Z');
+  // a limit that names no time, or a time already past, is tried again in half an hour
+  assert.equal(st.quotaFromText('error: rate limit exceeded', now).until, '2026-11-22T22:52:00.000Z');
+  assert.equal(st.quotaFromText('usage limit reached; it reset at 2020-01-01 00:00', now).until, '2026-11-22T22:52:00.000Z');
+});
+
+test('an exhausted adapter is remembered per machine until its limit resets, and only from this launch\'s logs', () => {
+  const root = mkdtempSync(join(tmpdir(), 'bridgie-quota-'));
+  mkdirSync(join(root, '.bridgie', 'runs', 'b', 'reviewer-01'), { recursive: true });
+  const run = join(root, '.bridgie', 'runs', 'b', 'reviewer-01');
+  writeFileSync(join(run, 'agy.log'), 'error: Individual quota reached. Resets in 2h.\n');
+  const now = Date.now();
+  assert.equal(st.quotaFromRun(run, now + 60000, now), null);            // written before this launch began
+  const q = st.quotaFromRun(run, now - 60000, now);
+  assert.equal(Date.parse(q.until), now + 2 * 3600000);
+  assert.equal(st.exhaustedUntil(root, 'antigravity'), null);
+  st.markExhausted(root, 'antigravity', q.until, q.why);
+  assert.equal(st.exhaustedUntil(root, 'antigravity', now), q.until);
+  assert.equal(st.exhaustedUntil(root, 'antigravity', now + 3 * 3600000), null);   // reset: usable again
+  assert.equal(st.exhaustedUntil(root, 'codex', now), null);
+});

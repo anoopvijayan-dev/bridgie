@@ -352,6 +352,62 @@ export function fallbacks(root, primary) {
   return [...new Set(list.filter(a => a && a !== primary && a !== 'none'))];
 }
 
+// ---------- adapter quota ----------
+// A model CLI that is at its usage limit fails every run until the limit resets. Bridgie reads that
+// from the run's own logs, remembers it per machine (.bridgie/.adapter-state.json, not committed),
+// routes around the adapter until then, and says when to come back instead of failing again.
+const QUOTA = /quota|usage limit|rate limit|RESOURCE_EXHAUSTED|\b429\b|limit reached|too many requests/i;
+const DEFAULT_WAIT_MS = 30 * 60 * 1000;   // a limit that names no reset time is tried again in half an hour
+
+// quotaFromText: null when the text shows no usage limit; else { until: ISO time, why: the line }.
+export function quotaFromText(text, nowMs = Date.now()) {
+  const line = String(text).split(/\r?\n/).filter(l => QUOTA.test(l)).pop();
+  if (!line) return null;
+  let until = null;
+  const rel = line.match(/resets?\s+in\s+((?:\d+\s*[dhms]\s*)+)/i);
+  if (rel) {
+    let ms = 0;
+    for (const m of rel[1].matchAll(/(\d+)\s*([dhms])/gi)) ms += Number(m[1]) * { d: 86400000, h: 3600000, m: 60000, s: 1000 }[m[2].toLowerCase()];
+    if (ms > 0) until = nowMs + ms;
+  }
+  if (until === null) {
+    const abs = line.match(/(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})(?::\d{2})?\s*(Z|UTC)?/i);
+    const t = abs ? Date.parse(`${abs[1]}T${abs[2]}:00Z`) : NaN;
+    if (!Number.isNaN(t) && t > nowMs) until = t;
+  }
+  return { until: new Date(until ?? nowMs + DEFAULT_WAIT_MS).toISOString(), why: line.trim().slice(0, 300) };
+}
+// quotaFromRun: the same, read from the tail of every log an adapter wrote in a run folder since
+// `sinceMs` (the launch's start).
+export function quotaFromRun(runDir, sinceMs = 0, nowMs = Date.now()) {
+  let found = null;
+  for (const f of existsSync(runDir) ? readdirSync(runDir) : []) {
+    if (!/\.log(\.err)?$/.test(f)) continue;
+    let text = '';
+    try {
+      if (statSync(join(runDir, f)).mtimeMs < sinceMs) continue;   // an earlier adapter's log in the same run
+      text = readFileSync(join(runDir, f), 'utf8').slice(-20000);
+    } catch { continue; }
+    const q = quotaFromText(text, nowMs);
+    if (q && (!found || q.until > found.until)) found = q;
+  }
+  return found;
+}
+const adapterStatePath = root => join(root, '.bridgie', '.adapter-state.json');
+export function adapterState(root) {
+  try { return readJson(adapterStatePath(root)); } catch { return {}; }
+}
+export function markExhausted(root, adapter, until, why) {
+  const doc = adapterState(root);
+  doc[adapter] = { exhausted_until: until, why, noted_at: now() };
+  writeFileSync(adapterStatePath(root), JSON.stringify(doc, null, 2) + '\n');   // machine-local, not Bridgie state
+}
+// exhaustedUntil: the ISO time an adapter's limit resets, or null when it is not known to be at one.
+export function exhaustedUntil(root, adapter, nowMs = Date.now()) {
+  const u = adapterState(root)[adapter]?.exhausted_until;
+  return u && Date.parse(u) > nowMs ? u : null;
+}
+
 export function costAdd(runDir, entry) {
   const f = join(runDir, 'cost.json');
   const doc = existsSync(f) ? readJson(f) : { entries: [] };

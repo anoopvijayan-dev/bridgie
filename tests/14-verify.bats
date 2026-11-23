@@ -140,3 +140,19 @@ setup() {
   grep -q '"id": "mechanical:1"' "$P/.bridgie/runs/b/verify-01/evidence.json"
   node -e 'const e=require(process.argv[1]); const r=Object.fromEntries(e.criteria.map(c=>[c.id,c.result])); if(r["mechanical:1"]!=="pass"||r["mechanical:2"]!=="fail") process.exit(1)' "$P/.bridgie/runs/b/verify-01/evidence.json"
 }
+
+@test "a verify retried for the same commit reuses the tier results instead of running them again" {
+  # the tier command counts its own runs; the reviewer's output is malformed the first time
+  sed -i.bak "s|    mechanical: \['node -e 0'\]|    mechanical: ['echo run >> \"$P/.git/tier-runs\"']|" "$P/.bridgie/policy.yaml"
+  printf 'not json' > "$P/.git/bad.json"
+  run bash -c "cd '$P' && BRIDGIE_FAKE_OUTPUT='$P/.git/bad.json' bridgie verify b"
+  [ "$status" -ne 0 ]
+  [ "$(task_field "$P" b T1 status)" = '"verify"' ]
+  [ "$(wc -l < "$P/.git/tier-runs")" -eq 1 ]
+  run bash -c "cd '$P' && bridgie verify b"
+  echo "$output"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"reusing the results of verify-01 for the same commit"* ]]
+  [ "$(wc -l < "$P/.git/tier-runs")" -eq 1 ]
+  [ "$(task_field "$P" b T1 status)" = '"passed"' ]
+}

@@ -4,6 +4,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync, openSync, closeSync } from 'node:fs';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import * as st from '../state.mjs';
 import * as fl from '../flow.mjs';
 import { runSeat, adapterCapabilities } from '../cli/seat.mjs';
@@ -20,6 +21,12 @@ function nextRunDir(root, slug, name) {
 function checkReviewer(root, slug, task) {   // R10 and R11, before any model is called
   const r = st.route(root, loadSeat('verify/reviewer').manifest);
   const { caps } = adapterCapabilities(r.adapter, join(HOME, 'seats', 'verify', 'reviewer'), r.model);
+  // Every adapter that could review is known to be at its usage limit: say so before running a tier.
+  const all = [r.adapter, ...st.fallbacks(root, r.adapter)];
+  if (all.every(a => st.exhaustedUntil(root, a))) {
+    const until = all.map(a => st.exhaustedUntil(root, a)).sort()[0];
+    die(`waiting: the reviewer's adapter${all.length > 1 ? 's' : ''} (${all.join(', ')}) ${all.length > 1 ? 'are' : 'is'} at ${all.length > 1 ? 'their' : 'its'} usage limit until ${until.replace(/\.\d+Z$/, 'Z')}. ${task} stays in verify with its attempt not used; run it again after that`, 3);
+  }
   if (caps.reads_repo !== true) die(`verify: reviewer adapter '${r.adapter}' cannot read the repository; a packet-only review is refused (R10)`);
   if (fl.crossFamily(root, slug) && fl.producerVendor(root, slug, task) === caps.vendor) die(`verify: reviewer vendor '${caps.vendor}' is the same as the producer's; policy requires a different model family (set routing.seats.reviewer)`);
 }
@@ -49,6 +56,27 @@ export function runMechanical(root, slug, wt, vdir) {
   }
   writeFileSync(join(vdir, 'mechanical.json'), JSON.stringify(rows) + '\n');
   return rows;
+}
+
+// mechanicalKey: what the tier results depend on — the task, the commit tested and the commands.
+export function mechanicalKey(root, slug, wt, task) {
+  const sha = git(['-C', wt, 'rev-parse', 'HEAD']).out.trim();
+  const plan = createHash('sha256').update(JSON.stringify(fl.mechanicalPlan(root, slug, wt))).digest('hex');
+  return { task, sha, plan };
+}
+// reusableMechanical: the rows of the newest earlier verify run with the same key, or null.
+export function reusableMechanical(root, slug, key) {
+  const runs = join(root, '.bridgie', 'runs', slug);
+  const dirs = existsSync(runs) ? readdirSync(runs).filter(d => /^verify-\d+$/.test(d)).sort((a, b) => Number(b.slice(7)) - Number(a.slice(7))) : [];
+  for (const d of dirs) {
+    const kf = join(runs, d, 'mechanical-key.json'), mf = join(runs, d, 'mechanical.json');
+    if (!existsSync(kf) || !existsSync(mf)) continue;
+    try {
+      const k = st.readJson(kf);
+      if (k.task === key.task && k.sha === key.sha && k.plan === key.plan) return { run: d, rows: st.readJson(mf) };
+    } catch { /* an unreadable earlier run is not reused */ }
+  }
+  return null;
 }
 
 export default async function verify(argv) {
@@ -87,8 +115,15 @@ export default async function verify(argv) {
 
   // 2. reviewer preconditions (R10, R11)
   checkReviewer(root, slug, task);
-  // 3. mechanical tiers in the task worktree
-  runMechanical(root, slug, wt, vdir);
+  // 3. mechanical tiers in the task worktree, unless an earlier verify of this same commit already
+  // ran the same commands (its reviewer could not run): tests are not re-run to wait for a reviewer.
+  const key = mechanicalKey(root, slug, wt, task);
+  const kept = reusableMechanical(root, slug, key);
+  if (kept) {
+    writeFileSync(join(vdir, 'mechanical.json'), JSON.stringify(kept.rows) + '\n');
+    log(`  tiers: reusing the results of ${kept.run} for the same commit (${key.sha.slice(0, 10)})`);
+  } else runMechanical(root, slug, wt, vdir);
+  writeFileSync(join(vdir, 'mechanical-key.json'), JSON.stringify(key) + '\n');
 
   // 4. reviewer in a detached, read-only worktree (R3)
   const rv = g.reviewWorktree(root, slug, task);
@@ -96,6 +131,7 @@ export default async function verify(argv) {
   try { rvDir = await runSeat(slug, 'verify/reviewer', { root, task, cwd: rv, packet: vdir, needsRepo: true, avoidVendor: fl.crossFamily(root, slug) ? fl.producerVendor(root, slug, task) : '' }); } catch (e) { failure = e; }
   const dirty = git(['-C', rv, 'status', '--porcelain']).out.trim();
   g.removeWorktree(root, rv);
+  if (failure?.code === 3) die(`${failure.message}\nverify: ${task} stays in verify, with its attempt not used; the tier results for this commit are kept and will not be run again`, 3);
   if (failure) die(`${failure.message}\nverify: reviewer run failed for ${task}; task stays in verify`);
   if (dirty) {
     writeFileSync(join(rvDir, 'VIOLATION'), `reviewer changed files in its read-only worktree:\n${dirty}\n`);

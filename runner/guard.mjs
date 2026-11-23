@@ -18,7 +18,7 @@ import { createHash } from 'node:crypto';
 import { join, dirname, resolve, relative, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-const ALWAYS = ['.bridgie/worktrees/', '.bridgie/ui/', '.bridgie/.fake-state/', '.bridgie/.seat-lock/'];
+const ALWAYS = ['.bridgie/worktrees/', '.bridgie/ui/', '.bridgie/.fake-state/', '.bridgie/.seat-lock/', '.bridgie/.adapter-state.json'];
 const rel = (root, p) => relative(root, p).split(sep).join('/');
 const norm = e => e.replace(/\\/g, '/').replace(/\/?$/, '/');
 

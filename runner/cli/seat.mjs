@@ -96,11 +96,19 @@ export async function runSeat(slug, seat, opts = {}) {
   let { raw, caps } = adapterCapabilities(adapter, seatDir, model);
   if (needsWeb && caps.reads_web !== true) die(`seat ${name} needs web access; adapter '${adapter}' has none (route it to one that does: routing.seats.${name})`);
   const spare = st.fallbacks(root, adapter);
+  const exhausted = [];   // adapters skipped or failed because they are at a usage limit
+  // waiting: every adapter that could take the seat is at its usage limit. Not an error and not a
+  // verdict: exit 3, naming when to come back, so `bridgie run` stops cleanly and nothing is consumed.
+  const waiting = () => {
+    const until = exhausted.map(a => st.exhaustedUntil(root, a)).filter(Boolean).sort()[0];
+    die(`waiting: ${exhausted.join(' and ')} ${exhausted.length > 1 ? 'are' : 'is'} at ${exhausted.length > 1 ? 'their' : 'its'} usage limit${until ? ` until ${until.replace(/\.\d+Z$/, 'Z')}` : ''}, and no other adapter fits seat ${name}${opts.avoidVendor ? ` (policy requires another model family than ${opts.avoidVendor})` : ''}. Nothing was changed; run it again after that`, 3);
+  };
   // nextFallback: the next spare adapter whose CLI is installed and that fits the seat.
   const nextFallback = () => {
     while (spare.length) {
       const a = spare.shift();
       if (!existsSync(join(HOME, 'adapters', a))) continue;
+      if (st.exhaustedUntil(root, a)) { exhausted.push(a); continue; }   // at its usage limit: not tried again until it resets
       const [c, p] = adapterCommand(a);
       const probe = spawnSync(c, [...p, '--probe'], { encoding: 'utf8', timeout: 30000 });
       if (probe.status !== 0 || !/OK/.test(probe.stdout || '')) continue;
@@ -117,6 +125,15 @@ export async function runSeat(slug, seat, opts = {}) {
   try {
     try { snapshot(root, join(runDir, '.snapshot'), excludes); } catch (e) { die(e.message); }
     const fellBack = [];
+    if (st.exhaustedUntil(root, adapter)) {   // known to be at its limit: do not launch it to find out again
+      exhausted.push(adapter);
+      const next = nextFallback();
+      if (!next) waiting();
+      process.stderr.write(`bridgie: warning: adapter ${adapter} is at its usage limit until ${st.exhaustedUntil(root, adapter)}; using ${next.adapter} for seat ${name}\n`);
+      fellBack.push(adapter);
+      writeFileSync(join(runDir, 'fallback.json'), JSON.stringify({ routed: route.adapter, failed: fellBack, used: next.adapter }, null, 2) + '\n');
+      ({ adapter, raw, caps } = next); model = 'default'; effort = null;
+    }
     for (;;) {
       writeFileSync(join(runDir, 'adapter.json'), raw + '\n');
       const [cmd, pre] = adapterCommand(adapter);
@@ -139,7 +156,12 @@ export async function runSeat(slug, seat, opts = {}) {
       // 1: the adapter could not start (CLI missing, not set up); 6: the CLI failed (signed out, over
       // its limit, crashed); 127: could not launch. A model that ran but answered badly (4, 5) is not
       // a reason to switch models.
+      // A CLI at its usage limit says so in its log: remember it (with the reset time when the log
+      // gives one), so nothing launches it again before then.
+      const quota = [1, 6].includes(rc) ? st.quotaFromRun(runDir, start - 2000) : null;
+      if (quota) { st.markExhausted(root, adapter, quota.until, quota.why); exhausted.push(adapter); }
       const next = [1, 6, 127].includes(rc) ? nextFallback() : null;
+      if (!next && quota) waiting();
       if (!next) die(`${failed}; see ${join(runDir, 'adapter.log')}${fellBack.length ? ` (after falling back from ${fellBack.join(', ')})` : ''}`);
       process.stderr.write(`bridgie: warning: ${failed}; falling back to ${next.adapter}\n`);
       renameSync(join(runDir, 'adapter.log'), join(runDir, `adapter-${adapter}.log`));
