@@ -2,7 +2,7 @@
 // read and written through this module. Importable (surface.mjs) and a CLI.
 import { readFileSync, writeFileSync, renameSync, existsSync, mkdirSync, readdirSync, statSync } from 'node:fs';
 import { join, dirname, resolve, sep } from 'node:path';
-import { homedir } from 'node:os';
+import { homedir, hostname } from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parse as yparse, splitFrontmatter, joinFrontmatter } from './yaml.mjs';
 import { validate, assertValid } from './schema.mjs';
@@ -18,12 +18,21 @@ export const maxRisk = (a, b) => (RISK_ORDER.indexOf(a) >= RISK_ORDER.indexOf(b)
 // so a human decision is refused with a clear message instead of being rolled back as tampering
 // (finding 4). The runner takes the lock in run_seat (runner/lib/seat.sh).
 const LOCK_STALE_MS = 6 * 3600 * 1000;
+// pidAlive: whether a process of this machine still runs. EPERM means it runs under another user.
+export function pidAlive(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; }
+}
 export function seatLock(root) {
   const dir = join(root, '.bridgie', '.seat-lock');
   if (!existsSync(dir)) return null;
   let o;
   try { o = readJson(join(dir, 'owner.json')); } catch { o = { seat: 'unknown', since: statSync(dir).mtime.toISOString(), run_dir: null }; }
   if (Date.now() - Date.parse(o.since) > LOCK_STALE_MS) return null;   // a crashed run cannot lock state forever
+  // A lock taken on this machine by a process that is gone is stale at once: a killed run (a closed
+  // terminal, a restarted container) must not block the project for hours. A lock from another
+  // machine (a shared folder) keeps the time rule only.
+  if (o.pid !== undefined && (!o.host || o.host === hostname()) && !pidAlive(o.pid)) return null;
   return o;
 }
 function assertUnlocked(file) {

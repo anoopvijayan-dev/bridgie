@@ -154,6 +154,24 @@ export function startAttempt(root, slug, id, branch) {
   return t;
 }
 
+// recoverAttempts: tasks left in_progress by a run that is gone (a killed terminal, a restarted
+// container) go back to being buildable, and the attempt the dead run started is not counted: it
+// never finished, so it is no evidence about the task. Whatever the run left in the task worktree
+// stays there for the next attempt. Does nothing while a live agent run holds the seat lock.
+export function recoverAttempts(root, slug) {
+  if (st.seatLock(root)) return [];
+  const doc = loadTasks(root, slug);
+  const stuck = doc.tasks.filter(t => t.status === 'in_progress');
+  for (const t of stuck) {
+    t.attempts = Math.max(0, t.attempts - 1);
+    t.status = t.attempts === 0 ? 'todo' : 'failed';
+    const note = 'the last attempt was interrupted before it finished (its process ended); it is not counted';
+    t.escalation = t.escalation ? `${t.escalation} | ${note}` : note;
+  }
+  if (stuck.length) saveTasks(root, slug, doc);
+  return stuck.map(t => t.id);
+}
+
 // failAttempt: the producer could not finish (adapter error, bad output, edited .bridgie/).
 export function failAttempt(root, slug, id, reason) {
   const doc = loadTasks(root, slug);
@@ -512,6 +530,7 @@ const OPS = {
   'start-attempt': a => out(startAttempt(a[0], a[1], a[2], a[3])),
   'reconcile': a => out(reconcile(a[0], a[1], a[2], a[3], JSON.parse(readFileSync(a[4], 'utf8')), a[5]).verdict),
   'fail-attempt': a => out(failAttempt(a[0], a[1], a[2], a[3]).status),
+  'recover-attempts': a => out(recoverAttempts(a[0], a[1]).join('\n')),
   'stamp-task': a => { stampTask(a[0], a[1]); out('ok'); },
   'risk-of-paths': a => out(riskOfPaths(a[0], a[1], readFileSync(a[2], 'utf8').split('\n').filter(Boolean))),
   'mechanical-plan': a => out(mechanicalPlan(a[0], a[1], a[2])),

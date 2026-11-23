@@ -53,6 +53,9 @@ export default async function build(argv) {
   if (!existsSync(join(root, '.bridgie', 'specs', slug, 'tasks.json'))) die(`build: no tasks for '${slug}' (bridgie plan ${slug})`);
   g.onFeature(root, slug);
   requireBuildAck(root, slug);
+  // A task a dead run left in_progress is recovered first, so a restart needs no hand edit.
+  const recovered = fl.recoverAttempts(root, slug);
+  if (recovered.length) { stateCommit(root, `recover ${slug}: ${recovered.join(', ')}`); log(`recovered ${recovered.join(', ')}: the last attempt was interrupted and is not counted`); }
   const ready = fl.readyTasks(root, slug).map(t => t.id);
   let task;
   if (a.task) {

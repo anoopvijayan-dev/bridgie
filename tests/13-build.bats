@@ -90,3 +90,35 @@ setup() {
   git -C "$P" for-each-ref --format='%(refname:short)' 'refs/heads/bridgie-task-archive/b/' | grep -q '/T1$'
   [ ! -d "$P/.bridgie/worktrees/b/T1" ]
 }
+
+@test "a task a killed run left in progress is recovered by build, and the dead attempt is not counted" {
+  planned_bet "$P" b
+  # what a run killed mid-build leaves: the task in_progress and a seat lock whose process is gone
+  node "$BRIDGIE_HOME/runner/flow.mjs" start-attempt "$P" b T1 bridgie-task/b/T1 >/dev/null
+  mkdir "$P/.bridgie/.seat-lock"
+  printf '{"seat":"implementer","run_dir":"x","since":"%s","pid":4194999}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$P/.bridgie/.seat-lock/owner.json"
+  [ "$(task_field "$P" b T1 status)" = '"in_progress"' ]
+  run bash -c "cd '$P' && bridgie build b"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"recovered T1"* ]]
+  [ "$(task_field "$P" b T1 status)" = '"verify"' ]
+  [ "$(task_field "$P" b T1 attempts)" = '1' ]
+}
+
+@test "recover clears a dead run's lock and its task; a live run is left alone" {
+  planned_bet "$P" b
+  node "$BRIDGIE_HOME/runner/flow.mjs" start-attempt "$P" b T1 bridgie-task/b/T1 >/dev/null
+  mkdir "$P/.bridgie/.seat-lock"
+  printf '{"seat":"implementer","run_dir":"x","since":"%s","pid":%s}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$$" > "$P/.bridgie/.seat-lock/owner.json"
+  run bash -c "cd '$P' && bridgie recover b"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"in progress"* ]]
+  [ "$(task_field "$P" b T1 status)" = '"in_progress"' ]
+  printf '{"seat":"implementer","run_dir":"x","since":"%s","pid":4194999}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$P/.bridgie/.seat-lock/owner.json"
+  run bash -c "cd '$P' && bridgie recover b"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"recovered T1"* ]]
+  [ ! -d "$P/.bridgie/.seat-lock" ]
+  [ "$(task_field "$P" b T1 status)" = '"todo"' ]
+  [ "$(task_field "$P" b T1 attempts)" = '0' ]
+}

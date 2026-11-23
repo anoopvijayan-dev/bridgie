@@ -3,6 +3,7 @@
 // runSwarm: one fresh seat run per card, `swarm.parallel` at a time, under one lock.
 import { readFileSync, existsSync, mkdirSync, readdirSync, writeFileSync, cpSync, copyFileSync, rmSync, renameSync, openSync, closeSync, statSync, realpathSync } from 'node:fs';
 import { join, basename, relative } from 'node:path';
+import { hostname } from 'node:os';
 import { spawn, spawnSync } from 'node:child_process';
 import * as st from '../state.mjs';
 import { loadSeat, assemble } from '../context.mjs';
@@ -39,7 +40,7 @@ export function seatLock(root, seat, runDir) {
     rmSync(lock, { recursive: true, force: true });
     try { mkdirSync(lock); } catch (e) { die(`could not take the seat lock ${lock}: ${e.message}`); }
   }
-  writeFileSync(join(lock, 'owner.json'), JSON.stringify({ seat, run_dir: relTo(root, runDir), since: new Date().toISOString().replace(/\.\d+Z$/, 'Z'), pid: process.pid }) + '\n');
+  writeFileSync(join(lock, 'owner.json'), JSON.stringify({ seat, run_dir: relTo(root, runDir), since: new Date().toISOString().replace(/\.\d+Z$/, 'Z'), pid: process.pid, host: hostname() }) + '\n');
 }
 export const seatUnlock = root => rmSync(join(root, '.bridgie', '.seat-lock'), { recursive: true, force: true });
 

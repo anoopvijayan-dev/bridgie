@@ -4,7 +4,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import * as st from '../state.mjs';
 import * as fl from '../flow.mjs';
-import { BridgieExit, die, log, projectRoot, betStatus } from '../cli/core.mjs';
+import { BridgieExit, die, log, projectRoot, betStatus, stateCommit } from '../cli/core.mjs';
 
 // step: one subcommand in-process; returns its exit code (0 ok, 2 verify failed, 3 waiting for a human).
 async function step(name, slug) {
@@ -40,6 +40,8 @@ export default async function run(argv) {
       if (existsSync(af) && st.readFm(af).data.decision === 'rejected') { log(`acceptance was rejected; fix, then re-package with bridgie accept ${slug}`); return; }
       const rc = await step('accept', slug); if (rc && stop(rc)) return; continue;
     }
+    const recovered = fl.recoverAttempts(root, slug);   // a killed run's in_progress tasks
+    if (recovered.length) { stateCommit(root, `recover ${slug}: ${recovered.join(', ')}`); log(`recovered ${recovered.join(', ')}: the last attempt was interrupted and is not counted`); }
     const tasks = fl.loadTasks(root, slug).tasks;
     const states = tasks.map(t => `${t.id}:${t.status}`).join(' ');
     if (tasks.some(t => t.status === 'blocked')) { log(`a task is blocked (${states}); decide on bridgie open ${slug}`); return; }

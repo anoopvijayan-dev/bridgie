@@ -236,3 +236,35 @@ test('mechanicalPlan: project commands win; else lane commands for detected stac
   assert.deepEqual(fl.mechanicalPlan(root2, 'b', wt).map(x => x.cmd), ['npm run lint --if-present', 'npm run build --if-present', 'npx vitest run']);
   assert.deepEqual(fl.mechanicalPlan(root2, 'b', mkdtempSync(join(tmpdir(), 'empty-'))).map(x => `${x.tier}:${x.missing}`), ['mechanical:true', 'specified:true']);
 });
+
+test('recoverAttempts: a task a dead run left in_progress is buildable again and the attempt is not counted', () => {
+  const root = project();
+  fl.writeTasksFromPlan(root, 'b', planOutput(root, [T('T1', ['R1']), T('T2', ['R2', 'P1'], ['T1'])]));
+  fl.startAttempt(root, 'b', 'T1', 'bridgie-task/b/T1');
+  assert.equal(fl.getTask(fl.loadTasks(root, 'b'), 'T1').status, 'in_progress');
+  assert.deepEqual(fl.readyTasks(root, 'b'), []);
+  // a live lock: nothing is recovered while an agent runs
+  mkdirSync(join(root, '.bridgie', '.seat-lock'));
+  writeFileSync(join(root, '.bridgie', '.seat-lock', 'owner.json'), JSON.stringify({ seat: 'implementer', run_dir: 'x', since: new Date().toISOString(), pid: process.pid }));
+  assert.deepEqual(fl.recoverAttempts(root, 'b'), []);
+  // the same lock from a process that is gone is stale at once
+  writeFileSync(join(root, '.bridgie', '.seat-lock', 'owner.json'), JSON.stringify({ seat: 'implementer', run_dir: 'x', since: new Date().toISOString(), pid: 2 ** 22 + 12345 }));
+  assert.equal(st.seatLock(root), null);
+  assert.deepEqual(fl.recoverAttempts(root, 'b'), ['T1']);
+  const t = fl.getTask(fl.loadTasks(root, 'b'), 'T1');
+  assert.equal(t.status, 'todo'); assert.equal(t.attempts, 0); assert.match(t.escalation, /interrupted/);
+  assert.deepEqual(fl.readyTasks(root, 'b').map(x => x.id), ['T1']);
+  // a second attempt that dies leaves the first failure counted
+  fl.startAttempt(root, 'b', 'T1', 'bridgie-task/b/T1'); fl.failAttempt(root, 'b', 'T1', 'boom');
+  fl.startAttempt(root, 'b', 'T1', 'bridgie-task/b/T1');
+  assert.deepEqual(fl.recoverAttempts(root, 'b'), ['T1']);
+  const again = fl.getTask(fl.loadTasks(root, 'b'), 'T1');
+  assert.equal(again.status, 'failed'); assert.equal(again.attempts, 1);
+});
+
+test('a lock from another machine keeps the time rule: its pid says nothing here', () => {
+  const root = project();
+  mkdirSync(join(root, '.bridgie', '.seat-lock'));
+  writeFileSync(join(root, '.bridgie', '.seat-lock', 'owner.json'), JSON.stringify({ seat: 's', run_dir: 'x', since: new Date().toISOString(), pid: 2 ** 22 + 12345, host: 'another-machine' }));
+  assert.equal(st.seatLock(root).seat, 's');
+});

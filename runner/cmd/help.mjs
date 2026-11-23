@@ -13,6 +13,7 @@ Decide   bet new <slug> [--from <scout>/O<n>] [--risk R]   create a bet (optiona
          decide <slug> <id> <answer> [--text "..."]
          sign <slug> [--kill | --more-evidence]
 Build    shape | plan [--replan] | build | run
+         recover <slug>           after a killed run: clear its lock, make its task buildable again
 Verify   verify
 Accept   accept
 Learn    learn
