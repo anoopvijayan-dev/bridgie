@@ -1,10 +1,22 @@
 // bridgie status — one line per bet, plus pending decisions.
+// bridgie status --cost [slug] — where each bet's time went, task by task.
 import * as st from '../state.mjs';
 import * as fl from '../flow.mjs';
-import { projectRoot } from '../cli/core.mjs';
+import { die, parseArgs, projectRoot } from '../cli/core.mjs';
 
-export default async function status() {
+export default async function status(argv = []) {
+  const a = parseArgs(argv, { cost: 'bool' }, 'status');
   const root = projectRoot();
+  if (a.cost) {
+    const slugs = a._[0] ? [a._[0]] : st.listBets(root);
+    if (a._[0] && !st.listBets(root).includes(a._[0])) die(`status: no bet '${a._[0]}'`);
+    for (const slug of slugs) {
+      const rows = fl.costByTask(root, slug);
+      if (!rows.some(r => r.runs)) { process.stdout.write(`${slug}: no runs yet\n\n`); continue; }
+      process.stdout.write(`${slug}\n${fl.costTable(rows)}\n\n`);
+    }
+    return;
+  }
   process.stdout.write(`${st.statusTable(st.status(root))}\n`);
   // Adapters at a usage limit on this machine: seats routed to them wait or fall back until then.
   for (const [a, v] of Object.entries(st.adapterState(root))) {

@@ -28,5 +28,8 @@ export default async function plan(argv) {
     log(`re-planned: ${moved.length} task branch(es) archived under bridgie-task-archive/${slug}/${stamp}/${closed.length ? `; superseded ${closed.join(', ')}` : ''}`);
   }
   stateCommit(root, `plan ${slug} (${basename(runDir)})${a.replan ? ' --replan' : ''}`);
+  const warnings = fl.planWarnings(root, slug);
+  for (const w of warnings) log(`warning: ${w}`);
+  if (warnings.length) log(`${warnings.length} ordering warning(s): fix the plan now (bridgie plan ${slug} --replan) or go on if the mentions are not real dependencies`);
   log(`planned ${slug}: ${doc.tasks.length} task(s). Next: bridgie build ${slug}   (or bridgie run ${slug})`);
 }

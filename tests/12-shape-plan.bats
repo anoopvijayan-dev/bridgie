@@ -100,3 +100,18 @@ setup() { export BRIDGIE_ADAPTER=fake; P="$(make_project --git)"; }
   [ "$status" -eq 0 ]
   [ "$(node "$BRIDGIE_HOME/runner/flow.mjs" ack-recorded "$P" b)" = "true" ]
 }
+
+@test "plan warns when a task's requirement names one that a later task builds" {
+  signed_bet "$P" b
+  (cd "$P" && bridgie shape b && bridgie shape b --approve) >/dev/null 2>&1
+  run bash -c "cd '$P' && bridgie plan b"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"warning:"* ]]                    # the fixture plan is ordered: P1 and R2 are built together
+  # R1 now leans on R2, which T2 builds, and T2 depends on T1
+  sed -i.bak 's/record it with status pending\./record it with status pending, de-duplicated as R2 defines./' "$P/.bridgie/specs/b/requirements.md"
+  rm -f "$P/.bridgie/specs/b/requirements.md.bak"
+  run node "$BRIDGIE_HOME/runner/flow.mjs" plan-warnings "$P" b
+  [ "$status" -eq 0 ]
+  [[ "$output" == "T1 builds R1, whose text refers to R2, but R2 is built by T2, which depends on T1"* ]]
+  [[ "$output" == *"Build R1 and R2 in one task"* ]]
+}

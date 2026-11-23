@@ -34,9 +34,10 @@ function checkReviewer(root, slug, task) {   // R10 and R11, before any model is
 
 // runMechanical: every required tier's commands, run in the platform shell inside the worktree.
 // A required tier with no configured command becomes a not_proven row (never silently skipped).
-export function runMechanical(root, slug, wt, vdir, skip = []) {
+export function runMechanical(root, slug, wt, vdir, skip = [], task = null) {
   const rows = [];
   let n = 0;
+  const startedAt = new Date().toISOString().replace(/\.\d+Z$/, 'Z'), start = Date.now();
   for (const x of fl.mechanicalPlan(root, slug, wt, skip)) {
     n++;
     const logf = join(vdir, `${x.tier}-${n}.log`);
@@ -56,6 +57,8 @@ export function runMechanical(root, slug, wt, vdir, skip = []) {
     rows.push({ id: `${x.tier}:${n}`, tier: x.tier, check, result, artifact: logf });
   }
   writeFileSync(join(vdir, 'mechanical.json'), JSON.stringify(rows) + '\n');
+  // the time the checks took is part of what a task costs (bridgie status --cost)
+  if (rows.length) st.costAdd(vdir, { seat: 'tiers', ...(task ? { task } : {}), adapter: 'none', model: 'none', started_at: startedAt, duration_s: Math.round((Date.now() - start) / 1000), attempt: 1, exit_code: rows.some(r => r.result === 'fail') ? 1 : 0, tokens_in: null, tokens_out: null, usd: null });
   return rows;
 }
 
@@ -140,7 +143,7 @@ export default async function verify(argv) {
   if (kept) {
     writeFileSync(join(vdir, 'mechanical.json'), JSON.stringify(kept.rows) + '\n');
     log(`  tiers: reusing the results of ${kept.run} for the same commit (${key.sha.slice(0, 10)})`);
-  } else runMechanical(root, slug, wt, vdir, profile.skip_tiers);
+  } else runMechanical(root, slug, wt, vdir, profile.skip_tiers, task);
   writeFileSync(join(vdir, 'mechanical-key.json'), JSON.stringify(key) + '\n');
 
   // 3b. The owner accepted the last review's findings as known limitations for this commit: the

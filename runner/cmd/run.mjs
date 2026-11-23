@@ -1,10 +1,12 @@
 // bridgie run <slug> — drive the bet as far as it can go without a human:
 // shape → plan → (build → verify)* → accept packaging. Stops at every human decision.
+// --pause-before-verify: stop after each build so a person reads the change first ("I check, Bridgie
+// verifies"); running it again verifies that task and builds the next.
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import * as st from '../state.mjs';
 import * as fl from '../flow.mjs';
-import { BridgieExit, die, log, projectRoot, betStatus, stateCommit } from '../cli/core.mjs';
+import { BridgieExit, die, log, parseArgs, projectRoot, betStatus, stateCommit } from '../cli/core.mjs';
 
 // step: one subcommand in-process; returns its exit code (0 ok, 2 verify failed, 3 waiting for a human).
 async function step(name, slug) {
@@ -19,8 +21,9 @@ async function step(name, slug) {
 }
 
 export default async function run(argv) {
-  const slug = argv[0];
-  if (!slug) die('usage: bridgie run <slug>');
+  const a = parseArgs(argv, { 'pause-before-verify': 'bool' }, 'run');
+  const slug = a._[0];
+  if (!slug) die('usage: bridgie run <slug> [--pause-before-verify]');
   const root = projectRoot();
   const stop = rc => { if (rc === 3) return true; throw new BridgieExit('', rc); };
   let i = 0;
@@ -50,7 +53,15 @@ export default async function run(argv) {
       if (rc !== 0 && rc !== 2 && stop(rc)) return;   // 2 = verdict failed: loop on to retry
       continue;
     }
-    if (fl.readyTasks(root, slug).length) { const rc = await step('build', slug); if (rc && stop(rc)) return; continue; }
+    if (fl.readyTasks(root, slug).length) {
+      const rc = await step('build', slug); if (rc && stop(rc)) return;
+      const built = fl.loadTasks(root, slug).tasks.find(t => t.status === 'verify');
+      if (a['pause-before-verify'] && built) {
+        log(`paused before verify: ${built.id} is built on ${built.branch}. Read it (git diff bridgie/${slug}...${built.branch}), then run this again to verify it and build the next task`);
+        return;
+      }
+      continue;
+    }
     log(`nothing is ready (${states}); see bridgie status`); return;
   }
   die(`run: stopped after ${i} steps without finishing; see bridgie status`);

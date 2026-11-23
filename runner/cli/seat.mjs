@@ -140,7 +140,7 @@ export async function runSeat(slug, seat, opts = {}) {
       const startedAt = new Date().toISOString().replace(/\.\d+Z$/, 'Z'), start = Date.now();
       const args = [...pre, '--seat', seatDir, '--prompt', join(runDir, 'prompt.md'), '--out', join(runDir, output), '--cwd', cwd, '--mode', mode, '--model', model, ...(effort ? ['--effort', effort] : [])];
       const rc = await launch(cmd, args, join(runDir, 'adapter.log'));
-      st.costAdd(runDir, { seat: name, adapter, model, started_at: startedAt, duration_s: Math.round((Date.now() - start) / 1000), attempt: n, exit_code: rc, tokens_in: null, tokens_out: null, usd: null });
+      st.costAdd(runDir, { seat: name, ...(opts.task ? { task: opts.task } : {}), adapter, model, started_at: startedAt, duration_s: Math.round((Date.now() - start) / 1000), attempt: n, exit_code: rc, tokens_in: null, tokens_out: null, usd: null });
 
       // 4. single-writer guard (P1): any added, removed or changed state file fails the run
       const d = check(root, join(runDir, '.snapshot'), excludes);

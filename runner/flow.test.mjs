@@ -502,3 +502,61 @@ test('owner override: the owner delivers with fewer approvals and the record say
   d = st.listDecisions(root, 'b', { pending: true }).find(x => x.type === 'accept');
   assert.throws(() => fl.answer(root, 'b', d.id, 'approve', { by: 'tester', override: 'x' }), /policy does not allow an owner override/);
 });
+
+// ---------- plan checks, cost ----------
+test('planWarnings: a requirement that names one built by a task it does not depend on is flagged; the cycle case says so', () => {
+  const root = project();
+  writeFileSync(join(root, '.bridgie', 'specs', 'b', 'requirements.md'),
+    '# Requirements\n\n## R1 · event · risk: none\nWHEN a THE SYSTEM SHALL b as R2 defines.\n\n## R2 · event · risk: none\nWHEN c THE SYSTEM SHALL d, shown beside R1.\n\n## R3 · event · risk: none\nWHEN e THE SYSTEM SHALL f.\n\n## P1 · property\nFor any x, y SHALL hold.\nValidates: R3\n');
+  // T2 depends on T1, but T1's requirement needs T2's: no order can verify T1 first
+  fl.writeTasksFromPlan(root, 'b', planOutput(root, [T('T1', ['R1']), T('T2', ['R2'], ['T1']), T('T3', ['R3']), T('T4', ['P1'])]));
+  const w = fl.planWarnings(root, 'b');
+  assert.equal(w.length, 2);
+  assert.match(w[0], /^T1 builds R1, whose text refers to R2, but R2 is built by T2, which depends on T1: T1 cannot be verified against R2 until T2 exists\. Build R1 and R2 in one task/);
+  assert.match(w[1], /^T4 builds P1, whose text refers to R3, but R3 is built by T3, which T4 does not depend on: add T3 to T4's depends_on/);
+  // ordered through a transitive dependency, or built together: nothing to say
+  fl.writeTasksFromPlan(root, 'b', planOutput(root, [T('T1', ['R1', 'R2']), T('T3', ['R3'], ['T1']), T('T4', ['P1'], ['T3'])]));
+  assert.deepEqual(fl.planWarnings(root, 'b'), []);
+  const root2 = project();                             // the standard fixture: P1 validates R2, both in one task
+  fl.writeTasksFromPlan(root2, 'b', planOutput(root2, [T('T1', ['R1']), T('T2', ['R2', 'P1'], ['T1'])]));
+  assert.deepEqual(fl.planWarnings(root2, 'b'), []);
+});
+
+test('costByTask: time per task split into build, review and checks; old runs are placed by their claim or evidence', () => {
+  const root = project();
+  fl.writeTasksFromPlan(root, 'b', planOutput(root, [{ ...T('T1', ['R1']), size: 'small' }, T('T2', ['R2', 'P1'], ['T1'])]));
+  fl.setTask(root, 'b', 'T1', { status: 'passed', attempts: 2 });
+  const run = (name, entries, extra = {}) => {
+    const d = join(st.runsDir(root, 'b'), name); mkdirSync(d, { recursive: true });
+    for (const e of entries) st.costAdd(d, { adapter: 'fake', model: 'default', started_at: '2026-01-01T00:00:00Z', attempt: 1, exit_code: 0, tokens_in: null, tokens_out: null, usd: null, ...e });
+    for (const [f, v] of Object.entries(extra)) writeFileSync(join(d, f), JSON.stringify(v));
+  };
+  run('shaper-01', [{ seat: 'shaper', duration_s: 100 }]);
+  run('implementer-01', [{ seat: 'implementer', task: 'T1', duration_s: 600 }]);
+  run('implementer-02', [{ seat: 'implementer', duration_s: 300 }], { 'claim.json': { task: 'T1' } });       // written before entries named the task
+  run('verify-01', [{ seat: 'tiers', task: 'T1', duration_s: 90 }]);
+  run('reviewer-01', [{ seat: 'reviewer', duration_s: 240, usd: 0.5 }], { 'evidence.json': { task: 'T1' } });
+  run('hardener-01', [{ seat: 'hardener', task: 'T9', duration_s: 50 }]);                                    // a task a re-plan removed
+  const rows = fl.costByTask(root, 'b');
+  const t1 = rows.find(r => r.task === 'T1');
+  assert.deepEqual({ runs: t1.runs, build: t1.build, review: t1.review, checks: t1.checks, seconds: t1.seconds, attempts: t1.attempts, size: t1.size, usd: t1.usd },
+    { runs: 4, build: 900, review: 240, checks: 90, seconds: 1230, attempts: 2, size: 'small', usd: 0.5 });
+  assert.equal(rows.find(r => r.task === 'T2').runs, 0);
+  assert.equal(rows.find(r => r.task === '(bet)').other, 100);
+  assert.equal(rows.find(r => r.task === 'T9').title, 'not in the current plan');
+  const table = fl.costTable(rows).split('\n');
+  assert.match(table[0], /^Task\s+Size\s+Status\s+Attempts\s+Runs\s+Build\s+Review\s+Checks\s+Other\s+Total$/);
+  assert.match(table[1], /^T1\s+small\s+passed\s+2\s+4\s+15m\s+4m\s+2m\s+0s\s+21m$/);     // the costliest task first
+  assert.match(table.at(-1), /^6 runs, 23m of agent and check time; \$0\.50 reported$/);
+});
+
+test('mechanicalPlan: a Python project gets compile and pytest commands from the lane', () => {
+  const root = project('none');
+  const wt = mkdtempSync(join(tmpdir(), 'wt-'));
+  writeFileSync(join(wt, 'pyproject.toml'), '[project]\nname = "x"\n');
+  const py = process.platform === 'win32' ? 'python' : 'python3';
+  const plan = fl.mechanicalPlan(root, 'b', wt);
+  assert.deepEqual(plan.map(x => x.tier), ['mechanical', 'specified']);
+  assert.ok(plan[0].cmd.startsWith(`${py} -m compileall -q -x `));
+  assert.equal(plan[1].cmd, `${py} -m pytest -q`);
+});

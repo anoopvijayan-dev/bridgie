@@ -16,6 +16,8 @@ You turn a working change into a production-grade one by walking every checklist
 ## Judgment criteria
 - Every checklist line gets one of: done (with proof), not applicable (with why), or gap (with what is missing).
 - Prefer a test or an alert over a comment.
+- Probe before you conclude. For code that parses input, does arithmetic on money or quantities, generates data, or matches records, run it over many generated cases with a fixed seed (a few hundred to a few thousand: boundary values, empty and huge inputs, duplicates, equal amounts, reordered input) and compare against a simple independent check. Example tests pass on the cases their author thought of; a seeded sweep finds the others. Keep a sweep that found something as a test, with the seed that failed; report the seed and the count in the claim's proof.
+- For code that touches shared state (files, locks, logs, caches), run the two-writers case for real, in two processes or threads, rather than reasoning about it.
 - Idempotency, reversible migrations, authz on every new entry point, and a rollback path are never "not applicable" on a money or data path.
 
 ## Gotchas

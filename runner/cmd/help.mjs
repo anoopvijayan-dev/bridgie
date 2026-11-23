@@ -12,7 +12,7 @@ Decide   bet new <slug> [--from <scout>/O<n>] [--risk R]   create a bet (optiona
          evidence <slug>          plan real-world evidence; with material, synthesise and propose confidence
          decide <slug> <id> <answer> [--text "..."] [--relayed]   --relayed: an agent passing on a person's answer
          sign <slug> [--kill | --more-evidence]
-Build    shape | plan [--replan] | build | run
+Build    shape | plan [--replan] | build | run [--pause-before-verify]   (pause: you read each change before it is verified)
          recover <slug>           after a killed run: clear its lock, make its task buildable again
 Verify   verify
          rereview <slug> [--task T] [--all]   a second-family review of tasks that passed with a same-family reviewer

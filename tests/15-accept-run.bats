@@ -207,3 +207,41 @@ delivered_package() {       # a risk-none bet built, verified and packaged, wait
   [ "$(fm "$P/.bridgie/acceptance/b.md" override | node -e 'const o=JSON.parse(require("fs").readFileSync(0,"utf8")); console.log(o.by, o.approvals, o.required)')" = "tester 1 2" ]
   [ "$(fm "$P/.bridgie/bets/b/bet.md" status)" = '"delivered"' ]
 }
+
+@test "run --pause-before-verify stops after each build; running it again verifies that task and builds the next" {
+  planned_bet "$P" b
+  run bash -c "cd '$P' && bridgie run b --pause-before-verify"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"paused before verify: T1 is built on bridgie-task/b/T1"* ]]
+  [ "$(task_field "$P" b T1 status)" = '"verify"' ]
+  [ "$(task_field "$P" b T2 status)" = '"todo"' ]
+  run bash -c "cd '$P' && bridgie run b --pause-before-verify"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"paused before verify: T2 is built"* ]]
+  [ "$(task_field "$P" b T1 status)" = '"passed"' ]
+  [ "$(task_field "$P" b T2 status)" = '"verify"' ]
+  run bash -c "cd '$P' && bridgie run b --pause-before-verify"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"waiting for your acceptance"* ]] || [ -f "$P/.bridgie/acceptance/b.md" ]
+  [ "$(task_field "$P" b T2 status)" = '"passed"' ]
+}
+
+@test "status --cost shows where the time went, task by task" {
+  planned_bet "$P" b
+  run bash -c "cd '$P' && bridgie status --cost b"
+  [ "$status" -eq 0 ]
+  bash -c "cd '$P' && bridgie run b" >/dev/null 2>&1
+  run bash -c "cd '$P' && bridgie status --cost b"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Task"*"Attempts"*"Build"*"Review"*"Checks"*"Total"* ]]
+  [[ "$output" == *"T1"*"passed"* ]]
+  [[ "$output" == *"(bet)"* ]]
+  [[ "$output" == *"of agent and check time"* ]]
+  # every run of a task is counted on its row: builder, tiers and reviewer
+  node -e '
+    const fl = require("node:child_process").execFileSync("node", [process.argv[1] + "/runner/flow.mjs", "cost-by-task", process.argv[2], "b"], { encoding: "utf8" });
+    const t1 = JSON.parse(fl).find(r => r.task === "T1");
+    process.exit(t1.runs >= 3 ? 0 : 1)' "$BRIDGIE_HOME" "$P"
+  run bash -c "cd '$P' && bridgie status --cost nope"
+  [ "$status" -ne 0 ]
+}

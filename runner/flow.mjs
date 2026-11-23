@@ -369,6 +369,7 @@ function detectStacks(wt) {
   const has = (dir, test) => existsSync(dir) && readdirSync(dir).some(test);
   if (has(wt, f => f.endsWith('.sln')) || has(join(wt, 'src'), f => f.endsWith('.sln'))) stacks.push('dotnet');
   if (existsSync(join(wt, 'package.json'))) stacks.push('node');
+  if (['pyproject.toml', 'setup.py', 'setup.cfg', 'requirements.txt'].some(f => existsSync(join(wt, f)))) stacks.push('python');
   return stacks;
 }
 
@@ -393,7 +394,9 @@ export function mechanicalPlan(root, slug, wt, skip = []) {
     const laneFile = join(st.HOME, 'lanes', bet.lane, 'verifiers.yaml');
     const lane = existsSync(laneFile) ? yparse(readFileSync(laneFile, 'utf8')).tiers || {} : {};
     const stacks = detectStacks(wt);
-    byTier = t => stacks.flatMap(sk => lane[t]?.[sk] || []);
+    // the interpreter is `python` on Windows and `python3` where only that name is installed
+    const py = c => c.replace(/^python /, process.platform === 'win32' ? 'python ' : 'python3 ');
+    byTier = t => stacks.flatMap(sk => (lane[t]?.[sk] || []).map(py));
   }
   return commandTiers.flatMap(t => {
     const cmds = byTier(t);
@@ -465,6 +468,92 @@ function effectFor(root, slug, extra) {
     }
     return null;
   };
+}
+
+// ---------- plan checks ----------
+// requirementSections: { id: text } for every "## R1 · …" / "## P1 · …" section of requirements.md.
+export function requirementSections(root, slug) {
+  const f = requirementsPath(root, slug);
+  if (!existsSync(f)) return {};
+  const out = {};
+  const parts = readFileSync(f, 'utf8').split(/^(?=## [RP][0-9]+\b)/m);
+  for (const p of parts) { const m = p.match(/^## ([RP][0-9]+)\b/); if (m) out[m[1]] = p; }
+  return out;
+}
+// planWarnings: tasks whose requirements lean on something a task they do not depend on builds.
+// A requirement's text that names another requirement ("as R41 defines", "Validates: R2") needs that
+// one built first. When it is built later — or by a task that depends on this one — the task cannot
+// be verified against it, and review fails for a reason no retry fixes. Warnings, not errors: a
+// mention is not always a dependency, and the planner or the owner decides.
+export function planWarnings(root, slug) {
+  const tasks = loadTasks(root, slug).tasks;
+  const sections = requirementSections(root, slug);
+  const owner = {};                                  // requirement → the first task that builds it
+  for (const t of tasks) for (const r of t.requirements) owner[r] ??= t.id;
+  const byId = Object.fromEntries(tasks.map(t => [t.id, t]));
+  const reach = (id, seen = new Set()) => { for (const d of byId[id]?.depends_on || []) if (!seen.has(d)) { seen.add(d); reach(d, seen); } return seen; };
+  const out = [];
+  for (const t of tasks) {
+    const deps = reach(t.id);
+    const said = new Set();
+    for (const r of t.requirements) {
+      if (owner[r] !== t.id) continue;
+      const text = (sections[r] || '').replace(/^## [^\n]*\n/, '');
+      for (const q of new Set(text.match(/\b[RP][0-9]+\b/g) || [])) {
+        const o = owner[q];
+        if (!o || o === t.id || deps.has(o) || said.has(`${q}`)) continue;
+        said.add(q);
+        out.push(reach(o).has(t.id)
+          ? `${t.id} builds ${r}, whose text refers to ${q}, but ${q} is built by ${o}, which depends on ${t.id}: ${t.id} cannot be verified against ${q} until ${o} exists. Build ${r} and ${q} in one task, or move ${r} to ${o}`
+          : `${t.id} builds ${r}, whose text refers to ${q}, but ${q} is built by ${o}, which ${t.id} does not depend on: add ${o} to ${t.id}'s depends_on, or say why ${r} does not need ${q}`);
+      }
+    }
+  }
+  return out;
+}
+
+// ---------- cost ----------
+// costByTask: where a bet's time went. One row per task (and one for the bet's own seats: shaping,
+// planning, packaging): attempts, seat runs, and seconds split into build (implementer, hardener),
+// review, and checks (the command tiers). Tokens and money are summed when adapters report them.
+const COST_KIND = { implementer: 'build', hardener: 'build', reviewer: 'review', tiers: 'checks' };
+export function costByTask(root, slug) {
+  const tasks = existsSync(st.tasksPath(root, slug)) ? loadTasks(root, slug).tasks : [];
+  const rows = new Map();
+  const row = id => { if (!rows.has(id)) rows.set(id, { task: id, runs: 0, build: 0, review: 0, checks: 0, other: 0, seconds: 0, usd: null }); return rows.get(id); };
+  const taskOf = dir => {
+    for (const f of ['claim.json', 'evidence.json']) {
+      const p = join(dir, f);
+      if (existsSync(p)) { try { const t = st.readJson(p).task; if (typeof t === 'string') return t; } catch { /* a half-written file */ } }
+    }
+    return null;
+  };
+  const d = st.runsDir(root, slug);
+  for (const run of existsSync(d) ? readdirSync(d).sort() : []) {
+    const c = join(d, run, 'cost.json');
+    if (!existsSync(c)) continue;
+    let entries; try { entries = st.readJson(c).entries; } catch { continue; }
+    let fallback;
+    for (const e of entries) {
+      const r = row(e.task || (fallback ??= taskOf(join(d, run))) || '(bet)');
+      const s = e.duration_s || 0;
+      r.runs++; r.seconds += s; r[COST_KIND[e.seat] || 'other'] += s;
+      if (typeof e.usd === 'number') r.usd = (r.usd || 0) + e.usd;
+    }
+  }
+  const out = [];
+  for (const t of tasks) { const r = row(t.id); out.push({ ...r, title: t.title, size: t.size || null, status: t.status, attempts: t.attempts }); rows.delete(t.id); }
+  for (const r of rows.values()) out.push({ ...r, title: r.task === '(bet)' ? 'shaping, planning, packaging' : 'not in the current plan', size: null, status: null, attempts: null });
+  return out;
+}
+const dur = s => s >= 3600 ? `${Math.floor(s / 3600)}h${String(Math.round((s % 3600) / 60)).padStart(2, '0')}m` : s >= 60 ? `${Math.round(s / 60)}m` : `${s}s`;
+export function costTable(rows) {
+  const head = ['Task', 'Size', 'Status', 'Attempts', 'Runs', 'Build', 'Review', 'Checks', 'Other', 'Total'];
+  const body = [...rows].sort((a, b) => b.seconds - a.seconds).map(r => [r.task, r.size || '-', r.status || '-', r.attempts ?? '-', r.runs, dur(r.build), dur(r.review), dur(r.checks), dur(r.other), dur(r.seconds)].map(String));
+  const total = rows.reduce((n, r) => n + r.seconds, 0), usd = rows.some(r => r.usd !== null) ? rows.reduce((n, r) => n + (r.usd || 0), 0) : null;
+  const w = head.map((h, i) => Math.max(h.length, ...body.map(b => b[i].length)));
+  const line = cells => cells.map((c, i) => c.padEnd(w[i])).join('  ').trimEnd();
+  return [line(head), ...body.map(line), '', `${rows.reduce((n, r) => n + r.runs, 0)} runs, ${dur(total)} of agent and check time${usd === null ? '; adapters did not report token cost' : `; $${usd.toFixed(2)} reported`}`].join('\n');
 }
 
 // ---------- governance lock ----------
@@ -662,6 +751,8 @@ const OPS = {
   'start-attempt': a => out(startAttempt(a[0], a[1], a[2], a[3])),
   'reconcile': a => out(reconcile(a[0], a[1], a[2], a[3], JSON.parse(readFileSync(a[4], 'utf8')), a[5]).verdict),
   'fail-attempt': a => out(failAttempt(a[0], a[1], a[2], a[3]).status),
+  'cost-by-task': a => out(costByTask(a[0], a[1])),
+  'plan-warnings': a => out(planWarnings(a[0], a[1]).join('\n')),
   'governance-gate': a => out(governanceGate(a[0], a[1])?.decision || ''),
   'recover-attempts': a => out(recoverAttempts(a[0], a[1]).join('\n')),
   'stamp-task': a => { stampTask(a[0], a[1]); out('ok'); },
