@@ -11,6 +11,7 @@ import { runSeat, adapterCapabilities } from '../cli/seat.mjs';
 import * as g from '../cli/git.mjs';
 import { HOME, BridgieExit, die, log, waitHuman, parseArgs, projectRoot, stateCommit, git } from '../cli/core.mjs';
 import { loadSeat } from '../context.mjs';
+import { requireGovernance } from './build.mjs';
 
 function nextRunDir(root, slug, name) {
   const runs = join(root, '.bridgie', 'runs', slug); mkdirSync(runs, { recursive: true });
@@ -97,6 +98,7 @@ export default async function verify(argv) {
   if (!slug) die('usage: bridgie verify <slug> [--task T]');
   const root = projectRoot();
   g.onFeature(root, slug);
+  requireGovernance(root, slug, 'verify');
   let task = a.task;
   if (!task) {
     task = fl.loadTasks(root, slug).tasks.find(t => t.status === 'verify')?.id;

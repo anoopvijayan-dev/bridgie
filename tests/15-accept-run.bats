@@ -67,6 +67,7 @@ setup() {
 @test "money bets need two different approvers" {
   signed_bet "$P" b money
   all_tiers "$P"
+  policy_changed "$P" b
   bash -c "cd '$P' && bridgie shape b && bridgie shape b --approve" >/dev/null 2>&1
   run bash -c "cd '$P' && bridgie run b"
   [ "$status" -eq 0 ]
@@ -107,5 +108,102 @@ setup() {
   [[ "$output" == *"stale"* ]]
   run bash -c "cd '$P' && bridgie accept b --approve"
   [ "$status" -eq 0 ]
+  [ "$(fm "$P/.bridgie/bets/b/bet.md" status)" = '"delivered"' ]
+}
+
+delivered_package() {       # a risk-none bet built, verified and packaged, waiting for acceptance
+  signed_bet "$P" b
+  bash -c "cd '$P' && bridgie run b && bridgie shape b --approve && bridgie run b" >/dev/null 2>&1
+  [ -f "$P/.bridgie/acceptance/b.md" ]
+}
+
+@test "inside an agent, accepting needs --relayed, and the record says the answer came through the agent" {
+  delivered_package
+  run bash -c "cd '$P' && BRIDGIE_HARNESS=claude-code bridgie accept b --approve"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"is for a person"* ]]
+  [[ "$output" == *"--relayed"* ]]
+  [ "$(fm "$P/.bridgie/acceptance/b.md" decision)" = '"pending"' ]
+  run bash -c "cd '$P' && BRIDGIE_HARNESS=claude-code bridgie accept b --approve --relayed"
+  [ "$status" -eq 0 ]
+  [ "$(fm "$P/.bridgie/acceptance/b.md" decision)" = '"approved"' ]
+  node -e '
+    const d = require(process.argv[1]).decisions.find(x => x.type === "accept");
+    process.exit(d.via && d.via.agent === "claude-code" && d.via.relayed === true && d.via.channel === "cli" ? 0 : 1)' "$P/.bridgie/decisions/b.json"
+  grep -q 'approve → approved; bet delivered.* \[tester through claude-code (relayed)\]' "$P/.bridgie/bets/b/bet.md"
+}
+
+@test "with relay off an agent cannot accept at all; a person's terminal can" {
+  delivered_package
+  printf 'humans_only: { decisions: [accept, governance], relay: false }\n' >> "$P/.bridgie/policy.yaml"   # stricter: not drift
+  run bash -c "cd '$P' && BRIDGIE_HARNESS=codex bridgie accept b --approve --relayed"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"own terminal"* ]]
+  run bash -c "cd '$P' && bridgie accept b --approve"
+  [ "$status" -eq 0 ]
+  node -e '
+    const d = require(process.argv[1]).decisions.find(x => x.type === "accept");
+    process.exit(d.via && d.via.agent === null ? 0 : 1)' "$P/.bridgie/decisions/b.json"
+}
+
+@test "a policy made weaker after signing stops build until the owner decides (governance lock)" {
+  planned_bet "$P" b
+  printf 'lanes:\n  engineering:\n    cross_family: false\n' >> "$P/.bridgie/policy.yaml"
+  run bash -c "cd '$P' && bridgie build b"
+  [ "$status" -eq 3 ]
+  [[ "$output" == *"policy is weaker than the rules 'b' was signed under"* ]]
+  [[ "$output" == *"another model family is no longer required"* ]]
+  [ "$(task_field "$P" b T1 status)" = '"todo"' ]
+  D="$(node -e 'const d=require(process.argv[1]).decisions.find(x=>x.type==="governance"); console.log(d.id)' "$P/.bridgie/decisions/b.json")"
+  # run stops on it too, and raises no second decision
+  run bash -c "cd '$P' && bridgie run b"
+  [ "$(node -e 'console.log(require(process.argv[1]).decisions.filter(x=>x.type==="governance").length)' "$P/.bridgie/decisions/b.json")" = "1" ]
+  [ "$(task_field "$P" b T1 status)" = '"todo"' ]
+  # an agent cannot wave its own policy change through
+  run bash -c "cd '$P' && BRIDGIE_HARNESS=claude-code bridgie decide b $D 'accept the change'"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"is for a person"* ]]
+  # keeping the signed rules: still stopped, until the policy file goes back
+  bash -c "cd '$P' && bridgie decide b $D 'keep the signed rules'" >/dev/null 2>&1
+  run bash -c "cd '$P' && bridgie build b"
+  [ "$status" -eq 3 ]
+  [[ "$output" == *"put .bridgie/policy.yaml back"* ]]
+  sed -i.bak '/^lanes:$/,$d' "$P/.bridgie/policy.yaml"
+  run bash -c "cd '$P' && bridgie build b"
+  [ "$status" -eq 0 ]
+}
+
+@test "the owner accepting a policy change moves the bet to the new rules" {
+  planned_bet "$P" b
+  printf 'lanes:\n  engineering:\n    cross_family: false\n' >> "$P/.bridgie/policy.yaml"
+  run bash -c "cd '$P' && bridgie build b"
+  [ "$status" -eq 3 ]
+  D="$(node -e 'const d=require(process.argv[1]).decisions.find(x=>x.type==="governance"); console.log(d.id)' "$P/.bridgie/decisions/b.json")"
+  run bash -c "cd '$P' && BRIDGIE_USER=someone-else bridgie decide b $D 'accept the change'"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"only the owner"* ]]
+  run bash -c "cd '$P' && bridgie decide b $D 'accept the change'"
+  [ "$status" -eq 0 ]
+  run bash -c "cd '$P' && bridgie build b"
+  [ "$status" -eq 0 ]
+  grep -q 'accept the change → the bet is now held to the current policy \[tester\]' "$P/.bridgie/bets/b/bet.md"
+}
+
+@test "owner override delivers a money bet with one approval, and the acceptance record says so" {
+  signed_bet "$P" b money
+  all_tiers "$P"
+  policy_changed "$P" b
+  bash -c "cd '$P' && bridgie shape b && bridgie shape b --approve && bridgie run b; bridgie ack b && bridgie run b" >/dev/null 2>&1
+  [ -f "$P/.bridgie/acceptance/b.md" ]
+  run bash -c "cd '$P' && BRIDGIE_USER=second bridgie accept b --override 'no time'"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"only the owner"* ]]
+  run bash -c "cd '$P' && bridgie accept b --override ''"
+  [ "$status" -ne 0 ]
+  run bash -c "cd '$P' && bridgie accept b --override 'solo founder: there is no second approver'"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"approved by owner override with 1 of 2 approvals"* ]]
+  [ "$(fm "$P/.bridgie/acceptance/b.md" decision)" = '"approved"' ]
+  [ "$(fm "$P/.bridgie/acceptance/b.md" override | node -e 'const o=JSON.parse(require("fs").readFileSync(0,"utf8")); console.log(o.by, o.approvals, o.required)')" = "tester 1 2" ]
   [ "$(fm "$P/.bridgie/bets/b/bet.md" status)" = '"delivered"' ]
 }

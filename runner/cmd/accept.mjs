@@ -1,5 +1,6 @@
-// bridgie accept <slug> [--approve | --conditions "<conditions>" | --reject "<reason>"]
+// bridgie accept <slug> [--approve | --conditions "<conditions>" | --reject "<reason>" | --override "<reason>"] [--relayed]
 // Without flags: packages the acceptance page (R6: every task passed). With a flag: answers it.
+// --override: the owner delivers with fewer approvals than policy asks for; the record says so.
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -7,22 +8,25 @@ import * as st from '../state.mjs';
 import * as fl from '../flow.mjs';
 import { runSeat } from '../cli/seat.mjs';
 import * as g from '../cli/git.mjs';
-import { die, log, parseArgs, projectRoot, stateCommit, user, git } from '../cli/core.mjs';
+import { requireGovernance } from './build.mjs';
+import { actor, die, log, parseArgs, projectRoot, stateCommit, git } from '../cli/core.mjs';
 
 export default async function accept(argv) {
-  const a = parseArgs(argv, { approve: 'bool', conditions: 'value', reject: 'value' }, 'accept');
+  const a = parseArgs(argv, { approve: 'bool', conditions: 'value', reject: 'value', override: 'value', relayed: 'bool' }, 'accept');
   const slug = a._[0];
-  if (!slug) die('usage: bridgie accept <slug> [--approve | --conditions "..." | --reject "..."]');
+  if (!slug) die('usage: bridgie accept <slug> [--approve | --conditions "..." | --reject "..." | --override "<reason>"] [--relayed]');
   const root = projectRoot();
-  const ans = a.approve ? 'approve' : a.conditions !== undefined ? 'approve with conditions' : a.reject !== undefined ? 'reject' : null;
+  if (a.override !== undefined && !a.override.trim()) die('accept: --override needs the reason');
+  const ans = a.approve || a.override !== undefined ? 'approve' : a.conditions !== undefined ? 'approve with conditions' : a.reject !== undefined ? 'reject' : null;
   const pending = () => st.listDecisions(root, slug, { pending: true }).filter(d => d.type === 'accept').map(d => d.id);
 
+  if (ans !== 'reject') requireGovernance(root, slug, 'accept');
   if (ans) {
     const id = pending()[0];
     if (!id) die(`accept: nothing waiting for acceptance on '${slug}' (run bridgie accept ${slug} first)`);
     let res;
-    try { res = fl.answer(root, slug, id, ans, { by: user(), text: a.conditions ?? a.reject, gitSha: fl.featureSha(root, slug) || undefined }); } catch (e) { die(e.message); }
-    stateCommit(root, `accept ${slug}: ${ans}`);
+    try { res = fl.answer(root, slug, id, ans, { ...actor(a.relayed), text: a.conditions ?? a.reject, override: a.override, gitSha: fl.featureSha(root, slug) || undefined }); } catch (e) { die(e.message); }
+    stateCommit(root, `accept ${slug}: ${a.override !== undefined ? 'owner override' : ans}`);
     log(`${id} → ${ans}: ${res?.effect || ''}`);
     return;
   }

@@ -10,6 +10,13 @@ sizes:
   small: { harden: false, skip_tiers: [behavioural, dual_run] }   # one module, no shared state: no hardener, no whole-system tiers
   medium: {}                                                      # what the bet's risk asks for, no more
   large: { harden: true }                                         # shared state, locks, money arithmetic across modules: always hardened
+# Decisions a person must answer. Inside an agent (Claude Code, Codex, ...) the command line refuses
+# them unless the agent says it is relaying a person's answer (--relayed), and the record says so.
+# relay: false refuses the agent outright: the person answers in their own terminal or on bridgie open.
+humans_only: { decisions: [accept, governance], relay: true }
+# owner_override: the bet's owner may deliver with fewer approvals than policy asks for (bridgie
+# accept <slug> --override "<reason>"); the acceptance record says who, why and how many approved.
+acceptance: { owner_override: true }
 lanes:
   engineering:
     tiers_default: [mechanical, specified, contracts, adversarial]

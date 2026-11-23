@@ -5,6 +5,7 @@ export BRIDGIE_HOME
 export PATH="$BRIDGIE_HOME/bin:$PATH"
 export BRIDGIE_NO_COMMIT=1
 export BRIDGIE_USER=tester
+export BRIDGIE_HARNESS=none   # tests act as a person at a terminal, whatever runs the suite
 export BRIDGIE_USER_POLICY=/nonexistent/bridgie-user-policy.yaml   # isolate tests from ~/.bridgie
 
 make_project() {            # make_project [--git] → prints path
@@ -59,6 +60,13 @@ task_field() { node -e 'const t=JSON.parse(require("fs").readFileSync(process.ar
 all_tiers() {
   printf "verify:\n  commands:\n" >> "$1/.bridgie/policy.yaml"
   for t in mechanical specified contracts invariants behavioural dual_run; do printf "    %s: ['node -e 0']\n" "$t" >> "$1/.bridgie/policy.yaml"; done
+}
+
+# policy_changed <project> <slug>: the owner accepts a change made to policy.yaml after the bet was
+# signed (the governance lock would otherwise stop build, verify and accept). No-op without drift.
+policy_changed() {
+  local id; id="$(node "$BRIDGIE_HOME/runner/flow.mjs" governance-gate "$1" "$2" 2>/dev/null)" || return 0
+  [[ -z "$id" ]] || (cd "$1" && bridgie decide "$2" "$id" "accept the change") >/dev/null 2>&1
 }
 
 # --- cross-platform helpers (tests also run in Git Bash on Windows and on macOS) ---------------------

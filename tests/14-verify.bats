@@ -86,7 +86,9 @@ setup() {
 
 @test "touching a risk path asks for a human ack before verification (R9)" {
   printf 'version: 1\nlanes:\n  engineering:\n    risk_paths:\n      - { glob: "feature-*.txt", risk: security }\n' > "$P/.bridgie/policy.yaml"
+  policy_changed "$P" b
   all_tiers "$P"
+  policy_changed "$P" b
   run bash -c "cd '$P' && bridgie verify b"
   [ "$status" -ne 0 ]
   [[ "$output" == *"risk raised to security"* ]]
@@ -100,6 +102,7 @@ setup() {
 
 @test "a required tier with no command is not_proven and the task cannot pass" {
   printf 'version: 1\nverify:\n  commands:\n    mechanical: ["node -e 0"]\n' > "$P/.bridgie/policy.yaml"
+  policy_changed "$P" b
   run bash -c "cd '$P' && bridgie verify b"
   [ "$status" -ne 0 ]
   [[ "$output" == *"specified: no command configured"* ]]
@@ -109,6 +112,7 @@ setup() {
 
 @test "the reviewer gets the runner's test results and logs (it cannot run commands)" {
   printf 'version: 1\nverify:\n  commands:\n    mechanical: ["echo built-ok"]\n    specified: ["echo 7 tests passed"]\n' > "$P/.bridgie/policy.yaml"
+  policy_changed "$P" b
   bash -c "cd '$P' && bridgie verify b" >/dev/null 2>&1
   grep -q 'test results (runner-run, read-only)' "$P/.bridgie/runs/b/reviewer-01/prompt.md"
   grep -q '7 tests passed' "$P/.bridgie/runs/b/reviewer-01/prompt.md"
@@ -135,6 +139,7 @@ setup() {
 
 @test "mechanical commands from policy run in the worktree and a failure fails the task" {
   printf 'version: 1\nverify:\n  commands:\n    mechanical: ["test -f feature-1.txt", "test -f missing.txt"]\n' > "$P/.bridgie/policy.yaml"
+  policy_changed "$P" b
   run bash -c "cd '$P' && bridgie verify b"
   [ "$status" -ne 0 ]
   grep -q '"id": "mechanical:1"' "$P/.bridgie/runs/b/verify-01/evidence.json"
@@ -144,6 +149,7 @@ setup() {
 @test "a verify retried for the same commit reuses the tier results instead of running them again" {
   # the tier command counts its own runs; the reviewer's output is malformed the first time
   sed -i.bak "s|    mechanical: \['node -e 0'\]|    mechanical: ['echo run >> \"$P/.git/tier-runs\"']|" "$P/.bridgie/policy.yaml"
+  policy_changed "$P" b
   printf 'not json' > "$P/.git/bad.json"
   run bash -c "cd '$P' && BRIDGIE_FAKE_OUTPUT='$P/.git/bad.json' bridgie verify b"
   [ "$status" -ne 0 ]
@@ -206,6 +212,7 @@ blocked_by_review() {   # three reviews that fail on a finding, every tier passi
 
 @test "a same-family review is recorded as review debt, shown in status, and cleared by rereview" {
   printf 'lanes:\n  engineering:\n    cross_family: false\n' >> "$P/.bridgie/policy.yaml"
+  policy_changed "$P" b
   sed -i.bak 's/fake-producer/fake/' "$P/.bridgie/runs/b/implementer-01/adapter.json"   # the producer was the same family
   run bash -c "cd '$P' && BRIDGIE_FAKE_SAME_VENDOR=1 bridgie verify b"
   echo "$output"

@@ -87,6 +87,12 @@
               "string",
               "null"
             ]
+          },
+          "via": {
+            "type": [
+              "object",
+              "null"
+            ]
           }
         }
       }
@@ -117,6 +123,29 @@
         "string",
         "null"
       ]
+    },
+    "override": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "by": {
+          "type": "string"
+        },
+        "at": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "approvals": {
+          "type": "integer"
+        },
+        "required": {
+          "type": "integer"
+        }
+      }
     }
   }
 }

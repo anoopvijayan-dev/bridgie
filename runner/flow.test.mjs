@@ -363,3 +363,142 @@ test('reviewDebt lists passed tasks reviewed by their producer\'s own family unt
   fl.setTask(root, 'b', 'T1', { review: { adapter: 'claude-code', vendor: 'anthropic', producer_vendor: 'anthropic', cross_family: false, rereview: { adapter: 'antigravity', vendor: 'google', cross_family: true, verdict: 'pass' } } });
   assert.deepEqual(fl.reviewDebt(root, 'b').same, []);
 });
+
+// ---------- governance ----------
+function signedMoney(policy = 'version: 1\n') {
+  const root = project('money', policy);
+  for (const s of ['grilling', 'evidence']) st.betTransition(root, 'b', s);
+  writeFileSync(join(root, '.bridgie', 'bets', 'b', 'numbers.json'), JSON.stringify({ contribution_per_unit: 3, checks: { unit_positive: true } }));
+  st.setFm(st.betPath(root, 'b'), { confidence: 'data' }); st.betTransition(root, 'b', 'signed', { by: 'tester' });
+  fl.writeTasksFromPlan(root, 'b', planOutput(root, [T('T1', ['R1', 'R2', 'P1'])]));
+  fl.setTask(root, 'b', 'T1', { status: 'passed' });
+  return root;
+}
+const agentCli = (agent, extra = {}) => ({ channel: 'cli', agent, os_user: 'u', host: 'h', ...extra });
+
+test('provenance: an answer records through what it arrived, and the decision log says so', () => {
+  const root = project();
+  const d = fl.ensureDecision(root, 'b', 'question', 'Who pays?', ['yes', 'no']);
+  const res = fl.answer(root, 'b', d.id, 'yes', { by: 'tester', via: agentCli('claude-code') });
+  assert.deepEqual(res.via, { channel: 'cli', agent: 'claude-code', os_user: 'u', host: 'h' });
+  assert.match(readFileSync(st.betPath(root, 'b'), 'utf8'), /yes → recorded \[tester through claude-code\]/);
+  const saved = st.loadDecisions(root, 'b').decisions.find(x => x.id === d.id);
+  assert.equal(saved.via.agent, 'claude-code');
+});
+
+test('humans-only: an agent command line cannot answer an acceptance unless it says it relays a person', () => {
+  const root = signedMoney();
+  fl.writeAcceptance(root, 'b', { body: 'x', residual: [], cost: {} });
+  const d = st.listDecisions(root, 'b', { pending: true }).find(x => x.type === 'accept');
+  assert.throws(() => fl.answer(root, 'b', d.id, 'approve', { by: 'tester', via: agentCli('claude-code') }), /is for a person.*inside an agent \(claude-code\).*--relayed/);
+  assert.equal(st.readFm(fl.acceptancePath(root, 'b')).data.approvals.length, 0, 'a refused answer changes nothing');
+  fl.answer(root, 'b', d.id, 'approve', { by: 'tester', via: agentCli('claude-code', { relayed: true }) });
+  const fm = st.readFm(fl.acceptancePath(root, 'b')).data;
+  assert.equal(fm.approvals[0].via.agent, 'claude-code');
+  assert.equal(fm.approvals[0].via.relayed, true);
+  assert.match(readFileSync(st.betPath(root, 'b'), 'utf8'), /\[tester through claude-code \(relayed\)\]/);
+});
+
+test('humans-only: relay off refuses the agent outright; a person and the surface are not refused', () => {
+  const root = signedMoney('version: 1\nhumans_only: { decisions: [accept], relay: false }\n');
+  fl.writeAcceptance(root, 'b', { body: 'x', residual: [], cost: {} });
+  let d = st.listDecisions(root, 'b', { pending: true }).find(x => x.type === 'accept');
+  assert.throws(() => fl.answer(root, 'b', d.id, 'approve', { by: 'tester', via: agentCli('codex', { relayed: true }) }), /is for a person.*own terminal/);
+  fl.answer(root, 'b', d.id, 'approve', { by: 'tester', via: agentCli(null) });            // a person's terminal
+  d = st.listDecisions(root, 'b', { pending: true }).find(x => x.type === 'accept');
+  fl.answer(root, 'b', d.id, 'approve', { by: 'second', via: { channel: 'surface', agent: 'claude-code', os_user: 'u', host: 'h' } });   // clicked on the page
+  assert.equal(st.readFm(fl.acceptancePath(root, 'b')).data.decision, 'approved');
+  // deferring is never refused: it decides nothing
+  const q = fl.ensureDecision(root, 'b', 'governance', 'x', ['accept the change', 'keep the signed rules']);
+  fl.answer(root, 'b', q.id, 'defer', { by: 'tester', via: agentCli('codex') });
+});
+
+test('governance: signing records the rules; only weaker rules are drift', () => {
+  const root = signedMoney();
+  const signed = st.readFm(st.betPath(root, 'b')).data.governance.rules;
+  assert.equal(signed.approvers, 2);
+  assert.equal(signed.cross_family, true);
+  assert.ok(signed.tiers.includes('dual_run'));
+  assert.deepEqual(signed.humans_only, ['accept', 'governance']);
+  assert.deepEqual(fl.governanceDrift(root, 'b'), []);
+  const weak = { ...signed, tiers: signed.tiers.filter(t => t !== 'dual_run'), approvers: 1, cross_family: false, auto_accept: true, human_ack_before_build: false,
+    humans_only: ['governance'], owner_override: true, floor_risk: 'money', commands: 'abc',
+    sizes: { ...signed.sizes, small: { harden: false, skip_tiers: ['adversarial', 'behavioural', 'dual_run'] }, large: { harden: null, skip_tiers: [] } } };
+  const drift = st.governanceDrift({ ...signed, relay: false, owner_override: false }, { ...weak, relay: true });
+  for (const want of [/dual_run tier is no longer required/, /approvers required went from 2 to 1/, /another model family is no longer required/, /auto-accept was turned on/,
+    /risk acknowledgement before build was removed/, /"accept" decisions no longer need a person/, /agents may now relay/, /owner override at acceptance was turned on/,
+    /risk floor for small tasks rose from data to money/, /small tasks now skip adversarial/, /large tasks are no longer always hardened/, /verify commands in policy\.yaml changed/]) {
+    assert.ok(drift.some(x => want.test(x)), `${want} in ${JSON.stringify(drift)}`);
+  }
+  // stronger rules are not drift
+  const strong = { ...signed, tiers: [...signed.tiers, 'extra'], approvers: 3, humans_only: [...signed.humans_only, 'sign'], relay: false, owner_override: false };
+  assert.deepEqual(st.governanceDrift(signed, strong), []);
+});
+
+test('governance: a weakened policy stops the bet until the owner decides; keeping the signed rules raises no second decision', () => {
+  const root = signedMoney();
+  assert.equal(fl.governanceGate(root, 'b'), null);
+  writeFileSync(join(root, '.bridgie', 'policy.yaml'), 'version: 1\nlanes:\n  engineering:\n    cross_family: false\n    by_risk:\n      money: { approvers: 1 }\n');
+  const gate = fl.governanceGate(root, 'b');
+  assert.equal(gate.kept, false);
+  assert.equal(gate.drift.length, 2);
+  const d = st.loadDecisions(root, 'b').decisions.find(x => x.id === gate.decision);
+  assert.equal(d.type, 'governance');
+  assert.match(d.context, /approvers required went from 2 to 1; a reviewer from another model family is no longer required|another model family is no longer required/);
+  assert.equal(fl.governanceGate(root, 'b').decision, gate.decision, 'the same pending decision, not a new one');
+  // an approval cannot slip through while the rules are weaker
+  fl.writeAcceptance(root, 'b', { body: 'x', residual: [], cost: {} });
+  const acc = st.listDecisions(root, 'b', { pending: true }).find(x => x.type === 'accept');
+  assert.throws(() => fl.answer(root, 'b', acc.id, 'approve', { by: 'tester' }), /policy is weaker than the rules "b" was signed under/);
+  fl.answer(root, 'b', gate.decision, 'keep the signed rules', { by: 'tester' });
+  const kept = fl.governanceGate(root, 'b');
+  assert.equal(kept.kept, true);
+  assert.equal(kept.decision, gate.decision);
+  assert.equal(st.loadDecisions(root, 'b').decisions.filter(x => x.type === 'governance').length, 1);
+  // putting the policy back clears it
+  writeFileSync(join(root, '.bridgie', 'policy.yaml'), 'version: 1\n');
+  assert.equal(fl.governanceGate(root, 'b'), null);
+});
+
+test('governance: only the owner can move the bet to weaker rules; then the bet is held to them', () => {
+  const root = signedMoney();
+  writeFileSync(join(root, '.bridgie', 'policy.yaml'), 'version: 1\nlanes:\n  engineering:\n    by_risk:\n      money: { approvers: 1 }\n');
+  const gate = fl.governanceGate(root, 'b');
+  assert.throws(() => fl.answer(root, 'b', gate.decision, 'accept the change', { by: 'someone-else' }), /only the owner "tester"/);
+  fl.answer(root, 'b', gate.decision, 'accept the change', { by: 'tester' });
+  const g = st.readFm(st.betPath(root, 'b')).data.governance;
+  assert.equal(g.rules.approvers, 1);
+  assert.equal(g.accepted_by, 'tester');
+  assert.equal(fl.governanceGate(root, 'b'), null);
+});
+
+test('owner override: the owner delivers with fewer approvals and the record says so; policy can forbid it', () => {
+  let root = signedMoney();
+  fl.writeAcceptance(root, 'b', { body: 'x', residual: [], cost: {} });
+  let d = st.listDecisions(root, 'b', { pending: true }).find(x => x.type === 'accept');
+  assert.throws(() => fl.answer(root, 'b', d.id, 'approve', { by: 'second', override: 'in a hurry' }), /only the owner "tester" can override/);
+  const res = fl.answer(root, 'b', d.id, 'approve', { by: 'tester', override: 'solo founder: there is no second approver' });
+  assert.match(res.effect, /approved by owner override with 1 of 2 approvals \(solo founder/);
+  const fm = st.readFm(fl.acceptancePath(root, 'b')).data;
+  assert.equal(fm.decision, 'approved');
+  assert.equal(fm.override.by, 'tester');
+  assert.equal(fm.override.approvals, 1);
+  assert.equal(fm.override.required, 2);
+  assert.equal(fm.override.reason, 'solo founder: there is no second approver');
+  assert.equal(st.readFm(st.betPath(root, 'b')).data.status, 'delivered');
+  assert.equal(st.listDecisions(root, 'b', { pending: true }).filter(x => x.type === 'accept').length, 0, 'no further approval is asked for');
+
+  // after a first ordinary approval the owner can still override, without approving twice
+  root = signedMoney();
+  fl.writeAcceptance(root, 'b', { body: 'x', residual: [], cost: {} });
+  d = st.listDecisions(root, 'b', { pending: true }).find(x => x.type === 'accept');
+  fl.answer(root, 'b', d.id, 'approve', { by: 'tester' });
+  d = st.listDecisions(root, 'b', { pending: true }).find(x => x.type === 'accept');
+  fl.answer(root, 'b', d.id, 'approve', { by: 'tester', override: 'second approver is away' });
+  assert.equal(st.readFm(fl.acceptancePath(root, 'b')).data.approvals.length, 1);
+
+  root = signedMoney('version: 1\nacceptance: { owner_override: false }\n');
+  fl.writeAcceptance(root, 'b', { body: 'x', residual: [], cost: {} });
+  d = st.listDecisions(root, 'b', { pending: true }).find(x => x.type === 'accept');
+  assert.throws(() => fl.answer(root, 'b', d.id, 'approve', { by: 'tester', override: 'x' }), /policy does not allow an owner override/);
+});

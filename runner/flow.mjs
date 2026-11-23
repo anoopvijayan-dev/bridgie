@@ -442,7 +442,8 @@ export function ackRecorded(root, slug) {
 export const ackDeclined = (root, slug) => latest(root, slug, 'ack_risk')?.answer === 'decline';
 
 function effectFor(root, slug, extra) {
-  return (d, answer, { by, text }) => {
+  return (d, answer, { by, text, via }) => {
+    if (d.type === 'governance') return governanceEffect(root, slug, answer, by);
     if (d.type === 'approve_design') return answer === 'approve' ? 'design approved' : `changes requested${text ? `: ${text}` : ''}; re-run bridgie shape ${slug}`;
     if (d.type === 'ack_risk') return answer === 'ack' ? 'risk paths acknowledged' : 'declined; build and verify stay stopped';
     if (d.type === 'unblock') {
@@ -456,7 +457,7 @@ function effectFor(root, slug, extra) {
       if (answer === 'take over manually') { setTask(root, slug, id, { status: 'verify' }); return `task ${id} handed to ${by}; commit in its worktree, then bridgie verify ${slug} --task ${id}`; }
       if (answer === 'kill task') { setTask(root, slug, id, { escalation: `killed by ${by}` }); return `task ${id} killed; re-plan the bet to continue`; }
     }
-    if (d.type === 'accept') return acceptEffect(root, slug, answer, { by, text, gitSha: extra.gitSha });
+    if (d.type === 'accept') return acceptEffect(root, slug, answer, { by, text, via, gitSha: extra.gitSha, override: extra.override });
     if (d.type === 'confidence') {
       const m = answer.match(/^accept (opinion|anecdote|data|test)$/);
       if (m) { st.setFm(st.betPath(root, slug), { confidence: m[1] }, 'bet'); return `confidence set to ${m[1]}`; }
@@ -464,6 +465,36 @@ function effectFor(root, slug, extra) {
     }
     return null;
   };
+}
+
+// ---------- governance lock ----------
+// A bet is signed under a set of rules (tiers, approvers, cross-family review, who may decide). If
+// policy is later made weaker, nothing applies silently: build, verify and accept stop, and the owner
+// decides whether the bet moves to the new rules or the policy file goes back.
+export const ACCEPT_CHANGE = 'accept the change', KEEP_SIGNED = 'keep the signed rules';
+// governanceDrift: how today's policy is weaker than the rules the bet was signed under ([] = it is not).
+export function governanceDrift(root, slug) {
+  const bet = st.readFm(st.betPath(root, slug)).data;
+  if (!bet.governance?.rules) return [];              // signed before rules were recorded
+  return st.governanceDrift(bet.governance.rules, st.governanceRules(root, bet.lane, bet.risk));
+}
+// governanceGate: null when the bet may go on; otherwise the drift and the decision raised for it.
+export function governanceGate(root, slug) {
+  const drift = governanceDrift(root, slug);
+  if (!drift.length) return null;
+  const bet = st.readFm(st.betPath(root, slug)).data;
+  const context = `Policy changed after "${bet.title}" was signed, and this bet would now be held to less: ${drift.join('; ')}. Accept the change for this bet, or keep the rules it was signed under (then put policy.yaml back).`;
+  const last = latest(root, slug, 'governance');
+  if (last?.answer === KEEP_SIGNED && last.context === context) return { drift, decision: last.id, kept: true };
+  const d = ensureDecision(root, slug, 'governance', context, [ACCEPT_CHANGE, KEEP_SIGNED], { allow_free_text: false });
+  return { drift, decision: d.id, kept: false };
+}
+function governanceEffect(root, slug, answer, by) {
+  const bet = st.readFm(st.betPath(root, slug)).data;
+  if (answer !== ACCEPT_CHANGE) return 'the signed rules stand; build, verify and accept stay stopped until policy.yaml meets them again';
+  if (by !== bet.owner) throw new Error(`only the owner "${bet.owner}" can move this bet to weaker rules (acting as "${by}")`);
+  st.setFm(st.betPath(root, slug), { governance: { at: st.now(), rules: st.governanceRules(root, bet.lane, bet.risk), accepted_by: by } }, 'bet');
+  return 'the bet is now held to the current policy';
 }
 
 // answer: the one entry point for answering any decision (CLI, surface, shorthands).
@@ -574,7 +605,7 @@ export function writeAcceptance(root, slug, { body, residual = [], cost = {} }) 
     ['approve', 'approve with conditions', 'reject'], { allow_free_text: true });
 }
 
-function acceptEffect(root, slug, ans, { by, text, gitSha }) {
+function acceptEffect(root, slug, ans, { by, text, gitSha, via = null, override = null }) {
   const f = acceptancePath(root, slug);
   const { data, body } = st.readFm(f);
   if (ans !== 'approve' && !text) throw new Error(`"${ans}" needs a reason or the conditions (--text)`);
@@ -584,15 +615,30 @@ function acceptEffect(root, slug, ans, { by, text, gitSha }) {
     return 'rejected; fix and re-run bridgie accept';
   }
   // Approval is bound to what was packaged (finding 1): re-check the gates at the moment of approval.
+  const drift = governanceDrift(root, slug);
+  if (drift.length) throw new Error(`policy is weaker than the rules "${slug}" was signed under (${drift.join('; ')}); the owner decides that first: bridgie accept ${slug}`);
   const stale = stalePackage(root, slug, data);
   if (stale) throw new Error(`the acceptance package for "${slug}" is stale: ${stale}. Run bridgie accept ${slug} again`);
   if (data.packaged_sha && gitSha && gitSha !== data.packaged_sha) throw new Error(`approval names ${gitSha.slice(0, 10)} but the package was built at ${data.packaged_sha.slice(0, 10)}`);
   const bet = st.readFm(st.betPath(root, slug)).data;
-  const required = Math.max(data.approvers_required, st.lanePolicy(st.loadPolicy(root), bet.lane, bet.risk).approvers || 1);
-  if (data.approvals.some(a => a.by === by)) throw new Error(`${by} already approved; a different approver is required`);
+  const policy = st.loadPolicy(root);
+  const required = Math.max(data.approvers_required, st.lanePolicy(policy, bet.lane, bet.risk).approvers || 1);
   const sha = data.packaged_sha || gitSha || null;
-  const approvals = [...data.approvals, { by, at: st.now(), decision: ans, conditions: text || null, sha, digest: data.packaged_digest || null }];
+  const already = data.approvals.some(a => a.by === by);
+  if (already && !override) throw new Error(`${by} already approved; a different approver is required`);
+  const approvals = already ? data.approvals : [...data.approvals, { by, at: st.now(), decision: ans, conditions: override ? null : text || null, sha, digest: data.packaged_digest || null, ...(via ? { via } : {}) }];
   const conditions = approvals.filter(a => a.conditions).map(a => a.conditions);
+  // Owner override: the owner delivers with fewer approvals than policy asks for, and the record
+  // says exactly that — who, why, how many approvals there were. Policy can turn it off.
+  if (override) {
+    if (by !== bet.owner) throw new Error(`only the owner "${bet.owner}" can override the approvals (acting as "${by}")`);
+    if (policy.acceptance?.owner_override === false) throw new Error('policy does not allow an owner override at acceptance (acceptance.owner_override: false)');
+    if (approvals.length >= required) throw new Error(`no override is needed: ${approvals.length} of ${required} approvals are recorded`);
+    st.writeFm(f, { ...data, approvers_required: required, approvals, conditions, decision: 'approved', approver: approvals.map(a => a.by).join(', '), decided_at: st.now(), git_sha: sha,
+      override: { by, at: st.now(), reason: override, approvals: approvals.length, required } }, body, 'acceptance');
+    st.betTransition(root, slug, 'delivered');
+    return `approved by owner override with ${approvals.length} of ${required} approvals (${override}); bet delivered. Merge bridgie/${slug} when you are ready.`;
+  }
   if (approvals.length < required) {
     st.writeFm(f, { ...data, approvers_required: required, approvals, conditions }, body, 'acceptance');
     return `approval ${approvals.length} of ${required} recorded`;
@@ -616,6 +662,7 @@ const OPS = {
   'start-attempt': a => out(startAttempt(a[0], a[1], a[2], a[3])),
   'reconcile': a => out(reconcile(a[0], a[1], a[2], a[3], JSON.parse(readFileSync(a[4], 'utf8')), a[5]).verdict),
   'fail-attempt': a => out(failAttempt(a[0], a[1], a[2], a[3]).status),
+  'governance-gate': a => out(governanceGate(a[0], a[1])?.decision || ''),
   'recover-attempts': a => out(recoverAttempts(a[0], a[1]).join('\n')),
   'stamp-task': a => { stampTask(a[0], a[1]); out('ok'); },
   'risk-of-paths': a => out(riskOfPaths(a[0], a[1], readFileSync(a[2], 'utf8').split('\n').filter(Boolean))),

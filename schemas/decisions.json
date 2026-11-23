@@ -38,7 +38,8 @@
               "ack_risk",
               "accept",
               "unblock",
-              "confidence"
+              "confidence",
+              "governance"
             ]
           },
           "raised_by": {
@@ -121,6 +122,38 @@
               "ux",
               "none"
             ]
+          },
+          "via": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "channel": {
+                "type": "string"
+              },
+              "agent": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "os_user": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "host": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "relayed": {
+                "type": "boolean"
+              }
+            }
           }
         }
       }

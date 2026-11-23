@@ -62,7 +62,7 @@ setup() {
   bash -c "cd '$Q' && bridgie decide b D1 yes"
   id="$(node "$BRIDGIE_HOME/runner/state.mjs" ensure-sign "$Q" b)"
   bash -c "cd '$Q' && bridgie decide b $id sign"
-  norm() { sed -E 's/"(created_at|decided_at|signed_at)": "[^"]*"/"\1": "T"/g; s/^created: .*/created: X/; s/^signed_at: .*/signed_at: X/; s/^- [0-9-]{10} /- DATE /' "$1"; }
+  norm() { sed -E '/^  at: /d; s/"(created_at|decided_at|signed_at)": "[^"]*"/"\1": "T"/g; s/^created: .*/created: X/; s/^signed_at: .*/signed_at: X/; s/^- [0-9-]{10} /- DATE /' "$1"; }
   diff <(norm "$P/.bridgie/decisions/b.json") <(norm "$Q/.bridgie/decisions/b.json")
   diff <(norm "$P/.bridgie/bets/b/bet.md") <(norm "$Q/.bridgie/bets/b/bet.md")
 }

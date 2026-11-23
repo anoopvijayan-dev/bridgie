@@ -194,6 +194,40 @@
           }
         }
       }
+    },
+    "humans_only": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "decisions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "question",
+              "sign",
+              "approve_design",
+              "ack_risk",
+              "accept",
+              "unblock",
+              "confidence",
+              "governance"
+            ]
+          }
+        },
+        "relay": {
+          "type": "boolean"
+        }
+      }
+    },
+    "acceptance": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "owner_override": {
+          "type": "boolean"
+        }
+      }
     }
   },
   "$defs": {

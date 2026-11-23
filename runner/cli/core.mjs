@@ -66,6 +66,12 @@ export function user() {
   return n || process.env.USER || process.env.USERNAME || 'unknown';
 }
 
+// actor: who is answering a decision from the command line and through what — the identity, plus
+// provenance (the agent harness, if any; `relayed` when the agent says it passes on a person's answer).
+export function actor(relayed = false) {
+  return { by: user(), via: st.provenance('cli', relayed ? { relayed: true } : {}) };
+}
+
 // RUN_LOG_IGNORES: what a run leaves that is bulky and regenerable (test and adapter logs, diff
 // packets, raw replies). On a real bet these were 97% of the committed run folder. Evidence,
 // claims, cost and mechanical results are small and stay committed.

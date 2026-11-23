@@ -21,6 +21,17 @@ export function requireBuildAck(root, slug) {
   waitHuman(`build: waiting for a human ack of risk '${needs}' (bridgie ack ${slug}, or bridgie open ${slug})`);
 }
 
+// requireGovernance: nothing is built, verified or accepted under rules weaker than the bet was
+// signed under until the owner has decided (exit 3).
+export function requireGovernance(root, slug, cmd) {
+  const gate = fl.governanceGate(root, slug);
+  if (!gate) return;
+  if (!gate.kept) stateCommit(root, `governance decision raised for ${slug}`);
+  waitHuman(`${cmd}: policy is weaker than the rules '${slug}' was signed under: ${gate.drift.join('; ')}. ${gate.kept
+    ? `${gate.decision} kept the signed rules: put .bridgie/policy.yaml back, then run this again`
+    : `The owner decides ${gate.decision} (bridgie decide ${slug} ${gate.decision} "accept the change" | "keep the signed rules", or bridgie open ${slug})`}`);
+}
+
 // produce: one producer run with all guards; returns the run directory.
 async function produce(root, slug, task, seat, wt, packet) {
   const name = basename(seat), at = g.head(wt);
@@ -52,6 +63,7 @@ export default async function build(argv) {
   const root = projectRoot();
   if (!existsSync(join(root, '.bridgie', 'specs', slug, 'tasks.json'))) die(`build: no tasks for '${slug}' (bridgie plan ${slug})`);
   g.onFeature(root, slug);
+  requireGovernance(root, slug, 'build');
   requireBuildAck(root, slug);
   // A task a dead run left in_progress is recovered first, so a restart needs no hand edit.
   const recovered = fl.recoverAttempts(root, slug);
