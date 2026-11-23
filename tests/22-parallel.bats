@@ -9,6 +9,7 @@ setup() {
   (cd "$P" && bridgie shape b && bridgie shape b --approve && BRIDGIE_FAKE_OUTPUT="$BRIDGIE_HOME/tests/fixtures/decomposer-parallel.json" bridgie plan b) >/dev/null 2>&1
   [ -f "$P/.bridgie/specs/b/tasks.json" ]
 }
+body() { tr -d '\r' < "$1"; }   # git may check files out with CRLF (Windows, core.autocrlf)
 statuses() { node -e 'console.log(require(process.argv[1]).tasks.map(t=>`${t.id}:${t.status}:${t.attempts}`).join(" "))' "$P/.bridgie/specs/b/tasks.json"; }
 
 @test "build --parallel builds independent tasks together, each on its own branch, and never one that waits on them" {
@@ -52,7 +53,7 @@ statuses() { node -e 'console.log(require(process.argv[1]).tasks.map(t=>`${t.id}
   [[ "$output" == *"building 2 independent tasks together: T1, T2"* ]]
   [[ "$output" == *"T2: brought up to date with bridgie/b"* ]]
   [ "$(statuses)" = "T1:passed:1 T2:passed:1 T3:passed:1" ]
-  for t in T1 T2 T3; do [ "$(cat "$P/feature-$t.txt")" = "built by $t" ]; done
+  for t in T1 T2 T3; do [ "$(body "$P/feature-$t.txt")" = "built by $t" ]; done
   [ -f "$P/.bridgie/acceptance/b.md" ]
   # T2 was verified with T1's code present: its tiers ran on the merged tree
   git -C "$P" log --format=%s bridgie/b | grep -q 'bridgie: sync T2 with bridgie/b'
@@ -72,7 +73,7 @@ statuses() { node -e 'console.log(require(process.argv[1]).tasks.map(t=>`${t.id}
   [[ "$(task_field "$P" b T2 escalation)" == *'git merge bridgie/b'* ]]
   [ -z "$(git -C "$P/.bridgie/worktrees/b/T2" status --porcelain)" ]              # the failed merge was undone
   [ -z "$(git -C "$P" status --porcelain --untracked-files=no)" ]
-  [ "$(cat "$P/shared.txt")" = "built by T1" ]
+  [ "$(body "$P/shared.txt")" = "built by T1" ]
   run bash -c "cd '$P' && bridgie run b"
   [ "$status" -eq 0 ]
   [ "$(statuses)" = "T1:passed:1 T2:passed:2 T3:passed:1" ]
@@ -89,11 +90,11 @@ statuses() { node -e 'console.log(require(process.argv[1]).tasks.map(t=>`${t.id}
 }
 
 @test "a seat that edits project state during a parallel build is still caught and the state restored" {
-  before="$(cat "$P/.bridgie/policy.yaml")"
+  before="$(body "$P/.bridgie/policy.yaml")"
   run bash -c "cd '$P' && BRIDGIE_TEST_MODE=tamper bridgie build b --parallel 2"
   [ "$status" -ne 0 ]
   [[ "$output" == *"a seat wrote to Bridgie state files while T1, T2 were built together"* ]]
-  [ "$(cat "$P/.bridgie/policy.yaml")" = "$before" ]
+  [ "$(body "$P/.bridgie/policy.yaml")" = "$before" ]
   # the runner cannot tell which seat did it: nothing the batch built is kept
   [ "$(statuses)" = "T1:failed:1 T2:failed:1 T3:todo:0" ]
   run git -C "$P" show bridgie-task/b/T1:feature-T1.txt

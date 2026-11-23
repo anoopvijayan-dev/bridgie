@@ -8,6 +8,7 @@ import { execFileSync } from 'node:child_process';
 import * as g from './git.mjs';
 import { BridgieExit } from './core.mjs';
 
+const lf = s => s.replace(/\r\n/g, '\n');   // git may check files out with CRLF (Windows, core.autocrlf)
 const sh = (dir, ...args) => execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' }).trim();
 let P;
 beforeEach(() => {
@@ -120,7 +121,7 @@ test('syncTask: a task built beside others is brought up to date before verify; 
   // T1 is merged: T2 (other files) is brought up to date, and its diff is still only its own change
   g.mergeTask(P, 'net', 'T1');
   assert.deepEqual(g.syncTask(P, 'net', 'T2'), { synced: true });
-  assert.equal(readFileSync(join(w2, 'a.txt'), 'utf8'), 'from T1\n');
+  assert.equal(lf(readFileSync(join(w2, 'a.txt'), 'utf8')), 'from T1\n');
   const out = join(P, 'packet'); g.diffPacket(P, 'net', 'T2', out);
   assert.equal(readFileSync(join(out, 'files.txt'), 'utf8').trim(), 'b.txt');
   assert.deepEqual(g.bridgieChanges(P, 'net', 'T2'), []);
@@ -130,6 +131,6 @@ test('syncTask: a task built beside others is brought up to date before verify; 
   assert.equal(r.synced, false);
   assert.deepEqual(r.conflict, ['a.txt']);
   assert.equal(sh(w3, 'status', '--porcelain'), '');
-  assert.equal(readFileSync(join(w3, 'a.txt'), 'utf8'), 'from T3\n');
+  assert.equal(lf(readFileSync(join(w3, 'a.txt'), 'utf8')), 'from T3\n');
   assert.equal(sh(P, 'status', '--porcelain', '--untracked-files=no'), '', 'the feature branch is not left mid-merge');
 });
