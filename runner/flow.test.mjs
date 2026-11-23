@@ -560,3 +560,37 @@ test('mechanicalPlan: a Python project gets compile and pytest commands from the
   assert.ok(plan[0].cmd.startsWith(`${py} -m compileall -q -x `));
   assert.equal(plan[1].cmd, `${py} -m pytest -q`);
 });
+
+// ---------- parallel builds ----------
+test('pickBatch: ready tasks up to the width; a task whose declared files overlap one already picked waits', () => {
+  const root = project();
+  const tk = (id, reqs, touches, deps = []) => ({ ...T(id, reqs, deps), ...(touches ? { touches } : {}) });
+  fl.writeTasksFromPlan(root, 'b', planOutput(root, [
+    tk('T1', ['R1'], ['src/pay/refund.py', 'tests/pay/**']), tk('T2', ['R2'], ['src/pay/refund.py']), tk('T3', ['P1'], ['src/ledger/**']),
+    tk('T4', ['R1'], null), tk('T5', ['R1'], ['docs/**'], ['T1']),
+  ]));
+  assert.deepEqual(fl.loadTasks(root, 'b').tasks[0].touches, ['src/pay/refund.py', 'tests/pay/**']);
+  assert.deepEqual(fl.pickBatch(root, 'b', 1), { batch: ['T1'], held: [] });
+  const three = fl.pickBatch(root, 'b', 3);
+  assert.deepEqual(three.batch, ['T1', 'T3', 'T4']);         // T2 shares a file with T1; T4 declares nothing; T5 waits on T1
+  assert.deepEqual(three.held, [{ task: 'T2', with: 'T1', paths: ['src/pay/refund.py', 'src/pay/refund.py'] }]);
+  assert.deepEqual(fl.pickBatch(root, 'b', 8).batch, ['T1', 'T3', 'T4']);
+  // patterns err towards overlap: a leading wildcard could be anywhere
+  assert.ok(fl.touchesOverlap(['**/conftest.py'], ['src/x.py']));
+  assert.ok(fl.touchesOverlap(['src/pay/**'], ['src/pay/refund.py']));
+  assert.equal(fl.touchesOverlap(['src/pay/**'], ['src/ledger/**']), null);
+  assert.equal(fl.touchesOverlap(undefined, ['src/x.py']), null);
+});
+
+test('unstartAttempt: an attempt that never ran is not counted', () => {
+  const root = project();
+  fl.writeTasksFromPlan(root, 'b', planOutput(root, [T('T1', ['R1', 'R2', 'P1'])]));
+  fl.startAttempt(root, 'b', 'T1', 'bridgie-task/b/T1');
+  let t = fl.unstartAttempt(root, 'b', 'T1', 'a model CLI was at its usage limit');
+  assert.deepEqual({ attempts: t.attempts, status: t.status }, { attempts: 0, status: 'todo' });
+  assert.match(t.escalation, /usage limit/);
+  fl.startAttempt(root, 'b', 'T1', 'x'); fl.failAttempt(root, 'b', 'T1', 'bad'); fl.startAttempt(root, 'b', 'T1', 'x');
+  t = fl.unstartAttempt(root, 'b', 'T1');
+  assert.deepEqual({ attempts: t.attempts, status: t.status }, { attempts: 1, status: 'failed' });
+  assert.equal(fl.unstartAttempt(root, 'b', 'T1').attempts, 1, 'only an attempt in progress is undone');
+});

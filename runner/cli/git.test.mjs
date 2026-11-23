@@ -104,3 +104,32 @@ test('ignoreRunLogs adds the bulky run files to .bridgie/.gitignore once, unless
   writeFileSync(join(kept, '.bridgie', 'policy.yaml'), 'version: 1\ncommit_transcripts: true\n');
   assert.equal(ignoreRunLogs(kept), false);
 });
+
+test('syncTask: a task built beside others is brought up to date before verify; a conflict is undone and reported', () => {
+  g.featureStart(P, 'net');
+  sh(P, 'add', '-A'); sh(P, 'commit', '-q', '-m', 'state');
+  const w1 = g.taskWorktree(P, 'net', 'T1'), w2 = g.taskWorktree(P, 'net', 'T2'), w3 = g.taskWorktree(P, 'net', 'T3');
+  writeFileSync(join(w1, 'a.txt'), 'from T1\n'); g.commitAll(w1, 'T1');
+  writeFileSync(join(w2, 'b.txt'), 'from T2\n'); g.commitAll(w2, 'T2');
+  writeFileSync(join(w3, 'a.txt'), 'from T3\n'); g.commitAll(w3, 'T3');
+  // only Bridgie state moved on the feature branch: nothing to bring in, and the task's commit stays as it was
+  writeFileSync(join(P, '.bridgie', 'bets', 'x.md'), 'state\n'); sh(P, 'add', '-A'); sh(P, 'commit', '-q', '-m', 'state only');
+  const before = g.head(w2);
+  assert.deepEqual(g.syncTask(P, 'net', 'T2'), { synced: false });
+  assert.equal(g.head(w2), before);
+  // T1 is merged: T2 (other files) is brought up to date, and its diff is still only its own change
+  g.mergeTask(P, 'net', 'T1');
+  assert.deepEqual(g.syncTask(P, 'net', 'T2'), { synced: true });
+  assert.equal(readFileSync(join(w2, 'a.txt'), 'utf8'), 'from T1\n');
+  const out = join(P, 'packet'); g.diffPacket(P, 'net', 'T2', out);
+  assert.equal(readFileSync(join(out, 'files.txt'), 'utf8').trim(), 'b.txt');
+  assert.deepEqual(g.bridgieChanges(P, 'net', 'T2'), []);
+  assert.deepEqual(g.syncTask(P, 'net', 'T2'), { synced: false }, 'already up to date');
+  // T3 wrote the same file as T1: the merge is undone, the worktree is clean, the files are named
+  const r = g.syncTask(P, 'net', 'T3');
+  assert.equal(r.synced, false);
+  assert.deepEqual(r.conflict, ['a.txt']);
+  assert.equal(sh(w3, 'status', '--porcelain'), '');
+  assert.equal(readFileSync(join(w3, 'a.txt'), 'utf8'), 'from T3\n');
+  assert.equal(sh(P, 'status', '--porcelain', '--untracked-files=no'), '', 'the feature branch is not left mid-merge');
+});

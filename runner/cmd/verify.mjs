@@ -112,6 +112,16 @@ export default async function verify(argv) {
   const wt = g.restoreTaskWorktree(root, slug, task);
   if (!wt) die(`verify: no worktree or branch for ${task} (${g.taskBranch(slug, task)}); if it was built elsewhere, push that branch there and git fetch here`);
   g.commitAll(wt, `bridgie: ${task} manual changes before verify`);
+  // Other tasks may have been merged since this one branched (tasks built side by side): verify
+  // the code as it will be after the merge. A conflict sends the task back to its builder.
+  const sync = g.syncTask(root, slug, task);
+  if (sync.synced) log(`  ${task}: brought up to date with ${g.featureBranch(slug)} (other tasks were merged since it was built)`);
+  if (sync.conflict) {
+    fl.failAttempt(root, slug, task, `it conflicts with what was merged into ${g.featureBranch(slug)} after it was built (${sync.conflict.join(', ')}). In the task worktree run "git merge ${g.featureBranch(slug)}", resolve the conflicts so that both tasks' behaviour is kept, run the tests, and finish the task`);
+    stateCommit(root, `verify ${slug} ${task}: conflicts with ${g.featureBranch(slug)}`);
+    log(`bridgie: ${task} conflicts with what was merged since it was built (${sync.conflict.join(', ')}); it goes back to build`);
+    throw new BridgieExit('', 2);
+  }
 
   // 1. packet (R8) and risk paths (R9)
   const vdir = nextRunDir(root, slug, 'verify'); mkdirSync(vdir, { recursive: true });

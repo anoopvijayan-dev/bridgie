@@ -60,7 +60,7 @@ function launch(cmd, args, logFile) {
   });
 }
 
-// runSeat(slug, seat, { task, cwd, packet, vars, exclude, lock, runsDir }) → run directory.
+// runSeat(slug, seat, { task, cwd, packet, vars, exclude, lock, runsDir, onRunDir, snapshot, onViolation }) → run directory.
 export async function runSeat(slug, seat, opts = {}) {
   const root = opts.root || projectRoot();
   const cwd = opts.cwd || root;
@@ -70,6 +70,7 @@ export async function runSeat(slug, seat, opts = {}) {
   const runs = opts.runsDir || process.env.BRIDGIE_RUNS_DIR || join(root, '.bridgie', 'runs', slug);
   const { n, dir: runDir } = nextRunDir(runs, name);
   mkdirSync(runDir, { recursive: true });
+  opts.onRunDir?.(runDir);   // a batch of seats running together registers each run folder as it appears
   if (opts.packet && existsSync(opts.packet)) cpSync(opts.packet, runDir, { recursive: true });
   if (opts.vars) copyFileSync(opts.vars, join(runDir, 'vars.json'));
 
@@ -120,10 +121,16 @@ export async function runSeat(slug, seat, opts = {}) {
 
   // 3. lock, snapshot, launch, measure; on an adapter that cannot run at all, warn and fall back
   const locked = opts.lock !== false;
-  const excludes = [relTo(root, runDir), ...(opts.exclude ? [relTo(root, opts.exclude)] : [])];
+  // What the state guard ignores for this run: its own run folder, plus what the caller names. A
+  // function is asked again at every check, so seats running side by side ignore one another's run
+  // folders (and nothing else) however late those appear.
+  const excludes = () => [runDir, ...(typeof opts.exclude === 'function' ? opts.exclude() : opts.exclude ? [opts.exclude] : [])].map(x => relTo(root, x));
   if (locked) seatLock(root, name, runDir);
   try {
-    try { snapshot(root, join(runDir, '.snapshot'), excludes); } catch (e) { die(e.message); }
+    // Seats running side by side share one snapshot, taken before any of them started (opts.snapshot):
+    // a snapshot of its own could already hold what a sibling wrote.
+    const snap = opts.snapshot || join(runDir, '.snapshot');
+    if (!opts.snapshot) { try { snapshot(root, snap, excludes()); } catch (e) { die(e.message); } }
     const fellBack = [];
     if (st.exhaustedUntil(root, adapter)) {   // known to be at its limit: do not launch it to find out again
       exhausted.push(adapter);
@@ -143,10 +150,12 @@ export async function runSeat(slug, seat, opts = {}) {
       st.costAdd(runDir, { seat: name, ...(opts.task ? { task: opts.task } : {}), adapter, model, started_at: startedAt, duration_s: Math.round((Date.now() - start) / 1000), attempt: n, exit_code: rc, tokens_in: null, tokens_out: null, usd: null });
 
       // 4. single-writer guard (P1): any added, removed or changed state file fails the run
-      const d = check(root, join(runDir, '.snapshot'), excludes);
+      const d = check(root, snap, excludes());
       if (d.added.length || d.removed.length || d.changed.length) {
-        const restored = restore(root, join(runDir, '.snapshot'), excludes);
-        writeFileSync(join(runDir, 'VIOLATION'), `seat ${name} modified Bridgie state directly; state restored from snapshot\n${JSON.stringify(restored)}\n`);
+        const restored = restore(root, snap, excludes());
+        const who = opts.snapshot ? `Bridgie state was modified while seat ${name} ran beside other seats (by this seat or one of them)` : `seat ${name} modified Bridgie state directly`;
+        writeFileSync(join(runDir, 'VIOLATION'), `${who}; state restored from snapshot\n${JSON.stringify(restored)}\n`);
+        opts.onViolation?.(runDir);
         die(`seat ${name} wrote to Bridgie state files; run failed and state restored (see ${join(runDir, 'VIOLATION')})`);
       }
       if (rc === 0) break;
@@ -170,7 +179,7 @@ export async function runSeat(slug, seat, opts = {}) {
       writeFileSync(join(runDir, 'fallback.json'), JSON.stringify({ routed: route.adapter, failed: fellBack, used: next.adapter }, null, 2) + '\n');
       ({ adapter, raw, caps } = next); model = 'default'; effort = null;
     }
-    rmSync(join(runDir, '.snapshot'), { recursive: true, force: true });   // kept only beside a VIOLATION
+    if (!opts.snapshot) rmSync(snap, { recursive: true, force: true });   // kept only beside a VIOLATION
   } finally {
     if (locked) seatUnlock(root);
   }

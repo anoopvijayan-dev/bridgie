@@ -125,7 +125,7 @@ export function writeTasksFromPlan(root, slug, outputFile) {
   const max = st.loadPolicy(root).retries?.max_attempts || 3;
   const doc = {
     bet: slug,
-    tasks: list.map(t => ({ id: t.id, title: t.title || t.id, requirements: t.requirements, depends_on: t.depends_on || [], ...(SIZES.includes(t.size) ? { size: t.size } : {}), status: 'todo', attempts: 0, max_attempts: max, branch: null, evidence: null, escalation: null })),
+    tasks: list.map(t => ({ id: t.id, title: t.title || t.id, requirements: t.requirements, depends_on: t.depends_on || [], ...(SIZES.includes(t.size) ? { size: t.size } : {}), ...(Array.isArray(t.touches) && t.touches.length && t.touches.every(x => typeof x === 'string' && x.trim()) ? { touches: t.touches.map(x => x.trim()) } : {}), status: 'todo', attempts: 0, max_attempts: max, branch: null, evidence: null, escalation: null })),
   };
   saveTasks(root, slug, doc);
   // Effective risk (finding 3): a requirement tagged with a higher risk raises the bet's risk.
@@ -169,6 +169,29 @@ export function readyTasks(root, slug) {
     t.depends_on.every(d => passed.has(d)));
 }
 
+// touchesOverlap: could two tasks' declared paths name the same file? Patterns are compared on the
+// fixed part before their first wildcard, so the answer errs towards "yes" ("**/x.py" overlaps all).
+const fixedPart = p => p.replace(/\\/g, '/').replace(/^\.\//, '').split(/[*?[{]/)[0];
+export function touchesOverlap(a = [], b = []) {
+  for (const x of a) for (const y of b) { const fx = fixedPart(x), fy = fixedPart(y); if (fx.startsWith(fy) || fy.startsWith(fx)) return [x, y]; }
+  return null;
+}
+// pickBatch: up to n ready tasks to build side by side. Ready already means every dependency
+// passed, so no task in the batch needs another's code. A task that declares the files it touches
+// (`touches`, from the plan) is held for a later batch when they overlap with a task already picked:
+// two builders in one file end in a merge conflict and a rebuild. Tasks that declare nothing are
+// taken on the plan's word that they are independent; verify catches a conflict if they were not.
+export function pickBatch(root, slug, n) {
+  const picked = [], held = [];
+  for (const t of readyTasks(root, slug)) {
+    if (picked.length >= n) break;
+    const clash = picked.map(p => [p, touchesOverlap(p.touches, t.touches)]).find(([, o]) => o);
+    if (clash) held.push({ task: t.id, with: clash[0].id, paths: clash[1] });
+    else picked.push(t);
+  }
+  return { batch: picked.map(t => t.id), held };
+}
+
 export function startAttempt(root, slug, id, branch) {
   const doc = loadTasks(root, slug);
   const t = getTask(doc, id);
@@ -196,6 +219,19 @@ export function recoverAttempts(root, slug) {
   }
   if (stuck.length) saveTasks(root, slug, doc);
   return stuck.map(t => t.id);
+}
+
+// unstartAttempt: an attempt that never ran (every model CLI that could take the seat was at its
+// usage limit) is not evidence about the task: it is not counted, and the task is buildable again.
+export function unstartAttempt(root, slug, id, note = '') {
+  const doc = loadTasks(root, slug);
+  const t = getTask(doc, id);
+  if (t.status !== 'in_progress') return t;
+  t.attempts = Math.max(0, t.attempts - 1);
+  t.status = t.attempts === 0 ? 'todo' : 'failed';
+  if (note) t.escalation = t.escalation ? `${t.escalation} | ${note}` : note;
+  saveTasks(root, slug, doc);
+  return t;
 }
 
 // failAttempt: the producer could not finish (adapter error, bad output, edited .bridgie/).

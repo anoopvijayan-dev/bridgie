@@ -21,13 +21,14 @@ You produce the task list the runner will drive, one independently verifiable ta
 - Dependencies are explicit and acyclic; the first task has none.
 - When a requirement's text names another requirement ("as R41 defines", `Validates: R2`), the task that builds the named one comes first: list it in `depends_on`. Two requirements that each need the other belong in one task; split across two, neither can be verified. The runner prints a warning for every such mention that the plan does not order.
 - Give each task a `size`. `small`: one module, under about 200 changed lines, no shared state (no locks, logs, caches or files other code writes) and no money arithmetic. `large`: shared state, concurrency, or arithmetic that crosses modules. `medium`: everything else, and whenever you are unsure. Size decides how heavy the pipeline is for the task, so a wrong `small` skips checks: never call a task small to make it cheaper.
+- Give each task `touches`: the files or folders it will create or change, as paths or globs (`src/pay/refund.py`, `tests/pay/**`). Independent tasks can be built at the same time, each in its own worktree; two that touch the same file are held apart so they do not end in a merge conflict. Shape the plan so that tasks which can run together own different files; when two must change the same file, make one depend on the other.
 - Risky tasks (money, data, security paths) are isolated so a human ack covers one task, not all.
 
 ## Gotchas
 - A "wire it all together" task at the end is a smell; integration belongs to the task that completes a requirement.
 
 ## Output contract
-`seat-output.json`: `artifact_md` is a JSON code block with the `tasks` array for tasks.json (`id`, `title`, `requirements`, `depends_on`, `size`); `summary_md` lists any requirement left unmapped.
+`seat-output.json`: `artifact_md` is a JSON code block with the `tasks` array for tasks.json (`id`, `title`, `requirements`, `depends_on`, `size`, `touches`); `summary_md` lists any requirement left unmapped.
 
 ## Stop conditions
 Stop if a requirement has no place in the design; raise it as a question.

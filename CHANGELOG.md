@@ -21,6 +21,15 @@ Changes that came out of running a 41-task, money-risk bet from start to finish.
 - **Governance lock.** Signing stores the rules in force on the bet. Weaker rules later (a tier dropped, fewer approvers, cross-family review off, a `humans_only` entry removed, looser size rules, changed verify commands) stop `build`, `verify` and `accept` with a `governance` decision only the owner can accept. Bets signed before 0.7.0 have no stored rules and are not checked.
 - **Owner override.** `bridgie accept <slug> --override "<reason>"`: the owner delivers with fewer approvals than required; the acceptance record holds who, why and the counts. `acceptance: { owner_override: false }` forbids it.
 
+### Parallel builds
+- `bridgie build <slug> --parallel N` and `bridgie run <slug> --parallel N` (default from policy `build: { parallel: 1 }`, 1 to 16) build up to N ready tasks at the same time, each in its own worktree and branch. A ready task is one whose dependencies have all passed, so no task in a batch needs another's code.
+- One process holds the seat lock for the batch and writes state only before the seats start and after the last one ends. The batch shares one state snapshot taken before any seat starts; each seat's guard ignores its siblings' run folders and nothing else. If state is edited during a batch, it is restored and every attempt of the batch is discarded: the runner cannot tell which seat did it.
+- One task failing does not sink the others: they go on to verify; the command fails only when none finished.
+- `verify` first brings the task up to date with what was merged into the feature branch since it was built (a merge in the task worktree, only when code outside `.bridgie/` changed), so tiers and the reviewer see the code as it will be after merging. A conflict is undone, the task goes back to build with the files named, and `verify` exits 2.
+- Tasks may carry `touches` (paths or globs the planner expects the task to change). Tasks whose declared paths overlap are not put in the same batch.
+- A build whose seat could not run because every fitting model CLI was at its usage limit no longer uses an attempt (exit 3).
+- Measured on the 41-task bet this release came from (23.5 h building, 6.8 h reviewing): N=2 gives about 1.3x, N=3 about 1.6x, N=4 and above about 1.65x. A scheduler that also overlapped verification with building would reach about 2.2x; the dependency chain alone is 11.8 h.
+
 ### Run control, planning, cost
 - `bridgie run <slug> --pause-before-verify` stops after each build.
 - `plan` warns when a task builds a requirement whose text names one built by a task it does not depend on.
@@ -33,5 +42,5 @@ Changes that came out of running a 41-task, money-risk bet from start to finish.
 - Scripts that call `bridgie accept --approve` from inside an agent need `--relayed` (or `BRIDGIE_HARNESS=none` for a person's own automation).
 
 ### Not in this release
-- Building independent tasks in parallel: one seat runs at a time per project.
+- Verifying tasks in parallel, and starting the next build while another task is being verified: verification and merging are one task at a time.
 - Token and money cost: no adapter reports it yet.

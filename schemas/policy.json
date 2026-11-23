@@ -4,6 +4,16 @@
     "version"
   ],
   "properties": {
+    "build": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "parallel": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
     "version": {
       "type": "integer"
     },

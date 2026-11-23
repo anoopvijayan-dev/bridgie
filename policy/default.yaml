@@ -3,6 +3,9 @@ version: 1
 retries: { max_attempts: 3 }
 swarm: { parallel: 4, default_n: 20, max_n: 100 }   # simulated buyer panel: agents at once, default and ceiling per panel
 commit_transcripts: false
+# How many independent tasks (all their dependencies passed) are built at the same time, each in its
+# own worktree. Verification and merging stay one at a time. 1 = one task at a time.
+build: { parallel: 1 }
 # What a task's size adds or drops. Risk sets the floor: a task that builds a requirement tagged at
 # or above floor_risk, or that changes a risk path, is never treated as small.
 sizes:

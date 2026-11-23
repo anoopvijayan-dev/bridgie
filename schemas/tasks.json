@@ -79,6 +79,7 @@
               "null"
             ]
           },
+          "touches": { "type": "array", "items": { "type": "string" } },
           "size": {
             "type": "string",
             "enum": [

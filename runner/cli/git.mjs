@@ -119,6 +119,21 @@ export function bridgieChanges(root, slug, task) {
   return [...new Set([...committed, ...pending].map(s => s.trim()).filter(Boolean))].sort();
 }
 
+// syncTask: bring into a task's worktree the code other tasks merged into the feature branch after
+// this one branched, so the tiers and the reviewer see the code as it will be once it is merged.
+// Nothing happens when the feature branch only gained Bridgie state since then (the usual case when
+// tasks are built one at a time). A conflict is undone and reported: { conflict: [files] }.
+export function syncTask(root, slug, task) {
+  const wt = taskWtPath(root, slug, task), fb = featureBranch(slug);
+  const base = taskBase(root, slug, task);
+  if (git(['-C', root, 'diff', '--quiet', base, fb, ...EXCLUDE]).ok) return { synced: false };
+  const m = git(['-C', wt, 'merge', '--no-edit', '-q', '-m', `bridgie: sync ${task} with ${fb}`, fb]);
+  if (m.ok) return { synced: true };
+  const files = git(['-C', wt, 'diff', '--name-only', '--diff-filter=U']).out.split(/\r?\n/).filter(Boolean);
+  git(['-C', wt, 'merge', '--abort']);
+  return { synced: false, conflict: files.length ? files : ['(git could not merge; see the task worktree)'] };
+}
+
 export function resetTask(wt, to) {
   gitOrDie(['-C', wt, 'reset', '-q', '--hard', to]);
   git(['-C', wt, 'clean', '-q', '-fd']);

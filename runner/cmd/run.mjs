@@ -1,5 +1,6 @@
 // bridgie run <slug> — drive the bet as far as it can go without a human:
 // shape → plan → (build → verify)* → accept packaging. Stops at every human decision.
+// --parallel N: build up to N independent tasks at the same time (verify stays one at a time).
 // --pause-before-verify: stop after each build so a person reads the change first ("I check, Bridgie
 // verifies"); running it again verifies that task and builds the next.
 import { existsSync } from 'node:fs';
@@ -9,10 +10,10 @@ import * as fl from '../flow.mjs';
 import { BridgieExit, die, log, parseArgs, projectRoot, betStatus, stateCommit } from '../cli/core.mjs';
 
 // step: one subcommand in-process; returns its exit code (0 ok, 2 verify failed, 3 waiting for a human).
-async function step(name, slug) {
-  log(`→ bridgie ${name} ${slug}`);
+async function step(name, slug, extra = []) {
+  log(`→ bridgie ${name} ${slug}${extra.length ? ` ${extra.join(' ')}` : ''}`);
   const mod = await import(`./${name}.mjs`);
-  try { await mod.default([slug]); return 0; }
+  try { await mod.default([slug, ...extra]); return 0; }
   catch (e) {
     if (!(e instanceof BridgieExit)) throw e;
     if (e.message) log(`bridgie: ${e.message}`);
@@ -21,9 +22,9 @@ async function step(name, slug) {
 }
 
 export default async function run(argv) {
-  const a = parseArgs(argv, { 'pause-before-verify': 'bool' }, 'run');
+  const a = parseArgs(argv, { 'pause-before-verify': 'bool', parallel: 'value' }, 'run');
   const slug = a._[0];
-  if (!slug) die('usage: bridgie run <slug> [--pause-before-verify]');
+  if (!slug) die('usage: bridgie run <slug> [--pause-before-verify] [--parallel N]');
   const root = projectRoot();
   const stop = rc => { if (rc === 3) return true; throw new BridgieExit('', rc); };
   let i = 0;
@@ -54,10 +55,11 @@ export default async function run(argv) {
       continue;
     }
     if (fl.readyTasks(root, slug).length) {
-      const rc = await step('build', slug); if (rc && stop(rc)) return;
-      const built = fl.loadTasks(root, slug).tasks.find(t => t.status === 'verify');
+      const rc = await step('build', slug, a.parallel !== undefined ? ['--parallel', a.parallel] : []); if (rc && stop(rc)) return;
+      const waiting = fl.loadTasks(root, slug).tasks.filter(t => t.status === 'verify'), built = waiting[0];
       if (a['pause-before-verify'] && built) {
-        log(`paused before verify: ${built.id} is built on ${built.branch}. Read it (git diff bridgie/${slug}...${built.branch}), then run this again to verify it and build the next task`);
+        if (waiting.length > 1) log(`paused before verify: ${waiting.map(t => t.id).join(', ')} are built, each on its own branch (${waiting.map(t => t.branch).join(', ')}). Read them, then run this again to verify them and build the next tasks`);
+        else log(`paused before verify: ${built.id} is built on ${built.branch}. Read it (git diff bridgie/${slug}...${built.branch}), then run this again to verify it and build the next task`);
         return;
       }
       continue;
