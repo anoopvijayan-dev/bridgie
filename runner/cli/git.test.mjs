@@ -84,3 +84,23 @@ test('review worktree is detached at the task head and removable', () => {
   g.removeWorktree(P, rv);
   assert.ok(!existsSync(rv));
 });
+
+test('ignoreRunLogs adds the bulky run files to .bridgie/.gitignore once, unless commit_transcripts is on', async () => {
+  const { ignoreRunLogs, RUN_LOG_IGNORES } = await import('./core.mjs');
+  const { mkdtempSync, mkdirSync, writeFileSync, readFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const root = mkdtempSync(join(tmpdir(), 'bridgie-ignore-'));
+  mkdirSync(join(root, '.bridgie', 'bets'), { recursive: true });
+  writeFileSync(join(root, '.bridgie', 'policy.yaml'), 'version: 1\n');
+  writeFileSync(join(root, '.bridgie', '.gitignore'), 'ui/\nworktrees/');
+  assert.equal(ignoreRunLogs(root), true);
+  const lines = readFileSync(join(root, '.bridgie', '.gitignore'), 'utf8').split('\n');
+  for (const l of ['ui/', 'worktrees/', ...RUN_LOG_IGNORES]) assert.ok(lines.includes(l), l);
+  assert.equal(ignoreRunLogs(root), false);   // once
+  assert.equal(readFileSync(join(root, '.bridgie', '.gitignore'), 'utf8').split('\n').filter(l => l === 'runs/**/*.log').length, 1);
+  const kept = mkdtempSync(join(tmpdir(), 'bridgie-ignore-'));
+  mkdirSync(join(kept, '.bridgie', 'bets'), { recursive: true });
+  writeFileSync(join(kept, '.bridgie', 'policy.yaml'), 'version: 1\ncommit_transcripts: true\n');
+  assert.equal(ignoreRunLogs(kept), false);
+});

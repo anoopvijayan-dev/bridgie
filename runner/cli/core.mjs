@@ -1,5 +1,5 @@
 // Shared helpers for bridgie commands. Plain Node: no bash, no coreutils, same on Windows, macOS, Linux.
-import { existsSync, statSync, readFileSync, realpathSync } from 'node:fs';
+import { existsSync, statSync, readFileSync, realpathSync, appendFileSync } from 'node:fs';
 import { dirname, join, resolve, delimiter, extname } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import * as st from '../state.mjs';
@@ -66,8 +66,31 @@ export function user() {
   return n || process.env.USER || process.env.USERNAME || 'unknown';
 }
 
+// RUN_LOG_IGNORES: what a run leaves that is bulky and regenerable (test and adapter logs, diff
+// packets, raw replies). On a real bet these were 97% of the committed run folder. Evidence,
+// claims, cost and mechanical results are small and stay committed.
+export const RUN_LOG_IGNORES = ['runs/**/*.log', 'runs/**/*.log.err', 'runs/**/diff.patch', 'runs/**/reply.txt'];
+
+// ignoreRunLogs: keep those out of git unless the project asks for them (commit_transcripts: true).
+// Adds the lines to .bridgie/.gitignore once; files already tracked stay tracked (bridgie doctor
+// says how to untrack them).
+export function ignoreRunLogs(root) {
+  const gi = join(root, '.bridgie', '.gitignore');
+  if (!existsSync(join(root, '.bridgie'))) return false;
+  let commit = false;
+  try { commit = st.loadPolicy(root).commit_transcripts === true; } catch { /* an invalid policy is reported elsewhere */ }
+  if (commit) return false;
+  const cur = existsSync(gi) ? readFileSync(gi, 'utf8') : '';
+  const have = cur.split(/\r?\n/);
+  const missing = RUN_LOG_IGNORES.filter(l => !have.includes(l));
+  if (!missing.length) return false;
+  appendFileSync(gi, `${cur && !cur.endsWith('\n') ? '\n' : ''}${missing.join('\n')}\n`);
+  return true;
+}
+
 // stateCommit: commit .bridgie changes when inside a git repository.
 export function stateCommit(root, msg) {
+  ignoreRunLogs(root);
   if (process.env.BRIDGIE_NO_COMMIT === '1') return;
   if (!git(['-C', root, 'rev-parse', '--is-inside-work-tree']).ok) return;
   if (!git(['-C', root, 'add', '-A', '--', '.bridgie']).ok) return;

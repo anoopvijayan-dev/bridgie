@@ -86,6 +86,14 @@ export function doctor(root) {
     n > 120 ? warn(`AGENTS.md is ${n} lines; it is a map, aim for ~100`) : ok(`AGENTS.md ${n} lines`);
     for (const m of txt.matchAll(/\]\(([^)#:]+)\)/g)) if (!existsSync(join(root, m[1]))) fail(`AGENTS.md link does not resolve: ${m[1]}`);
   } else warn('no AGENTS.md in project; copy templates/AGENTS.md once the project has code');
+  // Run logs tracked by git before Bridgie ignored them: they stay tracked until someone untracks them.
+  try {
+    const tracked = spawnSync('git', ['-C', root, 'ls-files', '--', '.bridgie/runs'], { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 });
+    const logs = tracked.status === 0 ? tracked.stdout.split('\n').filter(f => /(\.log(\.err)?|\/diff\.patch|\/reply\.txt)$/.test(f)) : [];
+    let commit = false; try { commit = st.loadPolicy(root).commit_transcripts === true; } catch { /* reported above */ }
+    if (logs.length && !commit) warn(`${logs.length} run log(s), diff packet(s) and raw replies are tracked by git under .bridgie/runs; new ones are ignored. To untrack the old ones and keep the files: git rm -r -q --cached .bridgie/runs && git add .bridgie/runs`);
+    else if (!commit) ok('run logs are kept out of git');
+  } catch { /* not a git repository */ }
   const left = leftoverSnapshots(root);
   if (left.length) {
     const mb = Math.round(left.reduce((n, x) => n + x.bytes, 0) / 1048576);
