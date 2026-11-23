@@ -69,7 +69,14 @@ export default async function build(argv) {
   try { fl.startAttempt(root, slug, task, g.taskBranch(slug, task)); } catch (e) { die(e.message); }
   const runDir = await produce(root, slug, task, 'build/implementer', wt);
   const risk = st.readFm(st.betPath(root, slug)).data.risk;
-  if (a.harden || ['money', 'data', 'security', 'infra'].includes(risk)) {
+  // The hardener runs for a risky bet, unless the task is small (and nothing it builds is risky);
+  // a large task is hardened whatever the bet's risk; --harden always.
+  const profile = fl.taskProfile(root, slug, task);
+  const byRisk = ['money', 'data', 'security', 'infra'].includes(risk);
+  const harden = a.harden || (profile.harden ?? byRisk);
+  if (!harden && byRisk) log(`${task} is small: no hardener (policy sizes.small)`);
+  if (profile.reason) log(`${task} was planned small but is treated as ${profile.size}: ${profile.reason}`);
+  if (harden) {
     const packet = mkdtempSync(join(tmpdir(), 'bridgie-harden-'));
     try { g.diffPacket(root, slug, task, packet); await produce(root, slug, task, 'build/hardener', wt, packet); }
     finally { rmSync(packet, { recursive: true, force: true }); }

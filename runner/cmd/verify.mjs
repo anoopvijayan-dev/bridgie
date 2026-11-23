@@ -33,10 +33,10 @@ function checkReviewer(root, slug, task) {   // R10 and R11, before any model is
 
 // runMechanical: every required tier's commands, run in the platform shell inside the worktree.
 // A required tier with no configured command becomes a not_proven row (never silently skipped).
-export function runMechanical(root, slug, wt, vdir) {
+export function runMechanical(root, slug, wt, vdir, skip = []) {
   const rows = [];
   let n = 0;
-  for (const x of fl.mechanicalPlan(root, slug, wt)) {
+  for (const x of fl.mechanicalPlan(root, slug, wt, skip)) {
     n++;
     const logf = join(vdir, `${x.tier}-${n}.log`);
     let check = x.cmd, result;
@@ -59,9 +59,9 @@ export function runMechanical(root, slug, wt, vdir) {
 }
 
 // mechanicalKey: what the tier results depend on — the task, the commit tested and the commands.
-export function mechanicalKey(root, slug, wt, task) {
+export function mechanicalKey(root, slug, wt, task, skip = []) {
   const sha = git(['-C', wt, 'rev-parse', 'HEAD']).out.trim();
-  const plan = createHash('sha256').update(JSON.stringify(fl.mechanicalPlan(root, slug, wt))).digest('hex');
+  const plan = createHash('sha256').update(JSON.stringify(fl.mechanicalPlan(root, slug, wt, skip))).digest('hex');
   return { task, sha, plan };
 }
 // reusableMechanical: the rows of the newest earlier verify run with the same key, or null.
@@ -117,12 +117,16 @@ export default async function verify(argv) {
   checkReviewer(root, slug, task);
   // 3. mechanical tiers in the task worktree, unless an earlier verify of this same commit already
   // ran the same commands (its reviewer could not run): tests are not re-run to wait for a reviewer.
-  const key = mechanicalKey(root, slug, wt, task);
+  // A small task drops the tiers policy.sizes.small names, unless what it builds or changes is risky.
+  const profile = fl.taskProfile(root, slug, task, files);
+  if (profile.reason) log(`  ${task} was planned small but is treated as ${profile.size}: ${profile.reason}`);
+  else if (profile.skip_tiers.length) log(`  ${task} is ${profile.size}: skipping ${profile.skip_tiers.join(', ')} (policy sizes.${profile.size})`);
+  const key = mechanicalKey(root, slug, wt, task, profile.skip_tiers);
   const kept = reusableMechanical(root, slug, key);
   if (kept) {
     writeFileSync(join(vdir, 'mechanical.json'), JSON.stringify(kept.rows) + '\n');
     log(`  tiers: reusing the results of ${kept.run} for the same commit (${key.sha.slice(0, 10)})`);
-  } else runMechanical(root, slug, wt, vdir);
+  } else runMechanical(root, slug, wt, vdir, profile.skip_tiers);
   writeFileSync(join(vdir, 'mechanical-key.json'), JSON.stringify(key) + '\n');
 
   // 4. reviewer in a detached, read-only worktree (R3)

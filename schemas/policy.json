@@ -132,6 +132,68 @@
           "type": "integer"
         }
       }
+    },
+    "sizes": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "floor_risk": {
+          "type": "string",
+          "enum": [
+            "none",
+            "ux",
+            "data",
+            "infra",
+            "security",
+            "money"
+          ]
+        },
+        "small": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "harden": {
+              "type": "boolean"
+            },
+            "skip_tiers": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "medium": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "harden": {
+              "type": "boolean"
+            },
+            "skip_tiers": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "large": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "harden": {
+              "type": "boolean"
+            },
+            "skip_tiers": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
     }
   },
   "$defs": {

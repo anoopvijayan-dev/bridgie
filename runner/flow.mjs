@@ -125,7 +125,7 @@ export function writeTasksFromPlan(root, slug, outputFile) {
   const max = st.loadPolicy(root).retries?.max_attempts || 3;
   const doc = {
     bet: slug,
-    tasks: list.map(t => ({ id: t.id, title: t.title || t.id, requirements: t.requirements, depends_on: t.depends_on || [], status: 'todo', attempts: 0, max_attempts: max, branch: null, evidence: null, escalation: null })),
+    tasks: list.map(t => ({ id: t.id, title: t.title || t.id, requirements: t.requirements, depends_on: t.depends_on || [], ...(SIZES.includes(t.size) ? { size: t.size } : {}), status: 'todo', attempts: 0, max_attempts: max, branch: null, evidence: null, escalation: null })),
   };
   saveTasks(root, slug, doc);
   // Effective risk (finding 3): a requirement tagged with a higher risk raises the bet's risk.
@@ -133,6 +133,32 @@ export function writeTasksFromPlan(root, slug, outputFile) {
   // Re-planning invalidates any acceptance package built from the previous plan (finding 1).
   invalidateAcceptance(root, slug, 're-planned');
   return doc;
+}
+
+// ---------- task size ----------
+// Risk says how careful a bet must be; size says how much there is to be careful about. A
+// three-line change and a locking engine in the same money bet should not cost the same hour.
+// The plan gives each task a size; policy.sizes says what each size adds or drops. Risk is the
+// floor: a task that builds a requirement tagged at or above sizes.floor_risk, or (once its diff
+// is known) changes a risk path, is treated as medium at least, whatever the plan said.
+export const SIZES = ['small', 'medium', 'large'];
+export function taskProfile(root, slug, id, files = null) {
+  const t = getTask(loadTasks(root, slug), id);
+  const sizes = st.loadPolicy(root).sizes || {};
+  const planned = SIZES.includes(t.size) ? t.size : 'medium';
+  let size = planned, reason = null;
+  if (planned === 'small') {
+    const floor = st.RISK_ORDER.indexOf(sizes.floor_risk || 'data');
+    const risks = requirementRisks(root, slug);
+    const hot = t.requirements.filter(r => st.RISK_ORDER.indexOf(risks[r] || 'none') >= floor);
+    if (hot.length) { size = 'medium'; reason = `it builds ${hot.join(', ')}, tagged risk ${hot.map(r => risks[r]).join(', ')}`; }
+    else if (files) {
+      const paths = riskOfPaths(root, slug, files).paths;
+      if (paths.length) { size = 'medium'; reason = `it changes ${paths.join(', ')}`; }
+    }
+  }
+  const rule = sizes[size] || {};
+  return { planned, size, reason, harden: rule.harden, skip_tiers: rule.skip_tiers || [] };
 }
 
 export function readyTasks(root, slug) {
@@ -300,11 +326,14 @@ export const COMMAND_TIERS = ['mechanical', 'specified', 'contracts', 'invariant
 // mechanicalPlan: commands for every command tier the policy requires at the bet's risk.
 // A required tier with no command is returned as { tier, cmd: null, missing: true } so verify
 // records it as not_proven instead of silently dropping it (finding 3).
-export function mechanicalPlan(root, slug, wt) {
+export function mechanicalPlan(root, slug, wt, skip = []) {
   const bet = st.readFm(st.betPath(root, slug)).data;
   const policy = st.loadPolicy(root);
   const tiers = st.lanePolicy(policy, bet.lane, bet.risk).tiers || policy.lanes?.[bet.lane]?.tiers_default || ['mechanical'];
-  const commandTiers = COMMAND_TIERS.filter(t => tiers.includes(t));
+  // `skip`: tiers a small task drops (taskProfile). mechanical and specified are never dropped:
+  // every change is linted, built and tested.
+  const dropped = skip.filter(t => !['mechanical', 'specified'].includes(t));
+  const commandTiers = COMMAND_TIERS.filter(t => tiers.includes(t) && !dropped.includes(t));
   const project = policy.verify?.commands;
   let byTier;
   if (project) byTier = t => project[t] || [];
@@ -534,6 +563,7 @@ const OPS = {
   'stamp-task': a => { stampTask(a[0], a[1]); out('ok'); },
   'risk-of-paths': a => out(riskOfPaths(a[0], a[1], readFileSync(a[2], 'utf8').split('\n').filter(Boolean))),
   'mechanical-plan': a => out(mechanicalPlan(a[0], a[1], a[2])),
+  'task-profile': a => out(taskProfile(a[0], a[1], a[2])),
   'producer-vendor': a => out(producerVendor(a[0], a[1], a[2])),
   'cross-family': a => out(String(crossFamily(a[0], a[1]))),
   'mark-passed': a => out(markPassed(a[0], a[1], a[2], a[3])),

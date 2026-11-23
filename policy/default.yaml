@@ -3,6 +3,13 @@ version: 1
 retries: { max_attempts: 3 }
 swarm: { parallel: 4, default_n: 20, max_n: 100 }   # simulated buyer panel: agents at once, default and ceiling per panel
 commit_transcripts: false
+# What a task's size adds or drops. Risk sets the floor: a task that builds a requirement tagged at
+# or above floor_risk, or that changes a risk path, is never treated as small.
+sizes:
+  floor_risk: data
+  small: { harden: false, skip_tiers: [behavioural, dual_run] }   # one module, no shared state: no hardener, no whole-system tiers
+  medium: {}                                                      # what the bet's risk asks for, no more
+  large: { harden: true }                                         # shared state, locks, money arithmetic across modules: always hardened
 lanes:
   engineering:
     tiers_default: [mechanical, specified, contracts, adversarial]

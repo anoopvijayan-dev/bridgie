@@ -268,3 +268,41 @@ test('a lock from another machine keeps the time rule: its pid says nothing here
   writeFileSync(join(root, '.bridgie', '.seat-lock', 'owner.json'), JSON.stringify({ seat: 's', run_dir: 'x', since: new Date().toISOString(), pid: 2 ** 22 + 12345, host: 'another-machine' }));
   assert.equal(st.seatLock(root).seat, 's');
 });
+
+test('taskProfile: size sets the extras and risk sets the floor', () => {
+  const root = project('money', "version: 1\nverify:\n  commands:\n    mechanical: ['m']\n    specified: ['s']\n    contracts: ['c']\n    invariants: ['i']\n    behavioural: ['b']\n    dual_run: ['d']\n");
+  fl.writeTasksFromPlan(root, 'b', planOutput(root, [
+    { ...T('T1', ['R1']), size: 'small' }, { ...T('T2', ['R2', 'P1'], ['T1']), size: 'small' },
+    T('T3', ['R1'], ['T1']), { ...T('T4', ['R1'], ['T1']), size: 'large' }, { ...T('T5', ['R1'], ['T1']), size: 'enormous' }]));
+  const doc = fl.loadTasks(root, 'b');
+  assert.equal(fl.getTask(doc, 'T1').size, 'small');
+  assert.equal(fl.getTask(doc, 'T3').size, undefined);          // none given
+  assert.equal(fl.getTask(doc, 'T5').size, undefined);          // not a size: dropped, so medium
+  // small and nothing risky: no hardener, the whole-system tiers dropped
+  assert.deepEqual(fl.taskProfile(root, 'b', 'T1'), { planned: 'small', size: 'small', reason: null, harden: false, skip_tiers: ['behavioural', 'dual_run'] });
+  // planned small, but it builds a requirement tagged money: medium, whatever the plan said
+  const t2 = fl.taskProfile(root, 'b', 'T2');
+  assert.equal(t2.size, 'medium'); assert.match(t2.reason, /R2, tagged risk money/); assert.deepEqual(t2.skip_tiers, []); assert.equal(t2.harden, undefined);
+  assert.equal(fl.taskProfile(root, 'b', 'T3').size, 'medium');
+  assert.equal(fl.taskProfile(root, 'b', 'T4').harden, true);
+  // small, but its diff changes a risk path: medium once the files are known
+  const paid = fl.taskProfile(root, 'b', 'T1', ['src/Billing/charge.js']);
+  assert.equal(paid.size, 'medium'); assert.match(paid.reason, /src\/Billing\/charge\.js/);
+  assert.equal(fl.taskProfile(root, 'b', 'T1', ['docs/readme.md']).size, 'small');
+  // the tiers a small task drops; lint, build and tests are never dropped
+  const tiers = skip => fl.mechanicalPlan(root, 'b', root, skip).map(x => x.tier);
+  assert.deepEqual(tiers([]), ['mechanical', 'specified', 'contracts', 'invariants', 'behavioural', 'dual_run']);
+  assert.deepEqual(tiers(['behavioural', 'dual_run']), ['mechanical', 'specified', 'contracts', 'invariants']);
+  assert.deepEqual(tiers(['mechanical', 'specified', 'invariants']), ['mechanical', 'specified', 'contracts', 'behavioural', 'dual_run']);
+});
+
+test('taskProfile follows the project policy: the floor and what small drops', () => {
+  const root = project('money', 'version: 1\nsizes:\n  floor_risk: security\n  small: { harden: false, skip_tiers: [dual_run] }\n');
+  fl.writeTasksFromPlan(root, 'b', planOutput(root, [{ ...T('T1', ['R1', 'R2', 'P1']), size: 'small' }]));
+  // money is above security in the risk order, so R2 still lifts it
+  assert.equal(fl.taskProfile(root, 'b', 'T1').size, 'medium');
+  const low = project('none', 'version: 1\nsizes:\n  small: { harden: false, skip_tiers: [dual_run] }\n');
+  writeFileSync(join(low, '.bridgie', 'specs', 'b', 'requirements.md'), '# R\n\n## R1 · event · risk: ux\nWHEN a THE SYSTEM SHALL b\n');
+  fl.writeTasksFromPlan(low, 'b', planOutput(low, [{ ...T('T1', ['R1']), size: 'small' }]));
+  assert.deepEqual(fl.taskProfile(low, 'b', 'T1').skip_tiers, ['dual_run']);   // ux is below the floor (data)
+});

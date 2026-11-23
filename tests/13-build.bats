@@ -122,3 +122,35 @@ setup() {
   [ "$(task_field "$P" b T1 status)" = '"todo"' ]
   [ "$(task_field "$P" b T1 attempts)" = '0' ]
 }
+
+@test "a small task on a money bet skips the hardener; one that builds a risky requirement does not" {
+  planned_bet "$P" b money
+  (cd "$P" && { bridgie build b; bridgie ack b; }) >/dev/null 2>&1 || true   # the first build asks for the ack
+  node "$BRIDGIE_HOME/runner/flow.mjs" task-set "$P" b T1 '{"size":"small"}' >/dev/null
+  run bash -c "cd '$P' && bridgie build b"
+  echo "$output"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"T1 is small: no hardener"* ]]
+  [ -d "$P/.bridgie/runs/b/implementer-01" ]
+  [ ! -d "$P/.bridgie/runs/b/hardener-01" ]
+}
+
+@test "a small task that builds a requirement tagged with risk is hardened all the same" {
+  planned_bet "$P" b money
+  (cd "$P" && { bridgie build b; bridgie ack b; }) >/dev/null 2>&1 || true   # the first build asks for the ack
+  sed -i.bak 's/## R1 · event · risk: none/## R1 · event · risk: money/' "$P/.bridgie/specs/b/requirements.md"
+  node "$BRIDGIE_HOME/runner/flow.mjs" task-set "$P" b T1 '{"size":"small"}' >/dev/null
+  run bash -c "cd '$P' && bridgie build b"
+  echo "$output"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"planned small but is treated as medium"* ]]
+  [ -d "$P/.bridgie/runs/b/hardener-01" ]
+}
+
+@test "a large task is hardened even when the bet's risk asks for no hardener" {
+  planned_bet "$P" b
+  node "$BRIDGIE_HOME/runner/flow.mjs" task-set "$P" b T1 '{"size":"large"}' >/dev/null
+  run bash -c "cd '$P' && bridgie build b"
+  [ "$status" -eq 0 ]
+  [ -d "$P/.bridgie/runs/b/hardener-01" ]
+}
