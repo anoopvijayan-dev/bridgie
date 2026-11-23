@@ -4,6 +4,47 @@
     "version"
   ],
   "properties": {
+    "mutation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "max_mutants": {
+          "type": "integer"
+        },
+        "min_score": {
+          "type": "number"
+        },
+        "test": {
+          "type": "string"
+        }
+      }
+    },
+    "sandbox": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "build": {
+          "type": "string",
+          "enum": ["off", "auto", "required"]
+        },
+        "network": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "build": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "parallel": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
     "version": {
       "type": "integer"
     },
@@ -130,6 +171,102 @@
         },
         "max_n": {
           "type": "integer"
+        }
+      }
+    },
+    "sizes": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "floor_risk": {
+          "type": "string",
+          "enum": [
+            "none",
+            "ux",
+            "data",
+            "infra",
+            "security",
+            "money"
+          ]
+        },
+        "small": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "harden": {
+              "type": "boolean"
+            },
+            "skip_tiers": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "medium": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "harden": {
+              "type": "boolean"
+            },
+            "skip_tiers": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "large": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "harden": {
+              "type": "boolean"
+            },
+            "skip_tiers": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "humans_only": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "decisions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "question",
+              "sign",
+              "approve_design",
+              "ack_risk",
+              "accept",
+              "unblock",
+              "confidence",
+              "governance"
+            ]
+          }
+        },
+        "relay": {
+          "type": "boolean"
+        }
+      }
+    },
+    "acceptance": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "owner_override": {
+          "type": "boolean"
         }
       }
     }

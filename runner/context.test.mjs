@@ -57,3 +57,11 @@ test('references declared in the manifest are appended', () => {
   assert.ok(r.prompt.includes('# Security perspective'));
   assert.ok(r.prompt.includes('# Data-intensive design perspective'));
 });
+
+test('the implementer prompt carries the claim schema, dispositions[].evidence included', () => {
+  const root = project(), runDir = join(root, '.bridgie', 'runs', 'b', 'implementer-01'); mkdirSync(runDir, { recursive: true });
+  const r = assemble(root, 'b', 'build/implementer', { runDir, cwd: root, task: 'T1' });
+  const schema = JSON.stringify(JSON.parse(readFileSync(new URL('../schemas/claim.json', import.meta.url), 'utf8')));
+  assert.ok(r.prompt.includes(schema), 'claim.json schema inlined');
+  assert.match(r.prompt, /"required":\["finding","disposition","evidence"\]/);
+});

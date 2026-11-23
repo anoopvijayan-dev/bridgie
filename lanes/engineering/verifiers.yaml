@@ -4,9 +4,11 @@ tiers:
   mechanical:
     dotnet: ['dotnet build', 'dotnet test --filter "ArchTests"']
     node: ['npm run lint --if-present', 'npm run build --if-present']
+    python: ['python -m compileall -q -x "[.]venv|node_modules|[.]git|[.]bridgie" .']
   specified:
     dotnet: ['dotnet test --filter "UnitTests"']
     node: ['npx vitest run']
+    python: ['python -m pytest -q']
   contracts:
     dotnet: ['dotnet test --filter "ContractTests"']
   invariants:

@@ -304,7 +304,7 @@ export function serve(root, { port = 0, host = '127.0.0.1', by = 'unknown', invi
             const slug = p.get('slug'), id = p.get('id'); let answer = p.get('answer'); const text = p.get('text') || undefined;
             if (!slug || !id || !answer) throw new Error('pick an answer first');
             if (answer === '__text__') { if (!text) throw new Error('free-text answer is empty'); answer = text; }
-            fl.answer(root, slug, id, answer, { text, by: who, gitSha: fl.featureSha(root, slug) });
+            fl.answer(root, slug, id, answer, { text, by: who, via: st.provenance('surface'), gitSha: fl.featureSha(root, slug) });
             commitState(root, `decide ${slug} ${id}: ${answer} (surface, ${who})`);
             res.writeHead(303, { location: `/bet/${slug}#${id}` }); res.end();
           } catch (e) {

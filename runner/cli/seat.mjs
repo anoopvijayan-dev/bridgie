@@ -3,6 +3,7 @@
 // runSwarm: one fresh seat run per card, `swarm.parallel` at a time, under one lock.
 import { readFileSync, existsSync, mkdirSync, readdirSync, writeFileSync, cpSync, copyFileSync, rmSync, renameSync, openSync, closeSync, statSync, realpathSync } from 'node:fs';
 import { join, basename, relative } from 'node:path';
+import { hostname } from 'node:os';
 import { spawn, spawnSync } from 'node:child_process';
 import * as st from '../state.mjs';
 import { loadSeat, assemble } from '../context.mjs';
@@ -39,7 +40,7 @@ export function seatLock(root, seat, runDir) {
     rmSync(lock, { recursive: true, force: true });
     try { mkdirSync(lock); } catch (e) { die(`could not take the seat lock ${lock}: ${e.message}`); }
   }
-  writeFileSync(join(lock, 'owner.json'), JSON.stringify({ seat, run_dir: relTo(root, runDir), since: new Date().toISOString().replace(/\.\d+Z$/, 'Z'), pid: process.pid }) + '\n');
+  writeFileSync(join(lock, 'owner.json'), JSON.stringify({ seat, run_dir: relTo(root, runDir), since: new Date().toISOString().replace(/\.\d+Z$/, 'Z'), pid: process.pid, host: hostname() }) + '\n');
 }
 export const seatUnlock = root => rmSync(join(root, '.bridgie', '.seat-lock'), { recursive: true, force: true });
 
@@ -49,17 +50,17 @@ function nextRunDir(runs, name) {
   return { n, dir: join(runs, `${name}-${String(n).padStart(2, '0')}`) };
 }
 
-function launch(cmd, args, logFile) {
+function launch(cmd, args, logFile, extraEnv = {}) {
   return new Promise(res => {
     const fd = openSync(logFile, 'w');
     let child;
-    try { child = spawn(cmd, args, { stdio: ['ignore', fd, fd] }); } catch (e) { closeSync(fd); res(127); return; }
+    try { child = spawn(cmd, args, { stdio: ['ignore', fd, fd], env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1', ...extraEnv } }); } catch (e) { closeSync(fd); res(127); return; }
     child.on('error', () => { closeSync(fd); res(127); });
     child.on('close', code => { try { closeSync(fd); } catch { /* closed */ } res(code ?? 1); });
   });
 }
 
-// runSeat(slug, seat, { task, cwd, packet, vars, exclude, lock, runsDir }) → run directory.
+// runSeat(slug, seat, { task, cwd, packet, vars, exclude, lock, runsDir, onRunDir, snapshot, onViolation }) → run directory.
 export async function runSeat(slug, seat, opts = {}) {
   const root = opts.root || projectRoot();
   const cwd = opts.cwd || root;
@@ -69,6 +70,7 @@ export async function runSeat(slug, seat, opts = {}) {
   const runs = opts.runsDir || process.env.BRIDGIE_RUNS_DIR || join(root, '.bridgie', 'runs', slug);
   const { n, dir: runDir } = nextRunDir(runs, name);
   mkdirSync(runDir, { recursive: true });
+  opts.onRunDir?.(runDir);   // a batch of seats running together registers each run folder as it appears
   if (opts.packet && existsSync(opts.packet)) cpSync(opts.packet, runDir, { recursive: true });
   if (opts.vars) copyFileSync(opts.vars, join(runDir, 'vars.json'));
 
@@ -90,16 +92,30 @@ export async function runSeat(slug, seat, opts = {}) {
   const needsWeb = (manifest.tools || []).includes('web');
   // fits: can this adapter take the seat? (web for research; repo access and another model family
   // for the reviewer, when the caller says so)
-  const fits = caps => (!needsWeb || caps.reads_web === true) && (!opts.needsRepo || caps.reads_repo === true) && (!opts.avoidVendor || caps.vendor !== opts.avoidVendor);
+  // Sandbox (policy sandbox.build) applies to seats that write code. `required`: an adapter with no
+  // sandbox on this machine does not fit the seat.
+  const sandbox = st.loadPolicy(root).sandbox || {};
+  const sbMode = mode === 'write' ? (['off', 'auto', 'required'].includes(sandbox.build) ? sandbox.build : 'auto') : 'off';
+  const hasSandbox = caps => !!caps.sandbox && caps.sandbox !== 'none';
+  const fits = caps => (!needsWeb || caps.reads_web === true) && (!opts.needsRepo || caps.reads_repo === true) && (!opts.avoidVendor || caps.vendor !== opts.avoidVendor) && (sbMode !== 'required' || hasSandbox(caps));
   let { adapter, model = 'default', effort } = route;
   let { raw, caps } = adapterCapabilities(adapter, seatDir, model);
   if (needsWeb && caps.reads_web !== true) die(`seat ${name} needs web access; adapter '${adapter}' has none (route it to one that does: routing.seats.${name})`);
   const spare = st.fallbacks(root, adapter);
+  let sandboxMiss = sbMode === 'required' && !hasSandbox(caps) ? { adapter, note: caps.sandbox_note || '' } : null;
+  const exhausted = [];   // adapters skipped or failed because they are at a usage limit
+  // waiting: every adapter that could take the seat is at its usage limit. Not an error and not a
+  // verdict: exit 3, naming when to come back, so `bridgie run` stops cleanly and nothing is consumed.
+  const waiting = () => {
+    const until = exhausted.map(a => st.exhaustedUntil(root, a)).filter(Boolean).sort()[0];
+    die(`waiting: ${exhausted.join(' and ')} ${exhausted.length > 1 ? 'are' : 'is'} at ${exhausted.length > 1 ? 'their' : 'its'} usage limit${until ? ` until ${until.replace(/\.\d+Z$/, 'Z')}` : ''}, and no other adapter fits seat ${name}${opts.avoidVendor ? ` (policy requires another model family than ${opts.avoidVendor})` : ''}. Nothing was changed; run it again after that`, 3);
+  };
   // nextFallback: the next spare adapter whose CLI is installed and that fits the seat.
   const nextFallback = () => {
     while (spare.length) {
       const a = spare.shift();
       if (!existsSync(join(HOME, 'adapters', a))) continue;
+      if (st.exhaustedUntil(root, a)) { exhausted.push(a); continue; }   // at its usage limit: not tried again until it resets
       const [c, p] = adapterCommand(a);
       const probe = spawnSync(c, [...p, '--probe'], { encoding: 'utf8', timeout: 30000 });
       if (probe.status !== 0 || !/OK/.test(probe.stdout || '')) continue;
@@ -111,24 +127,59 @@ export async function runSeat(slug, seat, opts = {}) {
 
   // 3. lock, snapshot, launch, measure; on an adapter that cannot run at all, warn and fall back
   const locked = opts.lock !== false;
-  const excludes = [relTo(root, runDir), ...(opts.exclude ? [relTo(root, opts.exclude)] : [])];
+  // What the state guard ignores for this run: its own run folder, plus what the caller names. A
+  // function is asked again at every check, so seats running side by side ignore one another's run
+  // folders (and nothing else) however late those appear.
+  const excludes = () => [runDir, ...(typeof opts.exclude === 'function' ? opts.exclude() : opts.exclude ? [opts.exclude] : [])].map(x => relTo(root, x));
   if (locked) seatLock(root, name, runDir);
   try {
-    try { snapshot(root, join(runDir, '.snapshot'), excludes); } catch (e) { die(e.message); }
+    // Seats running side by side share one snapshot, taken before any of them started (opts.snapshot):
+    // a snapshot of its own could already hold what a sibling wrote.
+    const snap = opts.snapshot || join(runDir, '.snapshot');
+    if (!opts.snapshot) { try { snapshot(root, snap, excludes()); } catch (e) { die(e.message); } }
     const fellBack = [];
+    if (sandboxMiss) {   // policy requires a sandbox and the routed adapter has none here: another adapter, or stop
+      const next = nextFallback();
+      if (!next) die(`policy requires an OS sandbox for seats that write (sandbox.build: required), and adapter '${sandboxMiss.adapter}' has none on this machine${sandboxMiss.note ? ` (${sandboxMiss.note})` : ''}. Install it, route build seats to an adapter that has one, or change sandbox.build. Nothing was run`, 3);
+      process.stderr.write(`bridgie: warning: adapter ${adapter} has no OS sandbox here${sandboxMiss.note ? ` (${sandboxMiss.note})` : ''}; using ${next.adapter} for seat ${name}\n`);
+      fellBack.push(adapter);
+      writeFileSync(join(runDir, 'fallback.json'), JSON.stringify({ routed: route.adapter, failed: fellBack, used: next.adapter }, null, 2) + '\n');
+      ({ adapter, raw, caps } = next); model = 'default'; effort = null; sandboxMiss = null;
+    }
+    if (st.exhaustedUntil(root, adapter)) {   // known to be at its limit: do not launch it to find out again
+      exhausted.push(adapter);
+      const next = nextFallback();
+      if (!next) waiting();
+      process.stderr.write(`bridgie: warning: adapter ${adapter} is at its usage limit until ${st.exhaustedUntil(root, adapter)}; using ${next.adapter} for seat ${name}\n`);
+      fellBack.push(adapter);
+      writeFileSync(join(runDir, 'fallback.json'), JSON.stringify({ routed: route.adapter, failed: fellBack, used: next.adapter }, null, 2) + '\n');
+      ({ adapter, raw, caps } = next); model = 'default'; effort = null;
+    }
     for (;;) {
       writeFileSync(join(runDir, 'adapter.json'), raw + '\n');
       const [cmd, pre] = adapterCommand(adapter);
       const startedAt = new Date().toISOString().replace(/\.\d+Z$/, 'Z'), start = Date.now();
       const args = [...pre, '--seat', seatDir, '--prompt', join(runDir, 'prompt.md'), '--out', join(runDir, output), '--cwd', cwd, '--mode', mode, '--model', model, ...(effort ? ['--effort', effort] : [])];
-      const rc = await launch(cmd, args, join(runDir, 'adapter.log'));
-      st.costAdd(runDir, { seat: name, adapter, model, started_at: startedAt, duration_s: Math.round((Date.now() - start) / 1000), attempt: n, exit_code: rc, tokens_in: null, tokens_out: null, usd: null });
+      rmSync(join(runDir, 'usage.json'), { force: true });
+      if (sbMode === 'auto' && !hasSandbox(caps)) process.stderr.write(`bridgie: warning: seat ${name} runs without an OS sandbox (adapter ${adapter}${caps.sandbox_note ? `: ${caps.sandbox_note}` : ' has none'}); set sandbox.build: required to refuse that\n`);
+      const rc = await launch(cmd, args, join(runDir, 'adapter.log'), { BRIDGIE_SANDBOX: sbMode, BRIDGIE_SANDBOX_NETWORK: (sandbox.network || []).join(',') });
+      // What actually happened: the adapter's capability, unless its CLI said it ran without one.
+      let sandboxed = sbMode === 'off' ? 'off' : hasSandbox(caps) ? caps.sandbox : 'none';
+      try { if (sandboxed !== 'off' && /WITHOUT sandboxing|Sandbox disabled/i.test(readFileSync(join(runDir, 'adapter.log'), 'utf8'))) sandboxed = 'none'; } catch { /* no log */ }
+      // What the model CLI said the run used (adapters write usage.json when their CLI reports it).
+      let used = {};
+      try { const u = st.readJson(join(runDir, 'usage.json')); if (u && typeof u === 'object' && !Array.isArray(u)) used = u; } catch { /* the CLI reported nothing */ }
+      const num = v => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : null), int = v => (num(v) === null ? null : Math.round(v));
+      st.costAdd(runDir, { seat: name, ...(opts.task ? { task: opts.task } : {}), adapter, model, started_at: startedAt, duration_s: Math.round((Date.now() - start) / 1000), attempt: n, exit_code: rc,
+        tokens_in: int(used.tokens_in), tokens_out: int(used.tokens_out), tokens_cache_read: int(used.tokens_cache_read), tokens_cache_write: int(used.tokens_cache_write), tokens_total: int(used.tokens_total), usd: num(used.usd), ...(mode === 'write' ? { sandbox: sandboxed } : {}) });
 
       // 4. single-writer guard (P1): any added, removed or changed state file fails the run
-      const d = check(root, join(runDir, '.snapshot'), excludes);
+      const d = check(root, snap, excludes());
       if (d.added.length || d.removed.length || d.changed.length) {
-        const restored = restore(root, join(runDir, '.snapshot'), excludes);
-        writeFileSync(join(runDir, 'VIOLATION'), `seat ${name} modified Bridgie state directly; state restored from snapshot\n${JSON.stringify(restored)}\n`);
+        const restored = restore(root, snap, excludes());
+        const who = opts.snapshot ? `Bridgie state was modified while seat ${name} ran beside other seats (by this seat or one of them)` : `seat ${name} modified Bridgie state directly`;
+        writeFileSync(join(runDir, 'VIOLATION'), `${who}; state restored from snapshot\n${JSON.stringify(restored)}\n`);
+        opts.onViolation?.(runDir);
         die(`seat ${name} wrote to Bridgie state files; run failed and state restored (see ${join(runDir, 'VIOLATION')})`);
       }
       if (rc === 0) break;
@@ -138,7 +189,12 @@ export async function runSeat(slug, seat, opts = {}) {
       // 1: the adapter could not start (CLI missing, not set up); 6: the CLI failed (signed out, over
       // its limit, crashed); 127: could not launch. A model that ran but answered badly (4, 5) is not
       // a reason to switch models.
+      // A CLI at its usage limit says so in its log: remember it (with the reset time when the log
+      // gives one), so nothing launches it again before then.
+      const quota = [1, 6].includes(rc) ? st.quotaFromRun(runDir, start - 2000) : null;
+      if (quota) { st.markExhausted(root, adapter, quota.until, quota.why); exhausted.push(adapter); }
       const next = [1, 6, 127].includes(rc) ? nextFallback() : null;
+      if (!next && quota) waiting();
       if (!next) die(`${failed}; see ${join(runDir, 'adapter.log')}${fellBack.length ? ` (after falling back from ${fellBack.join(', ')})` : ''}`);
       process.stderr.write(`bridgie: warning: ${failed}; falling back to ${next.adapter}\n`);
       renameSync(join(runDir, 'adapter.log'), join(runDir, `adapter-${adapter}.log`));
@@ -147,7 +203,7 @@ export async function runSeat(slug, seat, opts = {}) {
       writeFileSync(join(runDir, 'fallback.json'), JSON.stringify({ routed: route.adapter, failed: fellBack, used: next.adapter }, null, 2) + '\n');
       ({ adapter, raw, caps } = next); model = 'default'; effort = null;
     }
-    rmSync(join(runDir, '.snapshot'), { recursive: true, force: true });   // kept only beside a VIOLATION
+    if (!opts.snapshot) rmSync(snap, { recursive: true, force: true });   // kept only beside a VIOLATION
   } finally {
     if (locked) seatUnlock(root);
   }
@@ -155,6 +211,18 @@ export async function runSeat(slug, seat, opts = {}) {
   // 5. output contract
   const outFile = join(runDir, output);
   if (!existsSync(outFile)) die(`seat ${name} produced no ${output}`);
+  // A review's task and verifier are facts the runner knows (which task, which CLI and model ran);
+  // the runner records them rather than trusting the model to report on itself.
+  if (output === 'evidence.json') {
+    try {
+      const ev = st.readJson(outFile);
+      if (ev && typeof ev === 'object' && !Array.isArray(ev)) {
+        if (opts.task) ev.task = opts.task;
+        ev.verifier = { seat: name, adapter, model };
+        writeFileSync(outFile, JSON.stringify(ev, null, 2) + '\n');
+      }
+    } catch { /* unreadable: the schema check below reports it */ }
+  }
   let errs;
   try { errs = validate(st.loadSchema(output.replace(/\.json$/, '')), st.readJson(outFile)); } catch (e) { errs = [e.message]; }
   if (errs.length) die(`seat ${name} output does not match schemas/${output}: ${errs.slice(0, 5).join('; ')}`);

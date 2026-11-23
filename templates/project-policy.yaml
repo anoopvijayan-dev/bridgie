@@ -3,9 +3,24 @@ version: 1
 default_lane: {{lane}}
 # Verification commands per tier. Every tier the policy requires at a bet's risk needs at least one
 # command; a required tier with no command is recorded as not_proven and the task cannot pass.
-# Without this block, Bridgie uses the lane's commands for the stacks it detects (package.json, *.sln).
+# Without this block, Bridgie uses the lane's commands for the stacks it detects (package.json, *.sln, pyproject.toml).
 # verify:
 #   commands:
 #     mechanical: ['npm run lint', 'npm run build']
 #     specified: ['npm test']
 #     contracts: ['npm run test:contracts']
+# Set these before bets are signed: a bet is held to the rules in force when it was signed, and a
+# later change that asks for less stops the bet until its owner accepts it.
+# Decisions an agent may not answer on its own (relay: false also refuses an agent passing on your answer):
+# humans_only: { decisions: [accept, governance], relay: true }
+# The owner may deliver with fewer approvals than required, on the record (false forbids it):
+# acceptance: { owner_override: true }
+# The mutation tier (money and data bets): how many small changes to try, the share the tests must
+# notice, and a faster test command when the usual one is too slow to run that many times:
+# mutation: { max_mutants: 20, min_score: 0.6, test: 'npm run test:fast' }
+# The sandbox for seats that write code (auto | required | off) and the hosts they may reach:
+# sandbox: { build: required, network: [registry.npmjs.org] }
+# Build up to this many independent tasks at the same time (verification stays one at a time):
+# build: { parallel: 3 }
+# What a task's size adds or drops (see policy/default.yaml):
+# sizes: { floor_risk: data, small: { harden: false, skip_tiers: [behavioural, dual_run] } }

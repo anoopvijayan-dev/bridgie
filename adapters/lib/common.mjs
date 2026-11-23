@@ -81,7 +81,36 @@ export function finish(o, reply, cliStatus = 0) {
   }
 }
 
+// osSandbox: can an OS-level sandbox start on this machine? macOS has one built in (Seatbelt);
+// Linux and WSL2 need bubblewrap and socat; native Windows has none.
+export function osSandbox() {
+  if (process.platform === 'darwin') return { ok: true, why: '' };
+  if (process.platform === 'linux') {
+    const missing = [['bwrap', 'bubblewrap'], ['socat', 'socat']].filter(([c]) => !which(c)).map(([, n]) => n);
+    return missing.length ? { ok: false, why: `${missing.join(' and ')} not installed` } : { ok: true, why: '' };
+  }
+  return { ok: false, why: 'no OS sandbox on native Windows (WSL2 has one)' };
+}
+// sandboxAsk: what the runner asks for (BRIDGIE_SANDBOX: off | auto | required; the hosts a
+// sandboxed seat may reach in BRIDGIE_SANDBOX_NETWORK). An adapter run by hand gets none.
+export function sandboxAsk() {
+  const mode = ['auto', 'required'].includes(process.env.BRIDGIE_SANDBOX) ? process.env.BRIDGIE_SANDBOX : 'off';
+  return { mode, hosts: (process.env.BRIDGIE_SANDBOX_NETWORK || '').split(',').map(s => s.trim()).filter(Boolean) };
+}
 export const replyPath = o => join(dirname(o.out), 'reply.txt');
+// usage: what the model CLI reported the run used, written beside --out as usage.json for the
+// runner to record. Every field is optional; only what the CLI itself said is written, never an
+// estimate. `usd` is what the CLI computed (a list-price figure: on a subscription it is not a bill).
+export const usagePath = o => join(dirname(o.out), 'usage.json');
+export function writeUsage(o, u) {
+  const int = v => (Number.isFinite(v) && v >= 0 ? Math.round(v) : null);
+  const out = { tokens_in: int(u.tokens_in), tokens_out: int(u.tokens_out), tokens_cache_read: int(u.tokens_cache_read), tokens_cache_write: int(u.tokens_cache_write),
+    tokens_total: int(u.tokens_total), usd: Number.isFinite(u.usd) && u.usd >= 0 ? u.usd : null };
+  if (Object.values(out).every(v => v === null)) return false;
+  if (out.tokens_total === null) { const parts = [out.tokens_in, out.tokens_out, out.tokens_cache_read, out.tokens_cache_write].filter(v => v !== null); if (parts.length) out.tokens_total = parts.reduce((a, b) => a + b, 0); }
+  writeFileSync(usagePath(o), JSON.stringify(out) + '\n');
+  return true;
+}
 export const caps = obj => { process.stdout.write(JSON.stringify(obj) + '\n'); process.exit(0); };
 export const probe = (bin, what) => {
   if (bin) { process.stdout.write('OK\n'); process.exit(0); }

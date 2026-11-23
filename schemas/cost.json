@@ -8,10 +8,11 @@
         "type": "object",
         "required": ["seat", "adapter", "model", "started_at", "duration_s", "attempt"],
         "properties": {
-          "seat": { "type": "string" }, "adapter": { "type": "string" }, "model": { "type": "string" },
+          "seat": { "type": "string" }, "task": { "type": "string" }, "adapter": { "type": "string" }, "model": { "type": "string" },
           "started_at": { "type": "string" }, "duration_s": { "type": "number" }, "attempt": { "type": "integer" },
-          "tokens_in": { "type": ["integer", "null"] }, "tokens_out": { "type": ["integer", "null"] }, "usd": { "type": ["number", "null"] },
-          "exit_code": { "type": "integer" }
+          "tokens_in": { "type": ["integer", "null"] }, "tokens_out": { "type": ["integer", "null"] },
+          "tokens_cache_read": { "type": ["integer", "null"] }, "tokens_cache_write": { "type": ["integer", "null"] }, "tokens_total": { "type": ["integer", "null"] }, "usd": { "type": ["number", "null"] },
+          "exit_code": { "type": "integer" }, "sandbox": { "type": "string", "enum": ["os", "builtin", "none", "off"] }
         }
       }
     }

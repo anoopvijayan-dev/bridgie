@@ -1,0 +1,5 @@
+{
+  "seat": "decomposer",
+  "summary_md": "Three tasks: two independent, one that needs both.",
+  "artifact_md": "```json\n{\"tasks\": [\n {\"id\": \"T1\", \"title\": \"Create collection endpoint\", \"requirements\": [\"R1\"], \"depends_on\": []},\n {\"id\": \"T2\", \"title\": \"Idempotent collection handling\", \"requirements\": [\"R2\", \"P1\"], \"depends_on\": []},\n {\"id\": \"T3\", \"title\": \"Collection report\", \"requirements\": [\"R1\"], \"depends_on\": [\"T1\", \"T2\"]}\n]}\n```"
+}

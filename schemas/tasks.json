@@ -1,26 +1,107 @@
 {
   "type": "object",
-  "required": ["bet", "tasks"],
+  "required": [
+    "bet",
+    "tasks"
+  ],
   "additionalProperties": false,
   "properties": {
-    "bet": { "type": "string" },
+    "bet": {
+      "type": "string"
+    },
     "tasks": {
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["id", "title", "requirements", "depends_on", "status", "attempts", "max_attempts"],
+        "required": [
+          "id",
+          "title",
+          "requirements",
+          "depends_on",
+          "status",
+          "attempts",
+          "max_attempts"
+        ],
         "additionalProperties": false,
         "properties": {
-          "id": { "type": "string", "pattern": "^T[0-9]+$" },
-          "title": { "type": "string" },
-          "requirements": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
-          "depends_on": { "type": "array", "items": { "type": "string" } },
-          "status": { "type": "string", "enum": ["todo", "in_progress", "verify", "passed", "failed", "blocked"] },
-          "attempts": { "type": "integer" },
-          "max_attempts": { "type": "integer" },
-          "branch": { "type": ["string", "null"] },
-          "evidence": { "type": ["string", "null"] },
-          "escalation": { "type": ["string", "null"] }
+          "id": {
+            "type": "string",
+            "pattern": "^T[0-9]+$"
+          },
+          "title": {
+            "type": "string"
+          },
+          "requirements": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1
+          },
+          "depends_on": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "todo",
+              "in_progress",
+              "verify",
+              "passed",
+              "failed",
+              "blocked"
+            ]
+          },
+          "attempts": {
+            "type": "integer"
+          },
+          "max_attempts": {
+            "type": "integer"
+          },
+          "branch": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "evidence": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "escalation": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "touches": { "type": "array", "items": { "type": "string" } },
+          "size": {
+            "type": "string",
+            "enum": [
+              "small",
+              "medium",
+              "large"
+            ]
+          },
+          "accepted": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "Findings of the last review that the owner accepted as known limitations, for the commit named."
+          },
+          "review": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "Who reviewed the passing attempt, and whether that was another model family than the producer's."
+          }
         }
       }
     }

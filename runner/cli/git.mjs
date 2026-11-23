@@ -73,6 +73,24 @@ export function restoreTaskWorktree(root, slug, task) {
   return wt;
 }
 
+// archiveTaskBranches: before a re-plan, move every task branch of the bet to
+// bridgie-task-archive/<slug>/<stamp>/<task> (worktrees removed), so new tasks that reuse an id
+// start from the feature branch instead of an old task's code. Returns [[old, new], ...].
+export function archiveTaskBranches(root, slug, stamp) {
+  const prefix = `bridgie-task/${slug}/`;
+  const names = git(['-C', root, 'for-each-ref', '--format=%(refname:short)', `refs/heads/${prefix}`]).out.trim().split('\n').filter(Boolean);
+  const moved = [];
+  for (const b of names) {
+    const task = b.slice(prefix.length), wt = taskWtPath(root, slug, task);
+    if (existsSync(wt)) removeWorktree(root, wt);
+    const to = `bridgie-task-archive/${slug}/${stamp}/${task}`;
+    gitOrDie(['-C', root, 'branch', '-m', b, to]);
+    moved.push([b, to]);
+  }
+  git(['-C', root, 'worktree', 'prune']);
+  return moved;
+}
+
 export function reviewWorktree(root, slug, task) {
   const rv = `${taskWtPath(root, slug, task)}-review`;
   if (existsSync(rv)) removeWorktree(root, rv);
@@ -99,6 +117,21 @@ export function bridgieChanges(root, slug, task) {
   const committed = git(['-C', wt, 'diff', '--name-only', base, 'HEAD', '--', '.bridgie']).out.split(/\r?\n/);
   const pending = git(['-C', wt, 'status', '--porcelain', '--untracked-files=all', '--', '.bridgie']).out.split(/\r?\n/).map(l => l.slice(3));
   return [...new Set([...committed, ...pending].map(s => s.trim()).filter(Boolean))].sort();
+}
+
+// syncTask: bring into a task's worktree the code other tasks merged into the feature branch after
+// this one branched, so the tiers and the reviewer see the code as it will be once it is merged.
+// Nothing happens when the feature branch only gained Bridgie state since then (the usual case when
+// tasks are built one at a time). A conflict is undone and reported: { conflict: [files] }.
+export function syncTask(root, slug, task) {
+  const wt = taskWtPath(root, slug, task), fb = featureBranch(slug);
+  const base = taskBase(root, slug, task);
+  if (git(['-C', root, 'diff', '--quiet', base, fb, ...EXCLUDE]).ok) return { synced: false };
+  const m = git(['-C', wt, 'merge', '--no-edit', '-q', '-m', `bridgie: sync ${task} with ${fb}`, fb]);
+  if (m.ok) return { synced: true };
+  const files = git(['-C', wt, 'diff', '--name-only', '--diff-filter=U']).out.split(/\r?\n/).filter(Boolean);
+  git(['-C', wt, 'merge', '--abort']);
+  return { synced: false, conflict: files.length ? files : ['(git could not merge; see the task worktree)'] };
 }
 
 export function resetTask(wt, to) {

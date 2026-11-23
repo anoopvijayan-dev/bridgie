@@ -8,6 +8,8 @@ import { validate } from './schema.mjs';
 import * as st from './state.mjs';
 import { leftoverSnapshots } from './guard.mjs';
 import { installedSkills, skillSource } from './skills.mjs';
+import { calibration, calibrationText } from './evals.mjs';
+import { loadSeat } from './context.mjs';
 
 export function doctor(root) {
   const r = [];
@@ -63,6 +65,21 @@ export function doctor(root) {
 
   if (!root) { warn('not inside a project: tool checks only'); return r; }
   try { st.loadPolicy(root); ok('project policy merges and validates'); } catch (e) { fail(`project policy: ${e.message}`); }
+  try {   // how far the reviewer can be trusted: its last test against planted bugs, if any
+    const rv = st.route(root, loadSeat('verify/reviewer').manifest).adapter;
+    if (rv && rv !== 'none' && rv !== 'fake') (calibration(rv) ? ok : warn)(`reviewer ${calibrationText(rv)}`);
+  } catch { /* routing problems are reported by the seat run */ }
+  try {   // do the seats that write code run in a sandbox on this machine?
+    const pol = st.loadPolicy(root), sbMode = pol.sandbox?.build || 'auto';
+    const impl = st.route(root, loadSeat('build/implementer').manifest).adapter;
+    if (impl && impl !== 'none' && impl !== 'fake' && existsSync(join(st.HOME, 'adapters', impl, 'run.mjs'))) {
+      const c = spawnSync(process.execPath, [join(st.HOME, 'adapters', impl, 'run.mjs'), '--capabilities', '--seat', join(st.HOME, 'seats', 'build', 'implementer')], { encoding: 'utf8', timeout: 30000 });
+      const caps = JSON.parse(c.stdout || '{}'), has = caps.sandbox && caps.sandbox !== 'none';
+      if (sbMode === 'off') warn(`build seats (${impl}) run without a sandbox: policy sandbox.build is off`);
+      else if (has) ok(`build seats (${impl}) run in ${caps.sandbox === 'os' ? `an OS sandbox; network: ${(pol.sandbox?.network || []).join(', ') || 'none'}` : "the CLI's own sandbox"}`);
+      else (sbMode === 'required' ? fail : warn)(`build seats (${impl}) have no OS sandbox on this machine${caps.sandbox_note ? ` (${caps.sandbox_note})` : ''}${sbMode === 'required' ? '; policy requires one, so builds will stop' : '; they run with your full access'}`);
+    }
+  } catch { /* the adapter's own probe line says what is wrong */ }
   try {   // Antigravity runs only in a folder one of its projects covers; say so before a seat fails
     const pol = st.loadPolicy(root), routes = [...Object.values(pol.routing?.tiers || {}), ...Object.values(pol.routing?.seats || {})];
     if (!process.env.BRIDGIE_ADAPTER && routes.some(x => x.adapter === 'antigravity')) {
@@ -86,6 +103,14 @@ export function doctor(root) {
     n > 120 ? warn(`AGENTS.md is ${n} lines; it is a map, aim for ~100`) : ok(`AGENTS.md ${n} lines`);
     for (const m of txt.matchAll(/\]\(([^)#:]+)\)/g)) if (!existsSync(join(root, m[1]))) fail(`AGENTS.md link does not resolve: ${m[1]}`);
   } else warn('no AGENTS.md in project; copy templates/AGENTS.md once the project has code');
+  // Run logs tracked by git before Bridgie ignored them: they stay tracked until someone untracks them.
+  try {
+    const tracked = spawnSync('git', ['-C', root, 'ls-files', '--', '.bridgie/runs'], { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 });
+    const logs = tracked.status === 0 ? tracked.stdout.split('\n').filter(f => /(\.log(\.err)?|\/diff\.patch|\/reply\.txt)$/.test(f)) : [];
+    let commit = false; try { commit = st.loadPolicy(root).commit_transcripts === true; } catch { /* reported above */ }
+    if (logs.length && !commit) warn(`${logs.length} run log(s), diff packet(s) and raw replies are tracked by git under .bridgie/runs; new ones are ignored. To untrack the old ones and keep the files: git rm -r -q --cached .bridgie/runs && git add .bridgie/runs`);
+    else if (!commit) ok('run logs are kept out of git');
+  } catch { /* not a git repository */ }
   const left = leftoverSnapshots(root);
   if (left.length) {
     const mb = Math.round(left.reduce((n, x) => n + x.bytes, 0) / 1048576);

@@ -29,6 +29,7 @@ You turn the signed bet into testable requirements and a design, at the level of
 `seat-output.json` with `files`:
 - `requirements.md`: one `## R<n> · <form> · risk: <level>` heading per EARS requirement and `## P<n> · property` headings for correctness properties with a `Validates:` line. IDs are stable across revisions.
 - `design.md`: every heading of the design template.
+On a revision, when requirements.md and design.md already exist, send `edits` instead of whole files: `edits["design.md"]` (and `edits["requirements.md"]`) is a list of `{"old": ..., "new": ...}`, each `old` copied exactly from the current file and occurring in it exactly once, applied in order. A file in `files` replaces the file whole; use that for a first shape or when most of a file changes. A long spec re-sent whole can be more than one reply can hold, and the revision is then lost.
 `questions` lists decisions only the owner can make; `proposals` of kind `task` suggest the first cut of tasks; `summary_md` is five lines for the approval page.
 
 ## Stop conditions

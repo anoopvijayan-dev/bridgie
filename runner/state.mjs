@@ -2,7 +2,8 @@
 // read and written through this module. Importable (surface.mjs) and a CLI.
 import { readFileSync, writeFileSync, renameSync, existsSync, mkdirSync, readdirSync, statSync } from 'node:fs';
 import { join, dirname, resolve, sep } from 'node:path';
-import { homedir } from 'node:os';
+import { homedir, hostname, userInfo } from 'node:os';
+import { createHash } from 'node:crypto';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parse as yparse, splitFrontmatter, joinFrontmatter } from './yaml.mjs';
 import { validate, assertValid } from './schema.mjs';
@@ -18,12 +19,21 @@ export const maxRisk = (a, b) => (RISK_ORDER.indexOf(a) >= RISK_ORDER.indexOf(b)
 // so a human decision is refused with a clear message instead of being rolled back as tampering
 // (finding 4). The runner takes the lock in run_seat (runner/lib/seat.sh).
 const LOCK_STALE_MS = 6 * 3600 * 1000;
+// pidAlive: whether a process of this machine still runs. EPERM means it runs under another user.
+export function pidAlive(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; }
+}
 export function seatLock(root) {
   const dir = join(root, '.bridgie', '.seat-lock');
   if (!existsSync(dir)) return null;
   let o;
   try { o = readJson(join(dir, 'owner.json')); } catch { o = { seat: 'unknown', since: statSync(dir).mtime.toISOString(), run_dir: null }; }
   if (Date.now() - Date.parse(o.since) > LOCK_STALE_MS) return null;   // a crashed run cannot lock state forever
+  // A lock taken on this machine by a process that is gone is stale at once: a killed run (a closed
+  // terminal, a restarted container) must not block the project for hours. A lock from another
+  // machine (a shared folder) keeps the time rule only.
+  if (o.pid !== undefined && (!o.host || o.host === hostname()) && !pidAlive(o.pid)) return null;
   return o;
 }
 function assertUnlocked(file) {
@@ -101,6 +111,85 @@ export function lanePolicy(policy, lane, risk) {
   return { ...l, ...r, by_risk: undefined };
 }
 
+// ---------- governance ----------
+// harness: the agent harness this process runs inside, when the environment shows one. Best effort:
+// it reads the variables the harnesses set for the commands they run. $BRIDGIE_HARNESS names one
+// outright ("none" for a person's own terminal).
+export function harness() {
+  const h = process.env.BRIDGIE_HARNESS;
+  if (h) return h === 'none' ? null : h;
+  if (process.env.BRIDGIE_PARENT_ADAPTER) return process.env.BRIDGIE_PARENT_ADAPTER;
+  if (process.env.CLAUDECODE) return 'claude-code';
+  if (process.env.CODEX_SANDBOX || process.env.CODEX_THREAD_ID) return 'codex';
+  if (process.env.GEMINI_CLI) return 'gemini-cli';
+  if (process.env.CURSOR_AGENT) return 'cursor';
+  return null;
+}
+// provenance: through what a decision was answered. `channel` is 'cli' or 'surface' (the page a
+// person clicks in a browser); `agent` is the harness the command ran inside, or null.
+export function provenance(channel = 'cli', extra = {}) {
+  let os_user = null;
+  try { os_user = userInfo().username; } catch { /* no passwd entry */ }
+  return { channel, agent: harness(), os_user, host: hostname(), ...extra };
+}
+// humansOnly: the decision types a person must answer, and whether an agent may relay a person's
+// answer (recorded as relayed) or is refused outright.
+export function humansOnly(policy) {
+  const h = policy.humans_only || {};
+  return { decisions: h.decisions || [], relay: h.relay !== false };
+}
+const short = x => createHash('sha256').update(JSON.stringify(x ?? null)).digest('hex').slice(0, 12);
+// governanceRules: the rules a bet is held to at its lane and risk. Stored on the bet when it is
+// signed; governanceDrift compares the signed rules with today's.
+export function governanceRules(root, lane, risk) {
+  const policy = loadPolicy(root);
+  const pol = lanePolicy(policy, lane, risk);
+  const ho = humansOnly(policy);
+  const sizes = {};
+  for (const k of ['small', 'medium', 'large']) sizes[k] = { harden: policy.sizes?.[k]?.harden ?? null, skip_tiers: [...(policy.sizes?.[k]?.skip_tiers || [])].sort() };
+  return {
+    tiers: [...(pol.tiers || pol.tiers_default || ['mechanical'])],
+    approvers: pol.approvers || 1,
+    cross_family: !!pol.cross_family,
+    auto_accept: !!pol.auto_accept,
+    human_ack_before_build: !!pol.human_ack_before_build,
+    humans_only: [...ho.decisions].sort(),
+    relay: ho.relay,
+    owner_override: policy.acceptance?.owner_override !== false,
+    floor_risk: policy.sizes?.floor_risk || 'data',
+    sizes,
+    commands: policy.verify?.commands ? short(policy.verify.commands) : null,
+    sandbox: ['off', 'auto', 'required'].includes(policy.sandbox?.build) ? policy.sandbox.build : 'auto',
+    sandbox_network: [...(policy.sandbox?.network || [])].sort(),
+  };
+}
+// governanceDrift: every way `now` is weaker than `signed` (or, for verify commands, different:
+// a command cannot be ranked, so any change is the owner's to confirm). Stronger rules are not drift.
+export function governanceDrift(signed, now) {
+  const out = [];
+  const s = signed || {};
+  for (const t of s.tiers || []) if (!now.tiers.includes(t)) out.push(`the ${t} tier is no longer required`);
+  if ((s.approvers || 1) > now.approvers) out.push(`approvers required went from ${s.approvers} to ${now.approvers}`);
+  if (s.cross_family && !now.cross_family) out.push('a reviewer from another model family is no longer required');
+  if (s.auto_accept === false && now.auto_accept) out.push('auto-accept was turned on');
+  if (s.human_ack_before_build && !now.human_ack_before_build) out.push('the risk acknowledgement before build was removed');
+  for (const d of s.humans_only || []) if (!now.humans_only.includes(d)) out.push(`"${d}" decisions no longer need a person`);
+  if (s.relay === false && now.relay) out.push('agents may now relay answers to decisions that need a person');
+  if (s.owner_override === false && now.owner_override) out.push('the owner override at acceptance was turned on');
+  if (s.floor_risk && RISK_ORDER.indexOf(now.floor_risk) > RISK_ORDER.indexOf(s.floor_risk)) out.push(`the risk floor for small tasks rose from ${s.floor_risk} to ${now.floor_risk}`);
+  for (const k of Object.keys(s.sizes || {})) {
+    const a = s.sizes[k], b = now.sizes[k] || { harden: null, skip_tiers: [] };
+    const more = b.skip_tiers.filter(t => !a.skip_tiers.includes(t));
+    if (more.length) out.push(`${k} tasks now skip ${more.join(', ')}`);
+    if (a.harden === true && b.harden !== true) out.push(`${k} tasks are no longer always hardened`);
+  }
+  if ((s.commands ?? null) !== (now.commands ?? null)) out.push('the verify commands in policy.yaml changed');
+  const SB = ['off', 'auto', 'required'];
+  if (s.sandbox && SB.indexOf(now.sandbox) < SB.indexOf(s.sandbox)) out.push(`the sandbox for build seats went from ${s.sandbox} to ${now.sandbox}`);
+  if (s.sandbox_network) { const more = (now.sandbox_network || []).filter(h => !s.sandbox_network.includes(h)); if (more.length && now.sandbox !== 'off') out.push(`sandboxed seats may now reach ${more.join(', ')}`); }
+  return out;
+}
+
 // ---------- markdown body helpers ----------
 export function appendToSection(body, heading, line) {
   const h = `## ${heading}`;
@@ -162,6 +251,7 @@ export function betTransition(root, slug, to, opts = {}) {
     const nums = numbersGate(root, slug, pol);
     if (nums) throw new Error(`bet "${slug}": ${nums}`);
     patch.signed_at = now(); patch.signed_by = opts.by;
+    patch.governance = { at: now(), rules: governanceRules(root, data.lane, data.risk) };
   }
   setFm(file, patch, 'bet');
   return { from, to };
@@ -250,15 +340,28 @@ export function answerDecision(root, slug, id, answer, opts = {}) {
   if (!d) throw new Error(`decision ${id} not found for bet "${slug}"`);
   if (d.status === 'answered') throw new Error(`decision ${id} already answered (${d.answer})`);
   const by = opts.by || 'unknown';
+  // via: through what the answer arrived (provenance). Callers that are a way in for people and
+  // agents (the CLI, the surface) pass it; it is stored on the decision as it was, never guessed.
+  const via = opts.via ? { ...opts.via } : null;
+  const through = via?.agent ? ` through ${via.agent}${via.relayed ? ' (relayed)' : ''}` : '';
 
   if (answer === 'defer') {
-    d.status = 'deferred'; d.effect = 'deferred'; d.decided_by = by; d.decided_at = now();
+    d.status = 'deferred'; d.effect = 'deferred'; d.decided_by = by; d.decided_at = now(); if (via) d.via = via;
     saveDecisions(root, slug, doc);
-    appendBody(root, slug, 'Decision log', `- ${today()} ${id} (${d.type}): deferred by ${by}`);
+    appendBody(root, slug, 'Decision log', `- ${today()} ${id} (${d.type}): deferred by ${by}${through}`);
     return d;
   }
   if (!d.options.includes(answer) && !(d.allow_free_text && opts.text)) {
     throw new Error(`answer "${answer}" is not one of: ${d.options.join(', ')}${d.allow_free_text ? ' (or pass --text for a free-text answer)' : ''}`);
+  }
+
+  // Decisions policy reserves for a person: an agent's command line is refused, or — when policy
+  // allows relaying — must say it is passing on a person's answer, and the record says so. This is a
+  // guard against an agent approving on its own and a truthful record, not proof of who typed.
+  const ho = humansOnly(loadPolicy(root));
+  if (via?.agent && via.channel !== 'surface' && ho.decisions.includes(d.type)) {
+    if (!ho.relay) throw new Error(`decision ${id} (${d.type}) is for a person, and this command is running inside an agent (${via.agent}). Answer it in your own terminal or with: bridgie open ${slug}`);
+    if (!via.relayed) throw new Error(`decision ${id} (${d.type}) is for a person, and this command is running inside an agent (${via.agent}). If ${by} told you this answer, pass --relayed (the record will say it came through ${via.agent}); otherwise ask them to answer it: bridgie open ${slug}`);
   }
 
   let effect = 'recorded';
@@ -277,13 +380,29 @@ export function answerDecision(root, slug, id, answer, opts = {}) {
     }
   }
   // approve_design, ack_risk, accept, unblock: their effects live in flow.mjs and arrive as opts.effectFn.
-  if (opts.effectFn) effect = opts.effectFn(d, answer, { by, text: opts.text }) || effect;
+  if (opts.effectFn) effect = opts.effectFn(d, answer, { by, text: opts.text, via }) || effect;
 
   d.status = 'answered'; d.answer = answer; d.free_text = opts.text || null;
-  d.decided_by = by; d.decided_at = now(); d.effect = effect;
+  d.decided_by = by; d.decided_at = now(); d.effect = effect; if (via) d.via = via;
   saveDecisions(root, slug, doc);
-  appendBody(root, slug, 'Decision log', `- ${today()} ${id} (${d.type}): ${answer}${opts.text ? ` — ${opts.text}` : ''} → ${effect} [${by}]`);
+  appendBody(root, slug, 'Decision log', `- ${today()} ${id} (${d.type}): ${answer}${opts.text ? ` — ${opts.text}` : ''} → ${effect} [${by}${through}]`);
   return d;
+}
+
+// supersedeDecisions: close pending decisions that no longer apply (a re-plan replaces the tasks they
+// were about). Like supersedeDecision: answered with answer 'superseded' and the reason, and logged.
+export function supersedeDecisions(root, slug, pred, why, opts = {}) {
+  const doc = loadDecisions(root, slug);
+  const closed = [];
+  for (const d of doc.decisions) {
+    if (d.status === 'answered' || !pred(d)) continue;   // same convention as supersedeDecision
+    Object.assign(d, { status: 'answered', answer: 'superseded', free_text: null, decided_by: opts.by || 'bridgie', decided_at: now(), effect: why });
+    closed.push(d.id);
+  }
+  if (!closed.length) return closed;
+  saveDecisions(root, slug, doc);
+  for (const id of closed) appendBody(root, slug, 'Decision log', `- ${today()} ${id}: superseded (${why}) [${opts.by || 'bridgie'}]`);
+  return closed;
 }
 
 export function ingestQuestions(root, slug, outputFile, runId) {
@@ -325,6 +444,62 @@ export function fallbacks(root, primary) {
   const set = loadPolicy(root).routing?.fallback;
   const list = Array.isArray(set) ? set : [parentAdapter(), 'claude-code', 'codex', 'antigravity', 'copilot'].filter(a => a !== 'fake');
   return [...new Set(list.filter(a => a && a !== primary && a !== 'none'))];
+}
+
+// ---------- adapter quota ----------
+// A model CLI that is at its usage limit fails every run until the limit resets. Bridgie reads that
+// from the run's own logs, remembers it per machine (.bridgie/.adapter-state.json, not committed),
+// routes around the adapter until then, and says when to come back instead of failing again.
+const QUOTA = /quota|usage limit|rate limit|RESOURCE_EXHAUSTED|\b429\b|limit reached|too many requests/i;
+const DEFAULT_WAIT_MS = 30 * 60 * 1000;   // a limit that names no reset time is tried again in half an hour
+
+// quotaFromText: null when the text shows no usage limit; else { until: ISO time, why: the line }.
+export function quotaFromText(text, nowMs = Date.now()) {
+  const line = String(text).split(/\r?\n/).filter(l => QUOTA.test(l)).pop();
+  if (!line) return null;
+  let until = null;
+  const rel = line.match(/resets?\s+in\s+((?:\d+\s*[dhms]\s*)+)/i);
+  if (rel) {
+    let ms = 0;
+    for (const m of rel[1].matchAll(/(\d+)\s*([dhms])/gi)) ms += Number(m[1]) * { d: 86400000, h: 3600000, m: 60000, s: 1000 }[m[2].toLowerCase()];
+    if (ms > 0) until = nowMs + ms;
+  }
+  if (until === null) {
+    const abs = line.match(/(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})(?::\d{2})?\s*(Z|UTC)?/i);
+    const t = abs ? Date.parse(`${abs[1]}T${abs[2]}:00Z`) : NaN;
+    if (!Number.isNaN(t) && t > nowMs) until = t;
+  }
+  return { until: new Date(until ?? nowMs + DEFAULT_WAIT_MS).toISOString(), why: line.trim().slice(0, 300) };
+}
+// quotaFromRun: the same, read from the tail of every log an adapter wrote in a run folder since
+// `sinceMs` (the launch's start).
+export function quotaFromRun(runDir, sinceMs = 0, nowMs = Date.now()) {
+  let found = null;
+  for (const f of existsSync(runDir) ? readdirSync(runDir) : []) {
+    if (!/\.log(\.err)?$/.test(f)) continue;
+    let text = '';
+    try {
+      if (statSync(join(runDir, f)).mtimeMs < sinceMs) continue;   // an earlier adapter's log in the same run
+      text = readFileSync(join(runDir, f), 'utf8').slice(-20000);
+    } catch { continue; }
+    const q = quotaFromText(text, nowMs);
+    if (q && (!found || q.until > found.until)) found = q;
+  }
+  return found;
+}
+const adapterStatePath = root => join(root, '.bridgie', '.adapter-state.json');
+export function adapterState(root) {
+  try { return readJson(adapterStatePath(root)); } catch { return {}; }
+}
+export function markExhausted(root, adapter, until, why) {
+  const doc = adapterState(root);
+  doc[adapter] = { exhausted_until: until, why, noted_at: now() };
+  writeFileSync(adapterStatePath(root), JSON.stringify(doc, null, 2) + '\n');   // machine-local, not Bridgie state
+}
+// exhaustedUntil: the ISO time an adapter's limit resets, or null when it is not known to be at one.
+export function exhaustedUntil(root, adapter, nowMs = Date.now()) {
+  const u = adapterState(root)[adapter]?.exhausted_until;
+  return u && Date.parse(u) > nowMs ? u : null;
 }
 
 export function costAdd(runDir, entry) {

@@ -16,6 +16,7 @@
     "non_goals": { "type": "array", "items": { "type": "string" } },
     "created": { "type": "string" },
     "signed_at": { "type": ["string", "null"] },
-    "signed_by": { "type": ["string", "null"] }
+    "signed_by": { "type": ["string", "null"] },
+    "governance": { "type": ["object", "null"], "properties": { "at": { "type": "string" }, "rules": { "type": "object" }, "accepted_by": { "type": "string" } } }
   }
 }

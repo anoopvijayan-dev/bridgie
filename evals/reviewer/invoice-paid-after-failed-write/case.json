@@ -1,0 +1,18 @@
+{
+  "title": "Settle an invoice",
+  "stack": "python",
+  "test": "python -m unittest discover -s tests -q",
+  "requirements": "## R1 \u00b7 event \u00b7 risk: money\nWHEN an invoice is settled THE SYSTEM SHALL record the payment in the ledger and then mark the invoice paid.\n\n## R2 \u00b7 unwanted \u00b7 risk: money\nIF the ledger write fails THEN THE SYSTEM SHALL leave the invoice unpaid and report the failure to the caller.\n",
+  "task_requirements": [
+    "R1",
+    "R2"
+  ],
+  "claim": "settle() added in invoices/settle.py; a ledger failure is logged with the invoice id. Tests pass.",
+  "planted": [
+    {
+      "file": "invoices/settle.py",
+      "anchor": "log.warning(\"ledger write failed for %s: %s\", invoice.id, error)",
+      "about": "swallow|still (marked|marks|sets)|marked paid|status.*paid|unpaid|not (raised|re-raised|reported)|continues"
+    }
+  ]
+}

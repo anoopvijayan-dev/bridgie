@@ -6,6 +6,17 @@ import { splitFrontmatter } from './yaml.mjs';
 import { assertValid } from './schema.mjs';
 import { HOME, loadSchema, loadPolicy, betPath, readFm, readJson, tasksPath, runsDir } from './state.mjs';
 
+// limitationsOf: flow.mjs's limitationsText without importing flow (flow imports nothing from here,
+// but the seat runner loads both; kept local to stay a leaf module).
+function limitationsOf(root, slug) {
+  const tp = tasksPath(root, slug);
+  if (!existsSync(tp)) return '';
+  return readJson(tp).tasks.filter(t => t.accepted && ((t.accepted.findings || []).length || (t.accepted.criteria || []).length)).map(t => [
+    `### ${t.id}: accepted by ${t.accepted.by} on ${String(t.accepted.at).slice(0, 10)}`, `Reason: ${t.accepted.reason}`,
+    ...(t.accepted.findings || []).map(f => `- ${f.severity}: ${f.claim}${f.file ? ` (${f.file}:${f.line ?? '?'})` : ''}`),
+    ...(t.accepted.criteria || []).map(c => `- ${c.id} ${c.result}: ${c.check}`)].join('\n')).join('\n\n');
+}
+
 const REQUIRED = new Set(['bet', 'requirements', 'design', 'task']);
 
 export function loadSeat(seatRel) {
@@ -89,7 +100,7 @@ function resolveInput(name, ctx) {
     const rows = readJson(f);
     const tail = p => { if (!p || !existsSync(join(runDir, basename(p)))) return '(no log)'; const l = readFileSync(join(runDir, basename(p)), 'utf8').split('\n'); return l.slice(-60).join('\n').trim() || '(empty log)'; };
     const text = rows.length
-      ? rows.map(r => `### ${r.id} · ${r.tier} · ${r.result}\nCommand: ${r.check}\n\n\`\`\`\n${tail(r.artifact)}\n\`\`\``).join('\n\n')
+      ? rows.map(r => `### ${r.id} · ${r.tier} · ${r.result}\nCommand: ${r.check}\nFull log: ${r.artifact ? join(runDir, basename(r.artifact)) : '(none)'} (read or grep it to confirm a named test ran; only the last 60 lines are shown here)\n\n\`\`\`\n${tail(r.artifact)}\n\`\`\``).join('\n\n')
       : 'The runner ran no commands for this task.';
     return { label: 'test results (runner-run, read-only)', text, path: f };
   }
@@ -104,10 +115,24 @@ function resolveInput(name, ctx) {
     const l = join(HOME, 'lanes', lane, 'gotchas.md'); if (existsSync(l)) parts.push(readFileSync(l, 'utf8'));
     return parts.length ? { label: 'gotchas (project, then lane)', text: parts.join('\n\n') } : null;
   }
+  if (name === 'limitations') {
+    // Findings the owner accepted as known limitations, so a later review does not raise them again.
+    const all = limitationsOf(root, slug);
+    return all ? { label: 'known limitations the owner accepted (do not raise these again; a new instance elsewhere is a new finding)', text: all } : null;
+  }
+  if (name === 'review_note') return file(join(runDir, 'review-note.md'), 'note from the runner about this review');
   if (name === 'agents_md') return file(join(root, 'AGENTS.md'), 'AGENTS.md');
   if (name === 'acceptance_packet') return file(join(runDir, 'acceptance-packet.md'), 'acceptance packet (runner-built)');
   if (name === 'acceptance') return file(join(root, '.bridgie', 'acceptance', `${slug}.md`), `.bridgie/acceptance/${slug}.md`);
   throw new Error(`unknown seat input "${name}"`);
+}
+
+// schemaText: the seat's output schema, compact, inlined in the prompt so every model sees the exact
+// field names without having to open the file (a builder once wrote "fix" where "evidence" was required).
+function schemaText(output) {
+  const f = join(HOME, 'schemas', output);
+  if (!existsSync(f)) return '{}';
+  return JSON.stringify(JSON.parse(readFileSync(f, 'utf8')));
 }
 
 export function assemble(root, slug, seatRel, opts = {}) {
@@ -128,7 +153,7 @@ export function assemble(root, slug, seatRel, opts = {}) {
   const refs = (manifest.references || []).map(p => `## ${p}\n\n${readFileSync(join(dir, p), 'utf8').trim()}\n`);
   const writes = manifest.writes === 'worktree' ? ` and inside your worktree (${ctx.cwd})` : '';
   const outputNote = manifest.output === 'none' ? 'This seat produces no file; print your result.' :
-    `End your reply with exactly one fenced \`\`\`json block containing your ${manifest.output} (or write it to ${join(opts.runDir || '<run-dir>', manifest.output)}).\nIt must validate against ${join(HOME, 'schemas', manifest.output)}.` +
+    `End your reply with exactly one fenced \`\`\`json block containing your ${manifest.output} (or write it to ${join(opts.runDir || '<run-dir>', manifest.output)}).\nIt must validate against this JSON Schema (${join(HOME, 'schemas', manifest.output)}); use exactly these field names, and include every \`required\` field, at every level:\n\n\`\`\`json\n${schemaText(manifest.output)}\n\`\`\`` +
     (manifest.output === 'seat-output.json' ? `\nSet "seat": "${manifest.name}".` : '');
   const prompt = [
     `# Seat: ${manifest.name} (${manifest.loop})`, '', body.trim(), '',

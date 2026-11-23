@@ -1,0 +1,18 @@
+{
+  "title": "Mark a ledger entry reconciled",
+  "stack": "python",
+  "test": "python -m unittest discover -s tests -q",
+  "requirements": "## R1 \u00b7 state \u00b7 risk: data\nWHILE several processes write the ledger file THE SYSTEM SHALL not lose an entry or a change another writer made at the same time.\n\n## R2 \u00b7 event \u00b7 risk: data\nWHEN an entry is marked reconciled THE SYSTEM SHALL set its reconciled flag and leave every other entry as it was.\n",
+  "task_requirements": [
+    "R1",
+    "R2"
+  ],
+  "claim": "mark_reconciled() added in ledger/store.py; it rewrites the file atomically (temp file and rename). Tests pass.",
+  "planted": [
+    {
+      "file": "ledger/store.py",
+      "anchor": "entries = _read(path)\n    for entry in entries:",
+      "about": "lock|lost update|read[- ]modify[- ]write|concurren|race|same time"
+    }
+  ]
+}

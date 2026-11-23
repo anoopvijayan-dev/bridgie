@@ -4,5 +4,12 @@ public/
 runs/**/prompt.md
 runs/**/output.md
 runs/**/.snapshot/
+# Bulky and regenerable: test and adapter logs, diff packets, raw replies. Evidence, claims and
+# cost stay committed. Set commit_transcripts: true in policy.yaml to commit these too.
+runs/**/*.log
+runs/**/*.log.err
+runs/**/diff.patch
+runs/**/reply.txt
 worktrees/
 .fake-state/
+.adapter-state.json

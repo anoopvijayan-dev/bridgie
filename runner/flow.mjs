@@ -10,6 +10,7 @@ import { pathToFileURL } from 'node:url';
 import * as st from './state.mjs';
 import { assertValid } from './schema.mjs';
 import { extractLastJson } from '../adapters/lib/extract-json.mjs';
+import { calibrationText } from './evals.mjs';
 
 export const acceptancePath = (root, slug) => join(root, '.bridgie', 'acceptance', `${slug}.md`);
 const requirementsPath = (root, slug) => join(root, '.bridgie', 'specs', slug, 'requirements.md');
@@ -34,14 +35,36 @@ export function requirementRisks(root, slug) {
 }
 
 // writeSpecFiles: requirements.md and design.md from the shaper's output.
+// applyEdits: each {old, new} replaces text that occurs exactly once in the file as it stands
+// after the edits before it, so a revision names only what changes (a whole long spec can be
+// more than a model returns in one reply).
+export function applyEdits(text, edits, name) {
+  edits.forEach((e, i) => {
+    const at = text.indexOf(e.old);
+    const where = `edits["${name}"][${i}] (${JSON.stringify(e.old.slice(0, 60))})`;
+    if (at < 0) throw new Error(`${where}: old text not found in ${name}`);
+    if (text.indexOf(e.old, at + 1) >= 0) throw new Error(`${where}: old text occurs more than once in ${name}; include more context`);
+    text = text.slice(0, at) + e.new + text.slice(at + e.old.length);
+  });
+  return text;
+}
+
 export function writeSpecFiles(root, slug, outputFile) {
   const o = assertValid(st.loadSchema('seat-output'), st.readJson(outputFile), outputFile);
-  const files = o.files || {};
-  const req = files['requirements.md'], design = files['design.md'] ?? o.artifact_md;
-  if (!req) throw new Error('shaper output has no files["requirements.md"]');
-  if (!/^## R[0-9]+\b/m.test(req)) throw new Error('requirements.md has no "## R<n>" requirement headings');
-  if (!design) throw new Error('shaper output has no files["design.md"]');
+  const files = o.files || {}, edits = o.edits || {};
   const dir = join(root, '.bridgie', 'specs', slug);
+  // A file comes whole (files), or as edits to the one already there (a revision).
+  const spec = name => {
+    if (files[name] !== undefined) return files[name];
+    if (!edits[name]) return undefined;
+    const f = join(dir, name);
+    if (!existsSync(f)) throw new Error(`shaper output edits ${name}, which does not exist yet; send it whole in files`);
+    return applyEdits(readFileSync(f, 'utf8'), edits[name], name);
+  };
+  const req = spec('requirements.md'), design = spec('design.md') ?? o.artifact_md;
+  if (!req) throw new Error('shaper output has no files["requirements.md"] (or edits to it)');
+  if (!/^## R[0-9]+\b/m.test(req)) throw new Error('requirements.md has no "## R<n>" requirement headings');
+  if (!design) throw new Error('shaper output has no files["design.md"] (or edits to it)');
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, 'requirements.md'), req.endsWith('\n') ? req : `${req}\n`);
   writeFileSync(join(dir, 'design.md'), design.endsWith('\n') ? design : `${design}\n`);
@@ -103,7 +126,7 @@ export function writeTasksFromPlan(root, slug, outputFile) {
   const max = st.loadPolicy(root).retries?.max_attempts || 3;
   const doc = {
     bet: slug,
-    tasks: list.map(t => ({ id: t.id, title: t.title || t.id, requirements: t.requirements, depends_on: t.depends_on || [], status: 'todo', attempts: 0, max_attempts: max, branch: null, evidence: null, escalation: null })),
+    tasks: list.map(t => ({ id: t.id, title: t.title || t.id, requirements: t.requirements, depends_on: t.depends_on || [], ...(SIZES.includes(t.size) ? { size: t.size } : {}), ...(Array.isArray(t.touches) && t.touches.length && t.touches.every(x => typeof x === 'string' && x.trim()) ? { touches: t.touches.map(x => x.trim()) } : {}), status: 'todo', attempts: 0, max_attempts: max, branch: null, evidence: null, escalation: null })),
   };
   saveTasks(root, slug, doc);
   // Effective risk (finding 3): a requirement tagged with a higher risk raises the bet's risk.
@@ -111,6 +134,32 @@ export function writeTasksFromPlan(root, slug, outputFile) {
   // Re-planning invalidates any acceptance package built from the previous plan (finding 1).
   invalidateAcceptance(root, slug, 're-planned');
   return doc;
+}
+
+// ---------- task size ----------
+// Risk says how careful a bet must be; size says how much there is to be careful about. A
+// three-line change and a locking engine in the same money bet should not cost the same hour.
+// The plan gives each task a size; policy.sizes says what each size adds or drops. Risk is the
+// floor: a task that builds a requirement tagged at or above sizes.floor_risk, or (once its diff
+// is known) changes a risk path, is treated as medium at least, whatever the plan said.
+export const SIZES = ['small', 'medium', 'large'];
+export function taskProfile(root, slug, id, files = null) {
+  const t = getTask(loadTasks(root, slug), id);
+  const sizes = st.loadPolicy(root).sizes || {};
+  const planned = SIZES.includes(t.size) ? t.size : 'medium';
+  let size = planned, reason = null;
+  if (planned === 'small') {
+    const floor = st.RISK_ORDER.indexOf(sizes.floor_risk || 'data');
+    const risks = requirementRisks(root, slug);
+    const hot = t.requirements.filter(r => st.RISK_ORDER.indexOf(risks[r] || 'none') >= floor);
+    if (hot.length) { size = 'medium'; reason = `it builds ${hot.join(', ')}, tagged risk ${hot.map(r => risks[r]).join(', ')}`; }
+    else if (files) {
+      const paths = riskOfPaths(root, slug, files).paths;
+      if (paths.length) { size = 'medium'; reason = `it changes ${paths.join(', ')}`; }
+    }
+  }
+  const rule = sizes[size] || {};
+  return { planned, size, reason, harden: rule.harden, skip_tiers: rule.skip_tiers || [] };
 }
 
 export function readyTasks(root, slug) {
@@ -121,6 +170,29 @@ export function readyTasks(root, slug) {
     t.depends_on.every(d => passed.has(d)));
 }
 
+// touchesOverlap: could two tasks' declared paths name the same file? Patterns are compared on the
+// fixed part before their first wildcard, so the answer errs towards "yes" ("**/x.py" overlaps all).
+const fixedPart = p => p.replace(/\\/g, '/').replace(/^\.\//, '').split(/[*?[{]/)[0];
+export function touchesOverlap(a = [], b = []) {
+  for (const x of a) for (const y of b) { const fx = fixedPart(x), fy = fixedPart(y); if (fx.startsWith(fy) || fy.startsWith(fx)) return [x, y]; }
+  return null;
+}
+// pickBatch: up to n ready tasks to build side by side. Ready already means every dependency
+// passed, so no task in the batch needs another's code. A task that declares the files it touches
+// (`touches`, from the plan) is held for a later batch when they overlap with a task already picked:
+// two builders in one file end in a merge conflict and a rebuild. Tasks that declare nothing are
+// taken on the plan's word that they are independent; verify catches a conflict if they were not.
+export function pickBatch(root, slug, n) {
+  const picked = [], held = [];
+  for (const t of readyTasks(root, slug)) {
+    if (picked.length >= n) break;
+    const clash = picked.map(p => [p, touchesOverlap(p.touches, t.touches)]).find(([, o]) => o);
+    if (clash) held.push({ task: t.id, with: clash[0].id, paths: clash[1] });
+    else picked.push(t);
+  }
+  return { batch: picked.map(t => t.id), held };
+}
+
 export function startAttempt(root, slug, id, branch) {
   const doc = loadTasks(root, slug);
   const t = getTask(doc, id);
@@ -128,6 +200,37 @@ export function startAttempt(root, slug, id, branch) {
   if (t.status === 'passed') throw new Error(`task ${id} already passed`);
   if (t.attempts >= t.max_attempts) throw new Error(`task ${id} has used all ${t.max_attempts} attempts`);
   t.attempts += 1; t.status = 'in_progress'; t.branch = branch;
+  saveTasks(root, slug, doc);
+  return t;
+}
+
+// recoverAttempts: tasks left in_progress by a run that is gone (a killed terminal, a restarted
+// container) go back to being buildable, and the attempt the dead run started is not counted: it
+// never finished, so it is no evidence about the task. Whatever the run left in the task worktree
+// stays there for the next attempt. Does nothing while a live agent run holds the seat lock.
+export function recoverAttempts(root, slug) {
+  if (st.seatLock(root)) return [];
+  const doc = loadTasks(root, slug);
+  const stuck = doc.tasks.filter(t => t.status === 'in_progress');
+  for (const t of stuck) {
+    t.attempts = Math.max(0, t.attempts - 1);
+    t.status = t.attempts === 0 ? 'todo' : 'failed';
+    const note = 'the last attempt was interrupted before it finished (its process ended); it is not counted';
+    t.escalation = t.escalation ? `${t.escalation} | ${note}` : note;
+  }
+  if (stuck.length) saveTasks(root, slug, doc);
+  return stuck.map(t => t.id);
+}
+
+// unstartAttempt: an attempt that never ran (every model CLI that could take the seat was at its
+// usage limit) is not evidence about the task: it is not counted, and the task is buildable again.
+export function unstartAttempt(root, slug, id, note = '') {
+  const doc = loadTasks(root, slug);
+  const t = getTask(doc, id);
+  if (t.status !== 'in_progress') return t;
+  t.attempts = Math.max(0, t.attempts - 1);
+  t.status = t.attempts === 0 ? 'todo' : 'failed';
+  if (note) t.escalation = t.escalation ? `${t.escalation} | ${note}` : note;
   saveTasks(root, slug, doc);
   return t;
 }
@@ -193,8 +296,11 @@ export function reconcile(root, slug, id, reviewerFile, mechanicalRows, outFile)
       t.status = 'blocked';
       t.escalation = `blocked after ${t.attempts} attempts. Last verdict ${verdict}: ${why}`;
       saveTasks(root, slug, doc);
+      // What stands between the task and a pass is the reviewer's findings alone when every tier
+      // the runner ran passed: only then can the owner accept them as known limitations.
+      const tiersPassed = mechanicalRows.every(r => r.result === 'pass');
       ensureDecision(root, slug, 'unblock', `Task ${id} "${t.title}" is ${t.escalation}`,
-        ['retry with guidance', 'take over manually', 'kill task'], { task: id, allow_free_text: true });
+        ['retry with guidance', 'take over manually', ...(tiersPassed ? [ACCEPT_LIMITATIONS] : []), 'kill task'], { task: id, allow_free_text: true });
     } else {
       t.status = 'failed';
       t.escalation = `attempt ${t.attempts} of ${t.max_attempts} ${verdict}: ${why}`;
@@ -207,8 +313,57 @@ export function reconcile(root, slug, id, reviewerFile, mechanicalRows, outFile)
   return { verdict, evidence };
 }
 
-export function markPassed(root, slug, id, evidenceFile) {
-  return setTask(root, slug, id, { status: 'passed', evidence: evidenceFile, escalation: null });
+export function markPassed(root, slug, id, evidenceFile, extra = {}) {
+  return setTask(root, slug, id, { status: 'passed', evidence: evidenceFile, escalation: null, ...extra });
+}
+
+// ---------- accepted limitations ----------
+// A review that never converges is a decision the owner has not been offered. When a task is
+// blocked by the reviewer's findings alone (every tier the runner ran passed), the owner can accept
+// those findings as known limitations, with a reason. The acceptance is bound to the commit that
+// was reviewed: verify then re-checks the tiers for that commit and merges without asking the
+// reviewer again. The findings stay on the task, are shown to later reviewers so they are not
+// raised again, and are listed in the acceptance package. Nothing is hidden: the evidence keeps
+// the reviewer's verdict.
+export const ACCEPT_LIMITATIONS = 'accept as limitations';
+export function acceptLimitations(root, slug, id, { by, text }) {
+  if (!text) throw new Error(`"${ACCEPT_LIMITATIONS}" needs the reason (--text): why these findings are acceptable`);
+  const t = getTask(loadTasks(root, slug), id);
+  if (!t.evidence || !existsSync(t.evidence)) throw new Error(`task ${id} has no review evidence to accept findings from`);
+  const ev = st.readJson(t.evidence);
+  const failedTiers = ev.criteria.filter(c => c.tier !== 'adversarial' && c.result !== 'pass');
+  if (failedTiers.length) throw new Error(`task ${id} has failing tiers (${failedTiers.map(c => c.id).join(', ')}); a limitation cannot cover a failing check`);
+  let sha = null;
+  try { sha = st.readJson(join(resolve(t.evidence, '..'), 'mechanical-key.json')).sha || null; } catch { /* a review from before tier results were keyed by commit */ }
+  const findings = ev.findings.filter(f => f.severity === 'blocker' || f.severity === 'major').map(f => ({ severity: f.severity, claim: f.claim, file: f.file ?? null, line: f.line ?? null }));
+  const rows = ev.criteria.filter(c => c.tier === 'adversarial' && c.result !== 'pass').map(c => ({ id: c.id, result: c.result, check: c.check }));
+  setTask(root, slug, id, { status: 'verify', accepted: { by, at: st.now(), reason: text, sha, evidence: t.evidence, findings, criteria: rows } });
+  return `task ${id}: ${findings.length} finding(s) and ${rows.length} unproven row(s) accepted as known limitations by ${by}; bridgie verify ${slug} --task ${id} re-checks the tiers and merges`;
+}
+// limitations: every accepted limitation of a bet, for the reviewer's context and the acceptance package.
+export function limitations(root, slug) {
+  if (!existsSync(st.tasksPath(root, slug))) return [];
+  return loadTasks(root, slug).tasks.filter(t => t.accepted && (t.accepted.findings?.length || t.accepted.criteria?.length))
+    .map(t => ({ task: t.id, title: t.title, ...t.accepted }));
+}
+export function limitationsText(root, slug) {
+  const all = limitations(root, slug);
+  if (!all.length) return '';
+  return all.map(l => [`### ${l.task}: accepted by ${l.by} on ${String(l.at).slice(0, 10)}`, `Reason: ${l.reason}`,
+    ...l.findings.map(f => `- ${f.severity}: ${f.claim}${f.file ? ` (${f.file}:${f.line ?? '?'})` : ''}`),
+    ...l.criteria.map(c => `- ${c.id} ${c.result}: ${c.check}`)].join('\n')).join('\n\n');
+}
+
+// ---------- review record and review debt ----------
+// reviewDebt: passed tasks whose review was by the producer's own model family (same), and ones
+// passed before Bridgie recorded who reviewed (unknown). A second-family review clears the debt.
+export function reviewDebt(root, slug) {
+  if (!existsSync(st.tasksPath(root, slug))) return { same: [], unknown: [] };
+  const passed = loadTasks(root, slug).tasks.filter(t => t.status === 'passed');
+  return {
+    same: passed.filter(t => t.review && t.review.cross_family === false && !t.review.rereview?.cross_family).map(t => t.id),
+    unknown: passed.filter(t => !t.review).map(t => t.id),
+  };
 }
 
 // ---------- verification planning ----------
@@ -251,20 +406,27 @@ function detectStacks(wt) {
   const has = (dir, test) => existsSync(dir) && readdirSync(dir).some(test);
   if (has(wt, f => f.endsWith('.sln')) || has(join(wt, 'src'), f => f.endsWith('.sln'))) stacks.push('dotnet');
   if (existsSync(join(wt, 'package.json'))) stacks.push('node');
+  if (['pyproject.toml', 'setup.py', 'setup.cfg', 'requirements.txt'].some(f => existsSync(join(wt, f)))) stacks.push('python');
   return stacks;
 }
 
 // Tiers the runner runs as commands; "adversarial" is the reviewer seat and "human" is acceptance.
-export const COMMAND_TIERS = ['mechanical', 'specified', 'contracts', 'invariants', 'behavioural', 'dual_run'];
+export const COMMAND_TIERS = ['mechanical', 'specified', 'contracts', 'invariants', 'behavioural', 'dual_run', 'mutation'];
+// The mutation tier needs no project setup: with no command of its own it runs Bridgie's built-in
+// check (runner/mutate.mjs) with the specified tier's test commands.
+export const BUILTIN_MUTATION = `"${process.execPath}" "${join(st.HOME, 'bin', 'bridgie.mjs')}" mutate`;
 
 // mechanicalPlan: commands for every command tier the policy requires at the bet's risk.
 // A required tier with no command is returned as { tier, cmd: null, missing: true } so verify
 // records it as not_proven instead of silently dropping it (finding 3).
-export function mechanicalPlan(root, slug, wt) {
+export function mechanicalPlan(root, slug, wt, skip = []) {
   const bet = st.readFm(st.betPath(root, slug)).data;
   const policy = st.loadPolicy(root);
   const tiers = st.lanePolicy(policy, bet.lane, bet.risk).tiers || policy.lanes?.[bet.lane]?.tiers_default || ['mechanical'];
-  const commandTiers = COMMAND_TIERS.filter(t => tiers.includes(t));
+  // `skip`: tiers a small task drops (taskProfile). mechanical and specified are never dropped:
+  // every change is linted, built and tested.
+  const dropped = skip.filter(t => !['mechanical', 'specified'].includes(t));
+  const commandTiers = COMMAND_TIERS.filter(t => tiers.includes(t) && !dropped.includes(t));
   const project = policy.verify?.commands;
   let byTier;
   if (project) byTier = t => project[t] || [];
@@ -272,10 +434,13 @@ export function mechanicalPlan(root, slug, wt) {
     const laneFile = join(st.HOME, 'lanes', bet.lane, 'verifiers.yaml');
     const lane = existsSync(laneFile) ? yparse(readFileSync(laneFile, 'utf8')).tiers || {} : {};
     const stacks = detectStacks(wt);
-    byTier = t => stacks.flatMap(sk => lane[t]?.[sk] || []);
+    // the interpreter is `python` on Windows and `python3` where only that name is installed
+    const py = c => c.replace(/^python /, process.platform === 'win32' ? 'python ' : 'python3 ');
+    byTier = t => stacks.flatMap(sk => (lane[t]?.[sk] || []).map(py));
   }
   return commandTiers.flatMap(t => {
     const cmds = byTier(t);
+    if (!cmds.length && t === 'mutation') return [{ tier: t, cmd: BUILTIN_MUTATION, builtin: true }];
     return cmds.length ? cmds.map(cmd => ({ tier: t, cmd })) : [{ tier: t, cmd: null, missing: true }];
   });
 }
@@ -321,7 +486,8 @@ export function ackRecorded(root, slug) {
 export const ackDeclined = (root, slug) => latest(root, slug, 'ack_risk')?.answer === 'decline';
 
 function effectFor(root, slug, extra) {
-  return (d, answer, { by, text }) => {
+  return (d, answer, { by, text, via }) => {
+    if (d.type === 'governance') return governanceEffect(root, slug, answer, by);
     if (d.type === 'approve_design') return answer === 'approve' ? 'design approved' : `changes requested${text ? `: ${text}` : ''}; re-run bridgie shape ${slug}`;
     if (d.type === 'ack_risk') return answer === 'ack' ? 'risk paths acknowledged' : 'declined; build and verify stay stopped';
     if (d.type === 'unblock') {
@@ -331,10 +497,11 @@ function effectFor(root, slug, extra) {
         setTask(root, slug, id, { status: 'failed', max_attempts: t.max_attempts + 1, escalation: `${t.escalation || ''}${text ? ` | guidance: ${text}` : ''}` });
         return `task ${id} gets one more attempt`;
       }
+      if (answer === ACCEPT_LIMITATIONS) return acceptLimitations(root, slug, id, { by, text });
       if (answer === 'take over manually') { setTask(root, slug, id, { status: 'verify' }); return `task ${id} handed to ${by}; commit in its worktree, then bridgie verify ${slug} --task ${id}`; }
       if (answer === 'kill task') { setTask(root, slug, id, { escalation: `killed by ${by}` }); return `task ${id} killed; re-plan the bet to continue`; }
     }
-    if (d.type === 'accept') return acceptEffect(root, slug, answer, { by, text, gitSha: extra.gitSha });
+    if (d.type === 'accept') return acceptEffect(root, slug, answer, { by, text, via, gitSha: extra.gitSha, override: extra.override });
     if (d.type === 'confidence') {
       const m = answer.match(/^accept (opinion|anecdote|data|test)$/);
       if (m) { st.setFm(st.betPath(root, slug), { confidence: m[1] }, 'bet'); return `confidence set to ${m[1]}`; }
@@ -342,6 +509,163 @@ function effectFor(root, slug, extra) {
     }
     return null;
   };
+}
+
+// ---------- plan checks ----------
+// requirementSections: { id: text } for every "## R1 · …" / "## P1 · …" section of requirements.md.
+export function requirementSections(root, slug) {
+  const f = requirementsPath(root, slug);
+  if (!existsSync(f)) return {};
+  const out = {};
+  const parts = readFileSync(f, 'utf8').split(/^(?=## [RP][0-9]+\b)/m);
+  for (const p of parts) { const m = p.match(/^## ([RP][0-9]+)\b/); if (m) out[m[1]] = p; }
+  return out;
+}
+// planWarnings: tasks whose requirements lean on something a task they do not depend on builds.
+// A requirement's text that names another requirement ("as R41 defines", "Validates: R2") needs that
+// one built first. When it is built later — or by a task that depends on this one — the task cannot
+// be verified against it, and review fails for a reason no retry fixes. Warnings, not errors: a
+// mention is not always a dependency, and the planner or the owner decides.
+export function planWarnings(root, slug) {
+  const tasks = loadTasks(root, slug).tasks;
+  const sections = requirementSections(root, slug);
+  const owner = {};                                  // requirement → the first task that builds it
+  for (const t of tasks) for (const r of t.requirements) owner[r] ??= t.id;
+  const byId = Object.fromEntries(tasks.map(t => [t.id, t]));
+  const reach = (id, seen = new Set()) => { for (const d of byId[id]?.depends_on || []) if (!seen.has(d)) { seen.add(d); reach(d, seen); } return seen; };
+  const out = [];
+  for (const t of tasks) {
+    const deps = reach(t.id);
+    const said = new Set();
+    for (const r of t.requirements) {
+      if (owner[r] !== t.id) continue;
+      const text = (sections[r] || '').replace(/^## [^\n]*\n/, '');
+      for (const q of new Set(text.match(/\b[RP][0-9]+\b/g) || [])) {
+        const o = owner[q];
+        if (!o || o === t.id || deps.has(o) || said.has(`${q}`)) continue;
+        said.add(q);
+        out.push(reach(o).has(t.id)
+          ? `${t.id} builds ${r}, whose text refers to ${q}, but ${q} is built by ${o}, which depends on ${t.id}: ${t.id} cannot be verified against ${q} until ${o} exists. Build ${r} and ${q} in one task, or move ${r} to ${o}`
+          : `${t.id} builds ${r}, whose text refers to ${q}, but ${q} is built by ${o}, which ${t.id} does not depend on: add ${o} to ${t.id}'s depends_on, or say why ${r} does not need ${q}`);
+      }
+    }
+  }
+  return out;
+}
+
+// ---------- cost ----------
+// costByTask: where a bet's time went. One row per task (and one for the bet's own seats: shaping,
+// planning, packaging): attempts, seat runs, and seconds split into build (implementer, hardener),
+// review, and checks (the command tiers). Tokens and money are summed when adapters report them.
+// entryTokens: every token a run used (input, output, cache reads and writes), or null when its CLI
+// reported none.
+export function entryTokens(e) {
+  if (typeof e.tokens_total === 'number') return e.tokens_total;
+  const parts = [e.tokens_in, e.tokens_out, e.tokens_cache_read, e.tokens_cache_write].filter(v => typeof v === 'number');
+  return parts.length ? parts.reduce((a, b) => a + b, 0) : null;
+}
+const COST_KIND = { implementer: 'build', hardener: 'build', reviewer: 'review', tiers: 'checks' };
+export function costByTask(root, slug) {
+  const tasks = existsSync(st.tasksPath(root, slug)) ? loadTasks(root, slug).tasks : [];
+  const rows = new Map();
+  const row = id => { if (!rows.has(id)) rows.set(id, { task: id, runs: 0, build: 0, review: 0, checks: 0, other: 0, seconds: 0, tokens: null, usd: null, unreported: 0 }); return rows.get(id); };
+  const taskOf = dir => {
+    for (const f of ['claim.json', 'evidence.json']) {
+      const p = join(dir, f);
+      if (existsSync(p)) { try { const t = st.readJson(p).task; if (typeof t === 'string') return t; } catch { /* a half-written file */ } }
+    }
+    return null;
+  };
+  const d = st.runsDir(root, slug);
+  for (const run of existsSync(d) ? readdirSync(d).sort() : []) {
+    const c = join(d, run, 'cost.json');
+    if (!existsSync(c)) continue;
+    let entries; try { entries = st.readJson(c).entries; } catch { continue; }
+    let fallback;
+    for (const e of entries) {
+      const r = row(e.task || (fallback ??= taskOf(join(d, run))) || '(bet)');
+      const s = e.duration_s || 0;
+      r.runs++; r.seconds += s; r[COST_KIND[e.seat] || 'other'] += s;
+      if (typeof e.usd === 'number') r.usd = (r.usd || 0) + e.usd;
+      const tok = entryTokens(e);
+      if (tok !== null) r.tokens = (r.tokens || 0) + tok;
+      else if (e.seat !== 'tiers' && typeof e.usd !== 'number') r.unreported++;       // a model run whose CLI said nothing about usage
+    }
+  }
+  const out = [];
+  for (const t of tasks) { const r = row(t.id); out.push({ ...r, title: t.title, size: t.size || null, status: t.status, attempts: t.attempts }); rows.delete(t.id); }
+  for (const r of rows.values()) out.push({ ...r, title: r.task === '(bet)' ? 'shaping, planning, packaging' : 'not in the current plan', size: null, status: null, attempts: null });
+  return out;
+}
+const dur = s => s >= 3600 ? `${Math.floor(s / 3600)}h${String(Math.round((s % 3600) / 60)).padStart(2, '0')}m` : s >= 60 ? `${Math.round(s / 60)}m` : `${s}s`;
+// isolation: of the runs that wrote code and recorded it, how many were sandboxed.
+export function isolation(root, slug) {
+  let runs = 0, sandboxed = 0;
+  const d = st.runsDir(root, slug);
+  for (const run of existsSync(d) ? readdirSync(d) : []) {
+    const c = join(d, run, 'cost.json');
+    if (!existsSync(c)) continue;
+    let entries; try { entries = st.readJson(c).entries; } catch { continue; }
+    for (const e of entries) if (e.sandbox) { runs++; if (e.sandbox === 'os' || e.sandbox === 'builtin') sandboxed++; }
+  }
+  return { runs, sandboxed };
+}
+export const tokensText = n => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : String(n));
+// costTotals: the bet's totals, and cost per accepted task — everything spent (failed attempts,
+// planning and review included) divided by the tasks that passed.
+export function costTotals(rows) {
+  const sum = k => rows.reduce((n, r) => n + (r[k] || 0), 0);
+  const usd = rows.some(r => r.usd !== null) ? sum('usd') : null, tokens = rows.some(r => r.tokens !== null) ? sum('tokens') : null;
+  const passed = rows.filter(r => r.status === 'passed').length;
+  return { runs: sum('runs'), seconds: sum('seconds'), tokens, usd, unreported: sum('unreported'), passed, usd_per_passed: usd !== null && passed ? usd / passed : null };
+}
+export function costTable(rows) {
+  const t = costTotals(rows);
+  const money = t.usd !== null, toks = t.tokens !== null;
+  const head = ['Task', 'Size', 'Status', 'Attempts', 'Runs', 'Build', 'Review', 'Checks', 'Other', 'Total', ...(toks ? ['Tokens'] : []), ...(money ? ['Cost'] : [])];
+  const body = [...rows].sort((a, b) => b.seconds - a.seconds).map(r => [r.task, r.size || '-', r.status || '-', r.attempts ?? '-', r.runs, dur(r.build), dur(r.review), dur(r.checks), dur(r.other), dur(r.seconds),
+    ...(toks ? [r.tokens === null ? '-' : tokensText(r.tokens)] : []), ...(money ? [r.usd === null ? '-' : `$${r.usd.toFixed(2)}`] : [])].map(String));
+  const w = head.map((h, i) => Math.max(h.length, ...body.map(b => b[i].length)));
+  const line = cells => cells.map((c, i) => c.padEnd(w[i])).join('  ').trimEnd();
+  let foot = `${t.runs} runs, ${dur(t.seconds)} of agent and check time`;
+  if (!toks && !money) foot += '; the model CLIs did not report tokens or cost';
+  else {
+    if (toks) foot += `; ${tokensText(t.tokens)} tokens`;
+    if (money) foot += `; $${t.usd.toFixed(2)} at list price${t.usd_per_passed !== null ? ` ($${t.usd_per_passed.toFixed(2)} per passed task, everything included)` : ''}`;
+    if (t.unreported) foot += `. ${t.unreported} model run(s) reported no usage, so the real figures are higher`;
+    if (money) foot += '. Cost is what the CLI computed from list prices: on a subscription it is not a bill';
+  }
+  return [line(head), ...body.map(line), '', foot].join('\n');
+}
+
+// ---------- governance lock ----------
+// A bet is signed under a set of rules (tiers, approvers, cross-family review, who may decide). If
+// policy is later made weaker, nothing applies silently: build, verify and accept stop, and the owner
+// decides whether the bet moves to the new rules or the policy file goes back.
+export const ACCEPT_CHANGE = 'accept the change', KEEP_SIGNED = 'keep the signed rules';
+// governanceDrift: how today's policy is weaker than the rules the bet was signed under ([] = it is not).
+export function governanceDrift(root, slug) {
+  const bet = st.readFm(st.betPath(root, slug)).data;
+  if (!bet.governance?.rules) return [];              // signed before rules were recorded
+  return st.governanceDrift(bet.governance.rules, st.governanceRules(root, bet.lane, bet.risk));
+}
+// governanceGate: null when the bet may go on; otherwise the drift and the decision raised for it.
+export function governanceGate(root, slug) {
+  const drift = governanceDrift(root, slug);
+  if (!drift.length) return null;
+  const bet = st.readFm(st.betPath(root, slug)).data;
+  const context = `Policy changed after "${bet.title}" was signed, and this bet would now be held to less: ${drift.join('; ')}. Accept the change for this bet, or keep the rules it was signed under (then put policy.yaml back).`;
+  const last = latest(root, slug, 'governance');
+  if (last?.answer === KEEP_SIGNED && last.context === context) return { drift, decision: last.id, kept: true };
+  const d = ensureDecision(root, slug, 'governance', context, [ACCEPT_CHANGE, KEEP_SIGNED], { allow_free_text: false });
+  return { drift, decision: d.id, kept: false };
+}
+function governanceEffect(root, slug, answer, by) {
+  const bet = st.readFm(st.betPath(root, slug)).data;
+  if (answer !== ACCEPT_CHANGE) return 'the signed rules stand; build, verify and accept stay stopped until policy.yaml meets them again';
+  if (by !== bet.owner) throw new Error(`only the owner "${bet.owner}" can move this bet to weaker rules (acting as "${by}")`);
+  st.setFm(st.betPath(root, slug), { governance: { at: st.now(), rules: st.governanceRules(root, bet.lane, bet.risk), accepted_by: by } }, 'bet');
+  return 'the bet is now held to the current policy';
 }
 
 // answer: the one entry point for answering any decision (CLI, surface, shorthands).
@@ -370,17 +694,22 @@ export function acceptancePacket(root, slug, diffStat = '') {
       ...ev.criteria.map(c => `| ${c.id} | ${c.tier} | ${String(c.check).replace(/\|/g, '/')} | ${c.result} |`), '');
     if (ev.findings.length) details.push(`Findings for ${t.id}:`, ...ev.findings.map(f => `- ${f.severity}: ${f.claim}${f.file ? ` (${f.file}:${f.line ?? '?'})` : ''}`), '');
   }
-  let entries = 0, seconds = 0, retries = 0;
-  const d = st.runsDir(root, slug);
-  for (const run of existsSync(d) ? readdirSync(d) : []) {
-    const c = join(d, run, 'cost.json');
-    if (!existsSync(c)) continue;
-    for (const e of st.readJson(c).entries) { entries++; seconds += e.duration_s || 0; }
-  }
+  let retries = 0;
   for (const t of doc.tasks) retries += Math.max(0, t.attempts - 1);
-  const cost = { seat_runs: entries, seconds, attempts_total: doc.tasks.reduce((n, t) => n + t.attempts, 0), retries, usd: null };
+  const tot = costTotals(costByTask(root, slug));
+  const cost = { seat_runs: tot.runs, seconds: tot.seconds, attempts_total: doc.tasks.reduce((n, t) => n + t.attempts, 0), retries, tokens: tot.tokens, usd: tot.usd, runs_without_usage: tot.unreported };
+  const lim = limitationsText(root, slug);
+  if (lim) details.push('## Accepted limitations', '', 'Findings the owner accepted instead of fixing. They are part of what is being accepted.', '', lim, '');
+  const debt = reviewDebt(root, slug);
+  if (crossFamily(root, slug) && debt.same.length) details.push('## Review debt', '', `Policy asks for a reviewer from another model family. These tasks passed with a reviewer of the producer's own family and have not been re-reviewed: ${debt.same.join(', ')} (bridgie rereview ${slug}).`, '');
+  // Isolation: how many of the runs that wrote code ran inside a sandbox (recorded since 0.7.0).
+  const iso = isolation(root, slug);
+  if (iso.runs) details.push('## Isolation', '', `${iso.sandboxed} of ${iso.runs} runs that wrote code ran in a sandbox (shell commands held to the task worktree and an allowlist of hosts)${iso.runs > iso.sandboxed ? `; ${iso.runs - iso.sandboxed} ran with the full access of the account that started Bridgie` : ''}.`, '');
+  // Which reviewers passed these tasks, and what is known about how well each finds bugs.
+  const reviewers = [...new Set(doc.tasks.flatMap(t => [t.review?.adapter, t.review?.rereview?.adapter]).filter(a => a && a !== 'fake'))].sort();
+  if (reviewers.length) details.push('## Reviewer calibration', '', 'How each reviewer that passed these tasks did when last tested on changes with a planted bug (bridgie eval reviewer):', '', ...reviewers.map(a => `- ${calibrationText(a)}`), '');
   lines.push('', ...details, '## Change', '', '```', diffStat.trim() || '(no diff stat)', '```', '',
-    '## Cost', '', `${cost.seat_runs} seat runs, ${cost.seconds}s, ${cost.attempts_total} attempts (${cost.retries} retries). Token cost not reported by all adapters.`, '');
+    '## Cost', '', `${cost.seat_runs} runs, ${cost.seconds}s, ${cost.attempts_total} attempts (${cost.retries} retries).${cost.tokens !== null ? ` ${tokensText(cost.tokens)} tokens.` : ''}${cost.usd !== null ? ` $${cost.usd.toFixed(2)} at list price (what the model CLIs computed; on a subscription it is not a bill).` : ''}${cost.tokens === null && cost.usd === null ? ' The model CLIs did not report tokens or cost.' : cost.runs_without_usage ? ` ${cost.runs_without_usage} model run(s) reported no usage, so the real figures are higher.` : ''}`, '');
   return { md: lines.join('\n'), cost };
 }
 
@@ -448,7 +777,7 @@ export function writeAcceptance(root, slug, { body, residual = [], cost = {} }) 
     ['approve', 'approve with conditions', 'reject'], { allow_free_text: true });
 }
 
-function acceptEffect(root, slug, ans, { by, text, gitSha }) {
+function acceptEffect(root, slug, ans, { by, text, gitSha, via = null, override = null }) {
   const f = acceptancePath(root, slug);
   const { data, body } = st.readFm(f);
   if (ans !== 'approve' && !text) throw new Error(`"${ans}" needs a reason or the conditions (--text)`);
@@ -458,15 +787,30 @@ function acceptEffect(root, slug, ans, { by, text, gitSha }) {
     return 'rejected; fix and re-run bridgie accept';
   }
   // Approval is bound to what was packaged (finding 1): re-check the gates at the moment of approval.
+  const drift = governanceDrift(root, slug);
+  if (drift.length) throw new Error(`policy is weaker than the rules "${slug}" was signed under (${drift.join('; ')}); the owner decides that first: bridgie accept ${slug}`);
   const stale = stalePackage(root, slug, data);
   if (stale) throw new Error(`the acceptance package for "${slug}" is stale: ${stale}. Run bridgie accept ${slug} again`);
   if (data.packaged_sha && gitSha && gitSha !== data.packaged_sha) throw new Error(`approval names ${gitSha.slice(0, 10)} but the package was built at ${data.packaged_sha.slice(0, 10)}`);
   const bet = st.readFm(st.betPath(root, slug)).data;
-  const required = Math.max(data.approvers_required, st.lanePolicy(st.loadPolicy(root), bet.lane, bet.risk).approvers || 1);
-  if (data.approvals.some(a => a.by === by)) throw new Error(`${by} already approved; a different approver is required`);
+  const policy = st.loadPolicy(root);
+  const required = Math.max(data.approvers_required, st.lanePolicy(policy, bet.lane, bet.risk).approvers || 1);
   const sha = data.packaged_sha || gitSha || null;
-  const approvals = [...data.approvals, { by, at: st.now(), decision: ans, conditions: text || null, sha, digest: data.packaged_digest || null }];
+  const already = data.approvals.some(a => a.by === by);
+  if (already && !override) throw new Error(`${by} already approved; a different approver is required`);
+  const approvals = already ? data.approvals : [...data.approvals, { by, at: st.now(), decision: ans, conditions: override ? null : text || null, sha, digest: data.packaged_digest || null, ...(via ? { via } : {}) }];
   const conditions = approvals.filter(a => a.conditions).map(a => a.conditions);
+  // Owner override: the owner delivers with fewer approvals than policy asks for, and the record
+  // says exactly that — who, why, how many approvals there were. Policy can turn it off.
+  if (override) {
+    if (by !== bet.owner) throw new Error(`only the owner "${bet.owner}" can override the approvals (acting as "${by}")`);
+    if (policy.acceptance?.owner_override === false) throw new Error('policy does not allow an owner override at acceptance (acceptance.owner_override: false)');
+    if (approvals.length >= required) throw new Error(`no override is needed: ${approvals.length} of ${required} approvals are recorded`);
+    st.writeFm(f, { ...data, approvers_required: required, approvals, conditions, decision: 'approved', approver: approvals.map(a => a.by).join(', '), decided_at: st.now(), git_sha: sha,
+      override: { by, at: st.now(), reason: override, approvals: approvals.length, required } }, body, 'acceptance');
+    st.betTransition(root, slug, 'delivered');
+    return `approved by owner override with ${approvals.length} of ${required} approvals (${override}); bet delivered. Merge bridgie/${slug} when you are ready.`;
+  }
   if (approvals.length < required) {
     st.writeFm(f, { ...data, approvers_required: required, approvals, conditions }, body, 'acceptance');
     return `approval ${approvals.length} of ${required} recorded`;
@@ -490,9 +834,14 @@ const OPS = {
   'start-attempt': a => out(startAttempt(a[0], a[1], a[2], a[3])),
   'reconcile': a => out(reconcile(a[0], a[1], a[2], a[3], JSON.parse(readFileSync(a[4], 'utf8')), a[5]).verdict),
   'fail-attempt': a => out(failAttempt(a[0], a[1], a[2], a[3]).status),
+  'cost-by-task': a => out(costByTask(a[0], a[1])),
+  'plan-warnings': a => out(planWarnings(a[0], a[1]).join('\n')),
+  'governance-gate': a => out(governanceGate(a[0], a[1])?.decision || ''),
+  'recover-attempts': a => out(recoverAttempts(a[0], a[1]).join('\n')),
   'stamp-task': a => { stampTask(a[0], a[1]); out('ok'); },
   'risk-of-paths': a => out(riskOfPaths(a[0], a[1], readFileSync(a[2], 'utf8').split('\n').filter(Boolean))),
   'mechanical-plan': a => out(mechanicalPlan(a[0], a[1], a[2])),
+  'task-profile': a => out(taskProfile(a[0], a[1], a[2])),
   'producer-vendor': a => out(producerVendor(a[0], a[1], a[2])),
   'cross-family': a => out(String(crossFamily(a[0], a[1]))),
   'mark-passed': a => out(markPassed(a[0], a[1], a[2], a[3])),

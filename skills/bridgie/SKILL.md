@@ -38,7 +38,10 @@ Then run `B doctor` to check the setup. A `[warn]` for an adapter that is not in
 Never answer a Bridgie decision yourself: grill questions, sign, design approval, risk acknowledgement, unblock, acceptance, confidence proposals.
 
 - In case B the person can use the decision page: `B open <slug>`.
-- In cases A and C the page is served inside a shell their browser cannot reach, so take decisions in chat: read the pending questions and options from the bet's files and `B status`, show them to the person (for several choices use AskUserQuestion or a short rendered page, not raw markdown), and only after they answer in this conversation run `B decide <slug> <id> <answer> [--text "..."]`, `B sign`, `B ack`, `B shape --approve|--changes` or `B accept --approve|--conditions|--reject`, exactly as they said.
+- In cases A and C the page is served inside a shell their browser cannot reach, so take decisions in chat: read the pending questions and options from the bet's files and `B status`, show them to the person (for several choices use AskUserQuestion or a short rendered page, not raw markdown), and only after they answer in this conversation run `B decide <slug> <id> <answer> [--text "..."]`, `B sign`, `B ack`, `B shape --approve|--changes|--amend` or `B accept --approve|--conditions|--reject`, exactly as they said.
+- Acceptance and governance decisions are reserved for a person. From inside an agent, `B accept` and `B decide` refuse them unless you add `--relayed`. Add it only when the person gave that exact answer in this conversation; the record then says the answer came through you. If the tool says relaying is off, the person must answer in their own terminal or on `B open <slug>`: tell them, and do not look for another way.
+- Never weaken `.bridgie/policy.yaml` (fewer tiers or approvers, cross-family review off, different verify commands) to get a task through. Bridgie stops the bet and asks the owner when the policy is weaker than the one the bet was signed under; that decision is theirs too.
+- `B accept <slug> --override "<reason>"` (deliver with fewer approvals than policy asks for) is the owner's call alone: offer it only when they say there is no second approver, and use their reason.
 
 Never put figures the person did not give you into `customer.yaml`, `pitch.md` or `numbers.yaml`, and never write a buyer's answer or an evidence note yourself.
 
@@ -67,6 +70,14 @@ If the person has raw signals (emails, support exports, notes, forum threads) in
 
 - `B run <slug>` drives shape, plan, build, verify and accept packaging, and stops at each decision. Run it again after the person decides. Single steps: `B shape | plan | build | verify | accept <slug>`.
 - A command ending "waiting for ..." is not a failure: say what is waiting and ask the person for that decision.
+- "waiting: ... at its usage limit until <time>" (exit 3) means a model CLI is out of quota and nothing was changed: tell the person the time and run the same command again after it. Do not switch the reviewer to the builder's model family to get past it unless the person asks; if they do, the task is recorded as review debt and `B rereview <slug>` clears it later.
+- If a run was killed (the session or container stopped), just run `B run <slug>` again: Bridgie recovers the half-built task without using an attempt. `B recover <slug>` does only the recovery.
+- `B run <slug> --parallel 3` builds up to three independent tasks at once (verification stays one at a time). Offer it for bets with many tasks; say that it uses model quota faster, and that more than three or four rarely helps. If a task "conflicts with what was merged", that is normal: it goes back to build and the next `B run` rebuilds it on top.
+- `B run <slug> --pause-before-verify` stops after each build so the person can read the change before it is verified. Offer it when they want to check the work themselves.
+- When a task is blocked on review findings and every test tier passed, the unblock decision has an `accept as limitations` option (with a reason). Explain the findings; the person chooses between another attempt and accepting them.
+- `B plan` may print ordering warnings (a task's requirement names one built later). Show them to the person before building; `B plan <slug> --replan` fixes the plan.
+- `B eval reviewer` tests the configured reviewer on changes with planted bugs and reports how many it caught. Suggest it once per machine or after changing the reviewer; it makes about fourteen model calls. Report the result as it is, including misses.
+- `B status --cost <slug>` shows time and attempts per task: use it when the person asks why something is slow.
 - A blocked task needs their unblock decision. Summarise the escalation from `B status` and `.bridgie/specs/<slug>/tasks.json`; do not retry it yourself.
 - Bridgie never pushes or merges. After acceptance the person merges `bridgie/<slug>` when they choose.
 - After an accept decision or a killed bet: `B learn <slug>`. Summarise the proposals and ask which to adopt; adopted gotchas go into `.bridgie/learn/gotchas.md`.

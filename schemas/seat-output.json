@@ -75,6 +75,29 @@
       "additionalProperties": {
         "type": "string"
       }
+    },
+    "edits": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "old",
+            "new"
+          ],
+          "properties": {
+            "old": {
+              "type": "string",
+              "pattern": "[\\s\\S]"
+            },
+            "new": {
+              "type": "string"
+            }
+          }
+        }
+      }
     }
   }
 }

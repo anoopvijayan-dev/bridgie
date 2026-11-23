@@ -1,14 +1,17 @@
 // Claude Code adapter (anthropic). Prompt on stdin, reply on stdout, JSON extracted to --out.
-import { dirname } from 'node:path';
+import { dirname, join } from 'node:path';
+import { readFileSync, writeFileSync, rmSync } from 'node:fs';
 import * as A from '../lib/common.mjs';
 
 const o = A.parse(process.argv.slice(2));
 const bin = A.which(process.env.BRIDGIE_CLAUDE_BIN || 'claude');
 if (o.probe) A.probe(bin, 'claude CLI');
-if (o.caps) A.caps({ vendor: 'anthropic', reads_repo: true, reads_web: true });
+if (o.caps) { const sb = A.osSandbox(); A.caps({ vendor: 'anthropic', reads_repo: true, reads_web: true, sandbox: sb.ok ? 'os' : 'none', ...(sb.ok ? {} : { sandbox_note: sb.why }) }); }
 A.requireRunArgs(o);
 if (!bin) { process.stderr.write('claude CLI not found on PATH\n'); process.exit(1); }
-const args = ['-p', '--output-format', 'text', '--add-dir', dirname(o.out)];
+// --output-format json: one result object holding the reply text and what the run used (tokens,
+// cost). The reply is written to reply.txt as before; the usage goes to usage.json.
+const args = ['-p', '--output-format', 'json', '--add-dir', dirname(o.out)];
 if (o.model !== 'default') args.push('--model', o.model);
 if (o.effort) args.push('--effort', o.effort);
 if (o.mode === 'readonly') {
@@ -20,7 +23,36 @@ if (o.mode === 'readonly') {
   args.push('--permission-mode', 'acceptEdits',
     '--allowedTools', 'Read', 'Grep', 'Glob', 'LS', 'Edit', 'Write', 'Bash',
     '--disallowedTools', 'Bash(git push:*)', 'Bash(git remote:*)', 'Bash(git checkout:*)', 'Bash(git switch:*)');
+  // OS sandbox for a seat that writes: shell commands can write only in the worktree (and the run
+  // folder and temp), and reach only the allowed hosts; the model cannot ask to run one outside it.
+  // Edit and Write are not shell commands, so they are held to the working directories by a
+  // permission setting. `required` makes the CLI refuse to start where no sandbox is available.
+  const sb = A.sandboxAsk();
+  if (sb.mode !== 'off') {
+    const file = join(dirname(o.out), 'sandbox-settings.json');
+    writeFileSync(file, JSON.stringify({
+      sandbox: { enabled: true, failIfUnavailable: sb.mode === 'required', allowUnsandboxedCommands: false, autoAllowBashIfSandboxed: true,
+        network: { allowedDomains: sb.hosts }, filesystem: { allowWrite: [dirname(o.out)] } },
+      permissions: { blockWritesOutsideWorkingDirectories: true },
+    }, null, 2) + '\n');
+    args.push('--settings', file);
+  }
 }
-const reply = A.replyPath(o);
-const rc = A.run(bin, args, { cwd: o.cwd, stdin: o.prompt, stdout: reply });
+// A seat's whole reply is one JSON block (a shaper's carries the full requirements and
+// design). Past Claude Code's default output cap the CLI makes the model resume in a new
+// message, and print mode returns only that last part, so the JSON is lost. Ask for the
+// model's ceiling instead (the CLI clamps it to the model's limit); a value already set wins.
+process.env.CLAUDE_CODE_MAX_OUTPUT_TOKENS ||= process.env.BRIDGIE_CLAUDE_MAX_OUTPUT_TOKENS || '128000';
+const reply = A.replyPath(o), raw = join(dirname(o.out), 'claude.json');
+const rc = A.run(bin, args, { cwd: o.cwd, stdin: o.prompt, stdout: raw });
+let text = '';
+try { text = readFileSync(raw, 'utf8'); } catch { /* the CLI wrote nothing */ }
+let res = null;
+try { const j = JSON.parse(text); if (j && typeof j === 'object' && !Array.isArray(j) && j.type === 'result') res = j; } catch { /* not the result object: plain text (an older CLI, or an error before the run) */ }
+if (res) {
+  writeFileSync(reply, typeof res.result === 'string' ? res.result : '');
+  const u = res.usage || {};
+  A.writeUsage(o, { tokens_in: u.input_tokens, tokens_out: u.output_tokens, tokens_cache_read: u.cache_read_input_tokens, tokens_cache_write: u.cache_creation_input_tokens, usd: res.total_cost_usd });
+} else writeFileSync(reply, text);
+rmSync(raw, { force: true });
 A.finish(o, reply, rc);

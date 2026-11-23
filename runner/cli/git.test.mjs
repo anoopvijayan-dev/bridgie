@@ -8,6 +8,7 @@ import { execFileSync } from 'node:child_process';
 import * as g from './git.mjs';
 import { BridgieExit } from './core.mjs';
 
+const lf = s => s.replace(/\r\n/g, '\n');   // git may check files out with CRLF (Windows, core.autocrlf)
 const sh = (dir, ...args) => execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' }).trim();
 let P;
 beforeEach(() => {
@@ -83,4 +84,53 @@ test('review worktree is detached at the task head and removable', () => {
   assert.equal(sh(rv, 'status', '--porcelain'), '');
   g.removeWorktree(P, rv);
   assert.ok(!existsSync(rv));
+});
+
+test('ignoreRunLogs adds the bulky run files to .bridgie/.gitignore once, unless commit_transcripts is on', async () => {
+  const { ignoreRunLogs, RUN_LOG_IGNORES } = await import('./core.mjs');
+  const { mkdtempSync, mkdirSync, writeFileSync, readFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const root = mkdtempSync(join(tmpdir(), 'bridgie-ignore-'));
+  mkdirSync(join(root, '.bridgie', 'bets'), { recursive: true });
+  writeFileSync(join(root, '.bridgie', 'policy.yaml'), 'version: 1\n');
+  writeFileSync(join(root, '.bridgie', '.gitignore'), 'ui/\nworktrees/');
+  assert.equal(ignoreRunLogs(root), true);
+  const lines = readFileSync(join(root, '.bridgie', '.gitignore'), 'utf8').split('\n');
+  for (const l of ['ui/', 'worktrees/', ...RUN_LOG_IGNORES]) assert.ok(lines.includes(l), l);
+  assert.equal(ignoreRunLogs(root), false);   // once
+  assert.equal(readFileSync(join(root, '.bridgie', '.gitignore'), 'utf8').split('\n').filter(l => l === 'runs/**/*.log').length, 1);
+  const kept = mkdtempSync(join(tmpdir(), 'bridgie-ignore-'));
+  mkdirSync(join(kept, '.bridgie', 'bets'), { recursive: true });
+  writeFileSync(join(kept, '.bridgie', 'policy.yaml'), 'version: 1\ncommit_transcripts: true\n');
+  assert.equal(ignoreRunLogs(kept), false);
+});
+
+test('syncTask: a task built beside others is brought up to date before verify; a conflict is undone and reported', () => {
+  g.featureStart(P, 'net');
+  sh(P, 'add', '-A'); sh(P, 'commit', '-q', '-m', 'state');
+  const w1 = g.taskWorktree(P, 'net', 'T1'), w2 = g.taskWorktree(P, 'net', 'T2'), w3 = g.taskWorktree(P, 'net', 'T3');
+  writeFileSync(join(w1, 'a.txt'), 'from T1\n'); g.commitAll(w1, 'T1');
+  writeFileSync(join(w2, 'b.txt'), 'from T2\n'); g.commitAll(w2, 'T2');
+  writeFileSync(join(w3, 'a.txt'), 'from T3\n'); g.commitAll(w3, 'T3');
+  // only Bridgie state moved on the feature branch: nothing to bring in, and the task's commit stays as it was
+  writeFileSync(join(P, '.bridgie', 'bets', 'x.md'), 'state\n'); sh(P, 'add', '-A'); sh(P, 'commit', '-q', '-m', 'state only');
+  const before = g.head(w2);
+  assert.deepEqual(g.syncTask(P, 'net', 'T2'), { synced: false });
+  assert.equal(g.head(w2), before);
+  // T1 is merged: T2 (other files) is brought up to date, and its diff is still only its own change
+  g.mergeTask(P, 'net', 'T1');
+  assert.deepEqual(g.syncTask(P, 'net', 'T2'), { synced: true });
+  assert.equal(lf(readFileSync(join(w2, 'a.txt'), 'utf8')), 'from T1\n');
+  const out = join(P, 'packet'); g.diffPacket(P, 'net', 'T2', out);
+  assert.equal(readFileSync(join(out, 'files.txt'), 'utf8').trim(), 'b.txt');
+  assert.deepEqual(g.bridgieChanges(P, 'net', 'T2'), []);
+  assert.deepEqual(g.syncTask(P, 'net', 'T2'), { synced: false }, 'already up to date');
+  // T3 wrote the same file as T1: the merge is undone, the worktree is clean, the files are named
+  const r = g.syncTask(P, 'net', 'T3');
+  assert.equal(r.synced, false);
+  assert.deepEqual(r.conflict, ['a.txt']);
+  assert.equal(sh(w3, 'status', '--porcelain'), '');
+  assert.equal(lf(readFileSync(join(w3, 'a.txt'), 'utf8')), 'from T3\n');
+  assert.equal(sh(P, 'status', '--porcelain', '--untracked-files=no'), '', 'the feature branch is not left mid-merge');
 });

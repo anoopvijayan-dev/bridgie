@@ -89,7 +89,10 @@ teardown() { if [[ -n "${SERVER_PID:-}" ]]; then kill "$SERVER_PID" 2>/dev/null 
   [ "$(fm "$P/.bridgie/bets/b/bet.md" status)" = '"signed"' ]
   Q="$(make_project --git)"
   bash -c "cd '$Q' && bridgie init && bridgie bet new b --title 'Net collect' --risk none && bridgie grill b && bridgie decide b D1 no && bridgie decide b D2 measured && bridgie sign b" >/dev/null
-  norm() { sed -E 's/"(created_at|decided_at|signed_at)": "[^"]*"/"\1": "T"/g; s/^created: .*/created: X/; s/^signed_at: .*/signed_at: X/; s/^- [0-9-]{10} /- DATE /' "$1"; }
+  # the one intended difference: each answer records the way it arrived (the page or the command line)
+  [ "$(grep -c '"channel": "surface"' "$P/.bridgie/decisions/b.json")" = "3" ]
+  [ "$(grep -c '"channel": "cli"' "$Q/.bridgie/decisions/b.json")" = "3" ]
+  norm() { sed -E '/^  at: /d; s/"channel": "(surface|cli)"/"channel": "C"/; s/"(created_at|decided_at|signed_at)": "[^"]*"/"\1": "T"/g; s/^created: .*/created: X/; s/^signed_at: .*/signed_at: X/; s/^- [0-9-]{10} /- DATE /' "$1"; }
   diff <(norm "$P/.bridgie/decisions/b.json") <(norm "$Q/.bridgie/decisions/b.json")
   diff <(norm "$P/.bridgie/bets/b/bet.md") <(norm "$Q/.bridgie/bets/b/bet.md")
 }
@@ -143,7 +146,7 @@ teardown() { if [[ -n "${SERVER_PID:-}" ]]; then kill "$SERVER_PID" 2>/dev/null 
 @test "decisions are refused while an agent runs, and the page says why" {
   start_server
   mkdir "$P/.bridgie/.seat-lock"
-  printf '{"seat":"implementer","run_dir":"x","since":"%s","pid":1}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$P/.bridgie/.seat-lock/owner.json"
+  printf '{"seat":"implementer","run_dir":"x","since":"%s","pid":1,"host":"another-machine"}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$P/.bridgie/.seat-lock/owner.json"
   run curl -s -b "$JAR" -X POST "$URL/decide" --data "csrf=$TOKEN&slug=b&id=D1&answer=no"
   [[ "$output" == *"agent run is in progress"* ]]
   ! grep -q '"answer": "no"' "$P/.bridgie/decisions/b.json"

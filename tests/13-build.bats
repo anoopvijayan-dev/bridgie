@@ -69,3 +69,88 @@ setup() {
   [ "$status" -ne 0 ]
   [[ "$output" == *"bridgie/b"* ]]
 }
+
+@test "re-plan: refused while tasks have progress; --replan archives task branches and supersedes their decisions" {
+  planned_bet "$P" b
+  run bash -c "cd '$P' && bridgie plan b"
+  [ "$status" -eq 0 ]                                       # nothing started yet: a plain re-plan is fine
+  (cd "$P" && bridgie build b) >/dev/null 2>&1
+  [ "$(task_field "$P" b T1 status)" = '"verify"' ]
+  run bash -c "cd '$P' && bridgie plan b"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"already has task progress"* ]]
+  [[ "$output" == *"--replan"* ]]
+  run bash -c "cd '$P' && bridgie plan b --replan"
+  echo "$output"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"archived under bridgie-task-archive/b/"* ]]
+  [ "$(task_field "$P" b T1 status)" = '"todo"' ]
+  [ "$(task_field "$P" b T1 attempts)" = '0' ]
+  ! git -C "$P" rev-parse -q --verify "refs/heads/bridgie-task/b/T1" >/dev/null
+  git -C "$P" for-each-ref --format='%(refname:short)' 'refs/heads/bridgie-task-archive/b/' | grep -q '/T1$'
+  [ ! -d "$P/.bridgie/worktrees/b/T1" ]
+}
+
+@test "a task a killed run left in progress is recovered by build, and the dead attempt is not counted" {
+  planned_bet "$P" b
+  # what a run killed mid-build leaves: the task in_progress and a seat lock whose process is gone
+  node "$BRIDGIE_HOME/runner/flow.mjs" start-attempt "$P" b T1 bridgie-task/b/T1 >/dev/null
+  mkdir "$P/.bridgie/.seat-lock"
+  printf '{"seat":"implementer","run_dir":"x","since":"%s","pid":4194999}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$P/.bridgie/.seat-lock/owner.json"
+  [ "$(task_field "$P" b T1 status)" = '"in_progress"' ]
+  run bash -c "cd '$P' && bridgie build b"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"recovered T1"* ]]
+  [ "$(task_field "$P" b T1 status)" = '"verify"' ]
+  [ "$(task_field "$P" b T1 attempts)" = '1' ]
+}
+
+@test "recover clears a dead run's lock and its task; a live run is left alone" {
+  planned_bet "$P" b
+  node "$BRIDGIE_HOME/runner/flow.mjs" start-attempt "$P" b T1 bridgie-task/b/T1 >/dev/null
+  mkdir "$P/.bridgie/.seat-lock"
+  printf '{"seat":"implementer","run_dir":"x","since":"%s","pid":1,"host":"another-machine"}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$P/.bridgie/.seat-lock/owner.json"
+  run bash -c "cd '$P' && bridgie recover b"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"in progress"* ]]
+  [ "$(task_field "$P" b T1 status)" = '"in_progress"' ]
+  printf '{"seat":"implementer","run_dir":"x","since":"%s","pid":4194999}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$P/.bridgie/.seat-lock/owner.json"
+  run bash -c "cd '$P' && bridgie recover b"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"recovered T1"* ]]
+  [ ! -d "$P/.bridgie/.seat-lock" ]
+  [ "$(task_field "$P" b T1 status)" = '"todo"' ]
+  [ "$(task_field "$P" b T1 attempts)" = '0' ]
+}
+
+@test "a small task on a money bet skips the hardener; one that builds a risky requirement does not" {
+  planned_bet "$P" b money
+  (cd "$P" && { bridgie build b; bridgie ack b; }) >/dev/null 2>&1 || true   # the first build asks for the ack
+  node "$BRIDGIE_HOME/runner/flow.mjs" task-set "$P" b T1 '{"size":"small"}' >/dev/null
+  run bash -c "cd '$P' && bridgie build b"
+  echo "$output"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"T1 is small: no hardener"* ]]
+  [ -d "$P/.bridgie/runs/b/implementer-01" ]
+  [ ! -d "$P/.bridgie/runs/b/hardener-01" ]
+}
+
+@test "a small task that builds a requirement tagged with risk is hardened all the same" {
+  planned_bet "$P" b money
+  (cd "$P" && { bridgie build b; bridgie ack b; }) >/dev/null 2>&1 || true   # the first build asks for the ack
+  sed -i.bak 's/## R1 · event · risk: none/## R1 · event · risk: money/' "$P/.bridgie/specs/b/requirements.md"
+  node "$BRIDGIE_HOME/runner/flow.mjs" task-set "$P" b T1 '{"size":"small"}' >/dev/null
+  run bash -c "cd '$P' && bridgie build b"
+  echo "$output"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"planned small but is treated as medium"* ]]
+  [ -d "$P/.bridgie/runs/b/hardener-01" ]
+}
+
+@test "a large task is hardened even when the bet's risk asks for no hardener" {
+  planned_bet "$P" b
+  node "$BRIDGIE_HOME/runner/flow.mjs" task-set "$P" b T1 '{"size":"large"}' >/dev/null
+  run bash -c "cd '$P' && bridgie build b"
+  [ "$status" -eq 0 ]
+  [ -d "$P/.bridgie/runs/b/hardener-01" ]
+}

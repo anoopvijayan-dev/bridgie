@@ -5,6 +5,8 @@ export BRIDGIE_HOME
 export PATH="$BRIDGIE_HOME/bin:$PATH"
 export BRIDGIE_NO_COMMIT=1
 export BRIDGIE_USER=tester
+export BRIDGIE_HARNESS=none   # tests act as a person at a terminal, whatever runs the suite
+export BRIDGIE_EVALS_HOME=/nonexistent/bridgie-evals   # and from this machine's reviewer test results
 export BRIDGIE_USER_POLICY=/nonexistent/bridgie-user-policy.yaml   # isolate tests from ~/.bridgie
 
 make_project() {            # make_project [--git] → prints path
@@ -61,10 +63,20 @@ all_tiers() {
   for t in mechanical specified contracts invariants behavioural dual_run; do printf "    %s: ['node -e 0']\n" "$t" >> "$1/.bridgie/policy.yaml"; done
 }
 
+# policy_changed <project> <slug>: the owner accepts a change made to policy.yaml after the bet was
+# signed (the governance lock would otherwise stop build, verify and accept). No-op without drift.
+policy_changed() {
+  local id; id="$(node "$BRIDGIE_HOME/runner/flow.mjs" governance-gate "$1" "$2" 2>/dev/null)" || return 0
+  [[ -z "$id" ]] || (cd "$1" && bridgie decide "$2" "$id" "accept the change") >/dev/null 2>&1
+}
+
 # --- cross-platform helpers (tests also run in Git Bash on Windows and on macOS) ---------------------
 on_windows() { [[ "${OSTYPE:-}" == msys* || "${OSTYPE:-}" == cygwin* ]]; }
 native() {                  # native <path>: the form a Node process sees (C:\... on Windows)
   if command -v cygpath >/dev/null 2>&1; then cygpath -w "$1"; else printf '%s\n' "$1"; fi
+}
+mixed() {                   # mixed <path>: C:/x/y on Windows (every shell there takes it), unchanged elsewhere
+  if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else printf '%s\n' "$1"; fi
 }
 has_path_line() {           # has_path_line <file> <prefix> <path>: a line equal to prefix+path in any spelling
   local alts=("$3")

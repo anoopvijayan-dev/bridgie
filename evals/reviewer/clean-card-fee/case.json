@@ -1,0 +1,11 @@
+{
+  "title": "Card fee on a payment",
+  "stack": "python",
+  "test": "python -m unittest discover -s tests -q",
+  "requirements": "## R1 \u00b7 event \u00b7 risk: money\nWHEN a card payment is taken THE SYSTEM SHALL charge a fee of 2.5% of the amount, rounded half up to the penny.\n",
+  "task_requirements": [
+    "R1"
+  ],
+  "claim": "card_fee() added in billing/fees.py using integer arithmetic, with tests at the half-penny boundaries. Tests pass.",
+  "planted": []
+}
