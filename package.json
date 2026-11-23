@@ -16,6 +16,7 @@
     "templates/",
     "ui/",
     "skills/",
+    "evals/",
     "VERSION",
     "CHANGELOG.md"
   ],

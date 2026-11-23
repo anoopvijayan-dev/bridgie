@@ -17,6 +17,7 @@ Build    shape | plan [--replan] | build [--parallel N] | run [--pause-before-ve
          recover <slug>           after a killed run: clear its lock, make its task buildable again
 Verify   verify
          rereview <slug> [--task T] [--all]   a second-family review of tasks that passed with a same-family reviewer
+         eval reviewer [--adapter A] [--cases a,b] [--parallel N]   test a reviewer on changes with planted bugs: how many it catches
 Accept   accept <slug> [--approve | --conditions "..." | --reject "..."] [--relayed]
          accept <slug> --override "<reason>"   the owner delivers with fewer approvals than policy asks; recorded as such
 Learn    learn

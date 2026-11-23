@@ -1,0 +1,18 @@
+{
+  "title": "Daily spending limit",
+  "stack": "python",
+  "test": "python -m unittest discover -s tests -q",
+  "requirements": "## R1 \u00b7 ubiquitous \u00b7 risk: money\nThe daily spending limit SHALL count payments made since 00:00 UTC of the current day, wherever the server runs.\n\n## R2 \u00b7 unwanted \u00b7 risk: money\nIF a payment would take the day's total over the limit THEN THE SYSTEM SHALL refuse it.\n",
+  "task_requirements": [
+    "R1",
+    "R2"
+  ],
+  "claim": "within_daily_limit() added in limits/daily.py with tests for under, at and over the limit. Tests pass.",
+  "planted": [
+    {
+      "file": "limits/daily.py",
+      "anchor": "today = (now or datetime.now()).date()",
+      "about": "UTC|time ?zone|local (time|date)|naive|datetime\\.now"
+    }
+  ]
+}

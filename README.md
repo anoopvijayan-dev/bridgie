@@ -97,6 +97,7 @@ What keeps a bet of dozens of tasks moving, and honest, over days:
 - **Usage limits.** When a model CLI says it is out of quota, Bridgie notes when it resets, uses the next CLI that fits, and — when the reviewer has no other model family to go to — stops with exit 3 and "waiting … until <time>", the task still in verify and its attempt unused. `bridgie status` shows which CLIs are at a limit.
 - **Task size.** The planner gives every task a size. A `small` task (one module, no shared state, no money arithmetic) skips the hardener and the whole-system tiers; a `large` one is always hardened. Risk sets the floor: a task that builds a requirement tagged `data` or higher, or changes a risk path, is never treated as small. Tune it under `sizes:` in policy.
 - **Findings you choose to live with.** When a task is blocked on review findings and every test tier passed, the unblock decision offers `accept as limitations` with a reason. The task merges without another review round, and the findings are listed in the acceptance package as accepted limitations and given to later reviewers as known.
+- **How good is the reviewer?** `bridgie eval reviewer` runs the reviewer you have configured over fourteen small changes: ten with a bug planted on purpose that their own tests do not catch (float rounding of money, an off-by-one threshold, a retry that pays twice, a lost update, unescaped markup, a path that escapes its folder, a failure that is swallowed, cumulative refunds, a missing owner check, a local-time day boundary) and four that are correct. Each is set up as a throwaway project, so the reviewer gets what `verify` gives it. The result is how many bugs it caught and how many clean changes it failed; it is stored on this machine, shown by `bridgie doctor`, and printed in every acceptance package beside the reviewers that passed the tasks. Use `--adapter codex` to test another one, `--cases` to pick cases, `--set DIR` for your own. Fourteen cases is a small sample, and the bugs are textbook ones: the first real run (Claude Code as reviewer) caught ten of ten with no false alarm, while public benchmarks of AI reviewers on real pull requests report 40 to 60%. So a perfect score here means the basics are covered, not that the reviewer misses nothing; a poor score means it should not be the only thing between an agent and your main branch. Add harder cases from your own escaped bugs with `--set`.
 - **Review debt.** If the reviewer had to fall back to the builder's own model family, the task still passes but is recorded as review debt (`bridgie status`, and in the acceptance package). `bridgie rereview <slug>` has a second family read those tasks later and raises a decision for each serious finding.
 - **Building tasks side by side.** `bridgie run <slug> --parallel 3` (or `build: { parallel: 3 }` in policy) builds up to that many independent tasks at the same time, each in its own worktree and branch. Independent means every task it depends on has passed. Verification and merging stay one task at a time: before a task is verified it is brought up to date with what was merged since it was built, so its tests run on the code as it will be. If two tasks changed the same lines, the second goes back to its builder with the conflict named. The planner can give each task `touches` (the files it will change); tasks that declare the same files are not built together. If any seat edits Bridgie state during a batch, the whole batch is discarded, because the runner cannot tell which seat did it. On a real 41-task bet, three at a time would have cut about 30 hours of agent time to about 19; more than three or four added little, because the dependency chain and one-at-a-time verification set the floor. Running several model CLIs at once also uses their quota faster.
 - **Reading before verifying.** `bridgie run <slug> --pause-before-verify` stops after each build so you read the change first; run it again to verify that task and build the next.
@@ -148,6 +149,7 @@ In an agent harness, say `/bridgie` (the installed skill drives the CLI and leav
 | `runner/panel.mjs`, `runner/numbers.mjs` | the computed parts of the decide loop: persona cards, tallies, price range; unit economics |
 | `lanes/<lane>/` | risk paths, attack lists, checklists, verifiers per domain |
 | `adapters/` | claude-code, copilot, codex, antigravity, fake: how a seat is launched on a model runtime |
+| `evals/reviewer/` | changes with a planted bug, and clean ones, for testing a reviewer (`bridgie eval reviewer`) |
 | `skills/bridgie/` | the skill agent harnesses use to drive bridgie |
 | `schemas/`, `templates/`, `policy/` | the contracts |
 | `ui/templates/` | decision surface pages |
@@ -158,7 +160,7 @@ v0.7.0 (long runs and governance), from running a 41-task money-risk bet end to 
 interrupted runs, usage-limit waits, task sizes, test results reused per commit, accepted limitations,
 review debt and `rereview`, decision provenance, decisions reserved for a person, the governance lock, the
 owner override, parallel builds of independent tasks, `run --pause-before-verify`, plan-order warnings,
-`status --cost`, Python projects, run logs out of git. tokens and cost per task. Not yet: verifying tasks in parallel (verification and
+`status --cost`, Python projects, run logs out of git. tokens and cost per task, a planted-bug test for reviewers. Not yet: verifying tasks in parallel (verification and
 merging are one at a time). See `CHANGELOG.md`.
 
 v0.4.0 (M3 decide loop): scout, frame, research, lenses, panel, numbers, evidence; swarm seats and web
@@ -169,8 +171,7 @@ reconciliation, effective risk and mandatory tiers, state guard and seat lock, a
 server, reviewer works from runner-run test results). v0.2.0 (M1): the whole loop runs end to end on the
 fake adapter and is covered by tests for spec requirements R1–R14 and properties P1–P3. Real adapters are verified against stub CLIs with the
 flags of Claude Code 2.1, Codex 0.167 and Copilot CLI 1.0; Antigravity follows the v1 notes and its
-write mode is unverified (see `adapters/antigravity/gotchas.md`). Next: seeded-bug evals for the reviewer,
-sandboxed build seats, mutation testing, marketing and sales lanes (see `docs/agentic-landscape-2026-11.md`).
+write mode is unverified (see `adapters/antigravity/gotchas.md`). Next: sandboxed build seats, mutation testing, marketing and sales lanes (see `docs/agentic-landscape-2026-11.md`).
 
 ## Tests
 

@@ -1,0 +1,18 @@
+{
+  "title": "Partial refunds",
+  "stack": "python",
+  "test": "python -m unittest discover -s tests -q",
+  "requirements": "## R1 \u00b7 ubiquitous \u00b7 risk: money\nThe total refunded for a payment SHALL never exceed the amount captured.\n\n## R2 \u00b7 event \u00b7 risk: money\nWHEN a refund is made THE SYSTEM SHALL add it to the payment's refunded total and return the payment.\n",
+  "task_requirements": [
+    "R1",
+    "R2"
+  ],
+  "claim": "refund() added in pay/refunds.py; a refund larger than the captured amount is refused, with tests. Tests pass.",
+  "planted": [
+    {
+      "file": "pay/refunds.py",
+      "anchor": "if amount_pence > payment.captured_pence:",
+      "about": "cumulative|total refunded|already refunded|refunded_pence|second refund|two (partial )?refunds|sum"
+    }
+  ]
+}

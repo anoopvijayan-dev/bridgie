@@ -76,6 +76,7 @@ If the person has raw signals (emails, support exports, notes, forum threads) in
 - `B run <slug> --pause-before-verify` stops after each build so the person can read the change before it is verified. Offer it when they want to check the work themselves.
 - When a task is blocked on review findings and every test tier passed, the unblock decision has an `accept as limitations` option (with a reason). Explain the findings; the person chooses between another attempt and accepting them.
 - `B plan` may print ordering warnings (a task's requirement names one built later). Show them to the person before building; `B plan <slug> --replan` fixes the plan.
+- `B eval reviewer` tests the configured reviewer on changes with planted bugs and reports how many it caught. Suggest it once per machine or after changing the reviewer; it makes about fourteen model calls. Report the result as it is, including misses.
 - `B status --cost <slug>` shows time and attempts per task: use it when the person asks why something is slow.
 - A blocked task needs their unblock decision. Summarise the escalation from `B status` and `.bridgie/specs/<slug>/tasks.json`; do not retry it yourself.
 - Bridgie never pushes or merges. After acceptance the person merges `bridgie/<slug>` when they choose.

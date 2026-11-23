@@ -1,0 +1,11 @@
+{
+  "title": "HTTP handler for payments",
+  "stack": "python",
+  "test": "python -m unittest discover -s tests -q",
+  "requirements": "## R1 \u00b7 event \u00b7 risk: money\nWHEN the same payment request (the same request id) arrives more than once, including as a retry over HTTP, THE SYSTEM SHALL debit the account once and return the first result.\n\nOut of scope for this task: keeping request ids across a restart, and servers with more than one worker (the application runs a single worker and holds one PaymentService for its lifetime).\n",
+  "task_requirements": [
+    "R1"
+  ],
+  "claim": "handle_payment() added in pay/api.py; the caller passes the one PaymentService the application holds, so a retry reaches the same request-id table. Tests cover a repeated request. Tests pass.",
+  "planted": []
+}

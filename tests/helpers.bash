@@ -6,6 +6,7 @@ export PATH="$BRIDGIE_HOME/bin:$PATH"
 export BRIDGIE_NO_COMMIT=1
 export BRIDGIE_USER=tester
 export BRIDGIE_HARNESS=none   # tests act as a person at a terminal, whatever runs the suite
+export BRIDGIE_EVALS_HOME=/nonexistent/bridgie-evals   # and from this machine's reviewer test results
 export BRIDGIE_USER_POLICY=/nonexistent/bridgie-user-policy.yaml   # isolate tests from ~/.bridgie
 
 make_project() {            # make_project [--git] → prints path

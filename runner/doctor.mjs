@@ -8,6 +8,8 @@ import { validate } from './schema.mjs';
 import * as st from './state.mjs';
 import { leftoverSnapshots } from './guard.mjs';
 import { installedSkills, skillSource } from './skills.mjs';
+import { calibration, calibrationText } from './evals.mjs';
+import { loadSeat } from './context.mjs';
 
 export function doctor(root) {
   const r = [];
@@ -63,6 +65,10 @@ export function doctor(root) {
 
   if (!root) { warn('not inside a project: tool checks only'); return r; }
   try { st.loadPolicy(root); ok('project policy merges and validates'); } catch (e) { fail(`project policy: ${e.message}`); }
+  try {   // how far the reviewer can be trusted: its last test against planted bugs, if any
+    const rv = st.route(root, loadSeat('verify/reviewer').manifest).adapter;
+    if (rv && rv !== 'none' && rv !== 'fake') (calibration(rv) ? ok : warn)(`reviewer ${calibrationText(rv)}`);
+  } catch { /* routing problems are reported by the seat run */ }
   try {   // Antigravity runs only in a folder one of its projects covers; say so before a seat fails
     const pol = st.loadPolicy(root), routes = [...Object.values(pol.routing?.tiers || {}), ...Object.values(pol.routing?.seats || {})];
     if (!process.env.BRIDGIE_ADAPTER && routes.some(x => x.adapter === 'antigravity')) {

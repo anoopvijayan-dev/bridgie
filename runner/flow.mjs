@@ -10,6 +10,7 @@ import { pathToFileURL } from 'node:url';
 import * as st from './state.mjs';
 import { assertValid } from './schema.mjs';
 import { extractLastJson } from '../adapters/lib/extract-json.mjs';
+import { calibrationText } from './evals.mjs';
 
 export const acceptancePath = (root, slug) => join(root, '.bridgie', 'acceptance', `${slug}.md`);
 const requirementsPath = (root, slug) => join(root, '.bridgie', 'specs', slug, 'requirements.md');
@@ -685,6 +686,9 @@ export function acceptancePacket(root, slug, diffStat = '') {
   if (lim) details.push('## Accepted limitations', '', 'Findings the owner accepted instead of fixing. They are part of what is being accepted.', '', lim, '');
   const debt = reviewDebt(root, slug);
   if (crossFamily(root, slug) && debt.same.length) details.push('## Review debt', '', `Policy asks for a reviewer from another model family. These tasks passed with a reviewer of the producer's own family and have not been re-reviewed: ${debt.same.join(', ')} (bridgie rereview ${slug}).`, '');
+  // Which reviewers passed these tasks, and what is known about how well each finds bugs.
+  const reviewers = [...new Set(doc.tasks.flatMap(t => [t.review?.adapter, t.review?.rereview?.adapter]).filter(a => a && a !== 'fake'))].sort();
+  if (reviewers.length) details.push('## Reviewer calibration', '', 'How each reviewer that passed these tasks did when last tested on changes with a planted bug (bridgie eval reviewer):', '', ...reviewers.map(a => `- ${calibrationText(a)}`), '');
   lines.push('', ...details, '## Change', '', '```', diffStat.trim() || '(no diff stat)', '```', '',
     '## Cost', '', `${cost.seat_runs} runs, ${cost.seconds}s, ${cost.attempts_total} attempts (${cost.retries} retries).${cost.tokens !== null ? ` ${tokensText(cost.tokens)} tokens.` : ''}${cost.usd !== null ? ` $${cost.usd.toFixed(2)} at list price (what the model CLIs computed; on a subscription it is not a bill).` : ''}${cost.tokens === null && cost.usd === null ? ' The model CLIs did not report tokens or cost.' : cost.runs_without_usage ? ` ${cost.runs_without_usage} model run(s) reported no usage, so the real figures are higher.` : ''}`, '');
   return { md: lines.join('\n'), cost };

@@ -15,6 +15,11 @@ Changes that came out of running a 41-task, money-risk bet from start to finish.
 - **Accepted limitations.** A task blocked on review findings whose test tiers all passed can be unblocked with `accept as limitations` and a reason. It merges without another review round if the commit is unchanged; the findings appear in the acceptance package and are given to later reviewers as known.
 - **Review debt and `bridgie rereview`.** A pass reviewed by the producer's own model family is recorded on the task. `bridgie status` and the acceptance package list the debt; `bridgie rereview <slug> [--task T] [--all]` runs a second-family review of the merged change and raises a decision per serious finding.
 
+### Reviewer calibration
+- `bridgie eval reviewer [--adapter A] [--cases a,b] [--set DIR] [--parallel N] [--keep]` runs the reviewer seat over the cases in `evals/reviewer/`: ten changes with a planted bug their own tests do not catch, four clean ones. Each case becomes a throwaway Bridgie project; its tests are run for real and given to the reviewer as runner results, with the requirements, the diff, the producer's claim and read-only access to the repository.
+- A planted bug counts as caught only when a blocker or major finding names it (the right file within a few lines, or words that describe it); failing the change for another reason is a miss. A clean change that is failed, or given a serious finding, is a false alarm.
+- Results are stored per machine (`~/.bridgie/evals/reviewer.json`, or `$BRIDGIE_EVALS_HOME`). `bridgie doctor` shows the routed reviewer's last result or warns that it was never tested; the acceptance package lists it for every reviewer that passed a task.
+
 ### Governance
 - **Provenance.** Answered decisions record `via`: channel (`cli` or `surface`), the agent harness (`$BRIDGIE_HARNESS`, else detected from the environment), OS user and host. Approvals in the acceptance record carry it too.
 - **`humans_only`.** Policy `humans_only: { decisions: [accept, governance], relay: true }`. Inside an agent, the command line refuses these decisions unless `--relayed` is passed (recorded); `relay: false` refuses outright. The page (`bridgie open`) is not affected.
