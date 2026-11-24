@@ -91,6 +91,10 @@ function resolveInput(name, ctx) {
     return { label: `task ${task}`, text: '```json\n' + JSON.stringify(t, null, 2) + '\n```', path: tp };
   }
   if (name === 'diff') return file(join(runDir, 'diff.patch'), 'diff.patch');
+  // The living-spec check at accept: the runner copies these into the run directory.
+  if (name === 'living_base') return file(join(runDir, 'living-base.md'), 'the living spec before this bet (earlier requirements)');
+  if (name === 'bet_diff') return file(join(runDir, 'bet-diff.patch'), "the bet's whole code change since it branched (.bridgie/ left out)");
+  if (name === 'drift_answers') return file(join(runDir, 'drift-answers.md'), 'earlier findings the owner answered');
   if (name === 'card') {
     // One swarm member's variables (a buyer persona card), copied by run_seat --vars.
     const f = join(runDir, 'vars.json');

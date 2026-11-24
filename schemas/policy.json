@@ -261,6 +261,15 @@
         }
       }
     },
+    "living_spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "drift_check": {
+          "type": "boolean"
+        }
+      }
+    },
     "acceptance": {
       "type": "object",
       "additionalProperties": false,

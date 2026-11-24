@@ -65,7 +65,8 @@
         "evidence.json",
         "acceptance.json",
         "none",
-        "buyer-answer.json"
+        "buyer-answer.json",
+        "spec-check.json"
       ]
     },
     "stop_when": {

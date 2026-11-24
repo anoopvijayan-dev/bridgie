@@ -39,7 +39,8 @@
               "accept",
               "unblock",
               "confidence",
-              "governance"
+              "governance",
+              "spec_drift"
             ]
           },
           "raised_by": {

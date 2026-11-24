@@ -1,0 +1,24 @@
+{
+  "type": "object",
+  "required": ["seat", "summary_md", "findings"],
+  "additionalProperties": false,
+  "properties": {
+    "seat": { "type": "string" },
+    "summary_md": { "type": "string" },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["requirement", "severity", "claim"],
+        "additionalProperties": false,
+        "properties": {
+          "requirement": { "type": "string" },
+          "severity": { "type": "string", "enum": ["blocker", "major", "minor"] },
+          "claim": { "type": "string" },
+          "file": { "type": ["string", "null"] },
+          "line": { "type": ["integer", "null"] }
+        }
+      }
+    }
+  }
+}
