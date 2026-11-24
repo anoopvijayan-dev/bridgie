@@ -639,3 +639,23 @@ test('governance: a looser sandbox for build seats, or more hosts it may reach, 
   const { sandbox, sandbox_network, ...old } = signed;                 // a bet signed before sandbox rules were recorded
   assert.deepEqual(st.governanceDrift(old, { ...signed, sandbox: 'off' }), []);
 });
+
+test('writeSpecFiles refuses a delta that names a requirement the living spec does not have', () => {
+  const root = project();
+  mkdirSync(join(root, '.bridgie', 'spec'), { recursive: true });
+  writeFileSync(join(root, '.bridgie', 'spec', 'requirements.md'), '# Living spec\n\n## old.R1 · event · risk: none\nTHE SYSTEM SHALL a.\nSource: old (2026-11-01)\n');
+  const out = join(root, 'shape-out.json');
+  const req = r => JSON.stringify({ seat: 'shaper', summary_md: 's', files: { 'requirements.md': r, 'design.md': '# D\n' } });
+  writeFileSync(out, req('## R1 · event · risk: none\nChanges: old.R9\nTHE SYSTEM SHALL b.\n'));
+  assert.throws(() => fl.writeSpecFiles(root, 'b', out), /names no requirement in the living spec/);
+  writeFileSync(out, req('## R1 · event · risk: none\nChanges: old.R1\nTHE SYSTEM SHALL b.\n'));
+  assert.deepEqual(fl.writeSpecFiles(root, 'b', out).ids, ['R1']);
+  assert.match(readFileSync(join(root, '.bridgie', 'specs', 'b', 'living-base.md'), 'utf8'), /## old\.R1/);
+});
+
+test('plan warnings ignore Changes lines and living ids in requirement text', () => {
+  const root = project();
+  writeFileSync(join(root, '.bridgie', 'specs', 'b', 'requirements.md'), '## R1 · event · risk: none\nChanges: old.R2\nWHEN a THE SYSTEM SHALL b, as old.R2 said.\n\n## R2 · event · risk: none\nTHE SYSTEM SHALL c.\n\n## Removed\n- old.R1: gone, see R2\n');
+  fl.writeTasksFromPlan(root, 'b', planOutput(root, [T('T1', ['R1']), T('T2', ['R2'])]));
+  assert.deepEqual(fl.planWarnings(root, 'b'), []);
+});

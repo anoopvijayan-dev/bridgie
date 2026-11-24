@@ -11,6 +11,7 @@ import * as st from './state.mjs';
 import { assertValid } from './schema.mjs';
 import { extractLastJson } from '../adapters/lib/extract-json.mjs';
 import { calibrationText } from './evals.mjs';
+import * as sp from './spec.mjs';
 
 export const acceptancePath = (root, slug) => join(root, '.bridgie', 'acceptance', `${slug}.md`);
 const requirementsPath = (root, slug) => join(root, '.bridgie', 'specs', slug, 'requirements.md');
@@ -65,6 +66,9 @@ export function writeSpecFiles(root, slug, outputFile) {
   if (!req) throw new Error('shaper output has no files["requirements.md"] (or edits to it)');
   if (!/^## R[0-9]+\b/m.test(req)) throw new Error('requirements.md has no "## R<n>" requirement headings');
   if (!design) throw new Error('shaper output has no files["design.md"] (or edits to it)');
+  // The bet's delta (Changes: lines, ## Removed) must fit the living spec as it was when the bet was first shaped.
+  const errs = sp.checkDelta(sp.parseDelta(req), sp.parseLiving(sp.ensureBase(root, slug)));
+  if (errs.length) throw new Error(`requirements.md does not fit the living spec (.bridgie/spec/requirements.md): ${errs.join('; ')}`);
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, 'requirements.md'), req.endsWith('\n') ? req : `${req}\n`);
   writeFileSync(join(dir, 'design.md'), design.endsWith('\n') ? design : `${design}\n`);
@@ -517,8 +521,10 @@ export function requirementSections(root, slug) {
   const f = requirementsPath(root, slug);
   if (!existsSync(f)) return {};
   const out = {};
-  const parts = readFileSync(f, 'utf8').split(/^(?=## [RP][0-9]+\b)/m);
-  for (const p of parts) { const m = p.match(/^## ([RP][0-9]+)\b/); if (m) out[m[1]] = p; }
+  // Each section ends at the next "## " heading (## Removed is not part of the last requirement), and a
+  // "Changes: <living id>" line names the living spec, not a requirement of this bet.
+  const parts = readFileSync(f, 'utf8').split(/^(?=## )/m);
+  for (const p of parts) { const m = p.match(/^## ([RP][0-9]+)\b/); if (m) out[m[1]] = p.replace(/^Changes:.*\n?/gm, ''); }
   return out;
 }
 // planWarnings: tasks whose requirements lean on something a task they do not depend on builds.
@@ -540,7 +546,7 @@ export function planWarnings(root, slug) {
     for (const r of t.requirements) {
       if (owner[r] !== t.id) continue;
       const text = (sections[r] || '').replace(/^## [^\n]*\n/, '');
-      for (const q of new Set(text.match(/\b[RP][0-9]+\b/g) || [])) {
+      for (const q of new Set(text.match(/(?<![\w.-])[RP][0-9]+\b/g) || [])) {
         const o = owner[q];
         if (!o || o === t.id || deps.has(o) || said.has(`${q}`)) continue;
         said.add(q);

@@ -76,6 +76,11 @@ function resolveInput(name, ctx) {
     return files.length ? { label: `the three lens memos`, text: files.map(f => `### ${f.replace(/\.md$/, '')}\n\n${readFileSync(join(dir, f), 'utf8').trim()}`).join('\n\n'), path: dir } : null;
   }
   if (name === 'requirements') return file(join(root, '.bridgie', 'specs', slug, 'requirements.md'), `.bridgie/specs/${slug}/requirements.md`);
+  if (name === 'living_spec') {
+    const f = join(root, '.bridgie', 'specs', slug, 'living-base.md');
+    const text = existsSync(f) ? readFileSync(f, 'utf8').trim() : '';
+    return { label: 'living spec: every requirement accepted before this bet (read-only; say what this bet changes with Changes: and ## Removed)', text: text || '(none yet: no bet has been accepted with a living spec)' };
+  }
   if (name === 'design') return file(join(root, '.bridgie', 'specs', slug, 'design.md'), `.bridgie/specs/${slug}/design.md`);
   if (name === 'task') {
     if (!task) throw new Error(`seat input "task" needs --task <id>`);
