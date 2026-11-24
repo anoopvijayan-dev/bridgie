@@ -97,6 +97,9 @@ export function doctor(root) {
     const dp = st.decisionsPath(root, s); if (existsSync(dp)) { const e2 = validate(decSchema, st.readJson(dp)); if (e2.length) { betFail++; fail(`decisions ${s}: ${e2.join('; ')}`); } }
   }
   if (!betFail) ok(`${st.listBets(root).length} bet(s) checked`);
+  const delivered = st.listBets(root).filter(s => { try { return ['delivered', 'evaluated'].includes(st.readFm(st.betPath(root, s)).data.status); } catch { return false; } });
+  if (existsSync(join(root, '.bridgie', 'spec', 'requirements.md'))) ok('living spec: .bridgie/spec/requirements.md');
+  else if (delivered.length) warn(`no living spec, but ${delivered.length} bet(s) were delivered: bridgie spec --seed builds one from them`);
   const am = join(root, 'AGENTS.md');
   if (existsSync(am)) {
     const txt = readFileSync(am, 'utf8'); const n = txt.split('\n').length;

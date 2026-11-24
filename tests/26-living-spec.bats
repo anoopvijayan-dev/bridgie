@@ -130,3 +130,28 @@ to_accept() {   # a signed bet b → shaped → approved → built and verified,
   [ "$status" -ne 0 ]
   [[ "$output" == *"stale"* ]]
 }
+
+@test "spec --seed builds the living spec from delivered bets, oldest first, and refuses a second time" {
+  run bash -c "cd '$P' && bridgie init >/dev/null 2>&1; bridgie spec"
+  [[ "$output" == *"no living spec yet"* ]]
+  for s in one two; do
+    mkdir -p "$P/.bridgie/specs/$s"
+    bash -c "cd '$P' && bridgie bet new $s --title $s" >/dev/null 2>&1
+    node "$BRIDGIE_HOME/runner/state.mjs" fm-set "$P/.bridgie/bets/$s/bet.md" status '"delivered"' --schema bet
+  done
+  printf '## R1 · event · risk: none\nTHE SYSTEM SHALL a.\n' > "$P/.bridgie/specs/one/requirements.md"
+  printf '## R1 · event · risk: none\nChanges: one.R1\nTHE SYSTEM SHALL b.\n' > "$P/.bridgie/specs/two/requirements.md"
+  mkdir -p "$P/.bridgie/acceptance"
+  printf -- '---\ndecided_at: 2026-11-01T00:00:00Z\n---\n' > "$P/.bridgie/acceptance/one.md"
+  printf -- '---\ndecided_at: 2026-11-05T00:00:00Z\n---\n' > "$P/.bridgie/acceptance/two.md"
+  run bash -c "cd '$P' && bridgie doctor"
+  [[ "$output" == *"bridgie spec --seed"* ]]
+  run bash -c "cd '$P' && bridgie spec --seed"
+  [ "$status" -eq 0 ]
+  grep -q '^THE SYSTEM SHALL b.' "$P/.bridgie/spec/requirements.md"
+  grep -q '^Changed by: two (2026-11-05)' "$P/.bridgie/spec/requirements.md"
+  run bash -c "cd '$P' && bridgie spec"
+  [[ "$output" == *"1 requirement"* ]]
+  run bash -c "cd '$P' && bridgie spec --seed"
+  [ "$status" -ne 0 ]
+}
