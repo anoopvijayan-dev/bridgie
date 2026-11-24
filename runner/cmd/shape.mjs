@@ -4,6 +4,7 @@ import { existsSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import * as st from '../state.mjs';
 import * as fl from '../flow.mjs';
+import * as sp from '../spec.mjs';
 import { runSeat } from '../cli/seat.mjs';
 import * as g from '../cli/git.mjs';
 import { die, log, parseArgs, projectRoot, stateCommit, user, betStatus } from '../cli/core.mjs';
@@ -44,6 +45,7 @@ export default async function shape(argv) {
   if (!g.isRepo(root)) die(`shape: ${root} is not a git repository; Build needs one (git init)`);
   g.requireClean(root);
   const base = g.featureStart(root, slug);
+  sp.ensureBase(root, slug);   // the living spec as it is now: what the shaper reads and the bet's delta is checked against
   const runDir = await runSeat(slug, 'build/shaper', { root });
   let ids;
   try { ids = fl.writeSpecFiles(root, slug, join(runDir, 'seat-output.json')).ids.join(' '); } catch (e) { die(`${e.message}\nshape: shaper output rejected`); }

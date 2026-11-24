@@ -11,6 +11,7 @@ import * as st from './state.mjs';
 import { assertValid } from './schema.mjs';
 import { extractLastJson } from '../adapters/lib/extract-json.mjs';
 import { calibrationText } from './evals.mjs';
+import * as sp from './spec.mjs';
 
 export const acceptancePath = (root, slug) => join(root, '.bridgie', 'acceptance', `${slug}.md`);
 const requirementsPath = (root, slug) => join(root, '.bridgie', 'specs', slug, 'requirements.md');
@@ -65,6 +66,9 @@ export function writeSpecFiles(root, slug, outputFile) {
   if (!req) throw new Error('shaper output has no files["requirements.md"] (or edits to it)');
   if (!/^## R[0-9]+\b/m.test(req)) throw new Error('requirements.md has no "## R<n>" requirement headings');
   if (!design) throw new Error('shaper output has no files["design.md"] (or edits to it)');
+  // The bet's delta (Changes: lines, ## Removed) must fit the living spec as it was when the bet was first shaped.
+  const errs = sp.checkDelta(sp.parseDelta(req), sp.parseLiving(sp.ensureBase(root, slug)));
+  if (errs.length) throw new Error(`requirements.md does not fit the living spec (.bridgie/spec/requirements.md): ${errs.join('; ')}`);
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, 'requirements.md'), req.endsWith('\n') ? req : `${req}\n`);
   writeFileSync(join(dir, 'design.md'), design.endsWith('\n') ? design : `${design}\n`);
@@ -501,6 +505,10 @@ function effectFor(root, slug, extra) {
       if (answer === 'take over manually') { setTask(root, slug, id, { status: 'verify' }); return `task ${id} handed to ${by}; commit in its worktree, then bridgie verify ${slug} --task ${id}`; }
       if (answer === 'kill task') { setTask(root, slug, id, { escalation: `killed by ${by}` }); return `task ${id} killed; re-plan the bet to continue`; }
     }
+    if (d.type === 'spec_drift') {
+      if (answer === 'still holds' && !text) throw new Error('"still holds" needs the reason (--text)');
+      return answer === 'amend the design' ? `the design is re-opened; re-run bridgie shape ${slug}, approve it, then bridgie accept ${slug}` : `still holds: ${text || answer}`;
+    }
     if (d.type === 'accept') return acceptEffect(root, slug, answer, { by, text, via, gitSha: extra.gitSha, override: extra.override });
     if (d.type === 'confidence') {
       const m = answer.match(/^accept (opinion|anecdote|data|test)$/);
@@ -517,8 +525,10 @@ export function requirementSections(root, slug) {
   const f = requirementsPath(root, slug);
   if (!existsSync(f)) return {};
   const out = {};
-  const parts = readFileSync(f, 'utf8').split(/^(?=## [RP][0-9]+\b)/m);
-  for (const p of parts) { const m = p.match(/^## ([RP][0-9]+)\b/); if (m) out[m[1]] = p; }
+  // Each section ends at the next "## " heading (## Removed is not part of the last requirement), and a
+  // "Changes: <living id>" line names the living spec, not a requirement of this bet.
+  const parts = readFileSync(f, 'utf8').split(/^(?=## )/m);
+  for (const p of parts) { const m = p.match(/^## ([RP][0-9]+)\b/); if (m) out[m[1]] = p.replace(/^Changes:.*\n?/gm, ''); }
   return out;
 }
 // planWarnings: tasks whose requirements lean on something a task they do not depend on builds.
@@ -540,7 +550,7 @@ export function planWarnings(root, slug) {
     for (const r of t.requirements) {
       if (owner[r] !== t.id) continue;
       const text = (sections[r] || '').replace(/^## [^\n]*\n/, '');
-      for (const q of new Set(text.match(/\b[RP][0-9]+\b/g) || [])) {
+      for (const q of new Set(text.match(/(?<![\w.-])[RP][0-9]+\b/g) || [])) {
         const o = owner[q];
         if (!o || o === t.id || deps.has(o) || said.has(`${q}`)) continue;
         said.add(q);
@@ -677,7 +687,19 @@ export function answer(root, slug, id, ans, opts = {}) {
     ensureDecision(root, slug, 'accept', `Another approval needed for "${data.title}" (${data.approvals.length} of ${data.approvers_required}; not ${data.approvals.map(a => a.by).join(', ')}).`,
       ['approve', 'approve with conditions', 'reject'], { allow_free_text: true });
   }
+  // A drift finding the owner wants fixed re-opens the design, as `bridgie shape --amend` does: the
+  // shaper revises with the finding, the owner approves again, and re-planning adds work if needed.
+  if (d.type === 'spec_drift' && ans === 'amend the design') {
+    const a = st.addDecision(root, slug, { type: 'approve_design', context: `Amend the approved design for '${slug}' after a living-spec finding (${id})?`, options: ['approve', 'request changes'], allow_free_text: true });
+    st.answerDecision(root, slug, a.id, 'request changes', { by: opts.by, via: opts.via, text: `Spec drift (${id}): ${d.context}${opts.text ? ` Owner: ${opts.text}` : ''}`, effectFn: effectFor(root, slug, opts) });
+  }
   return d;
+}
+
+// driftAnswers: living-spec findings the owner answered, one line each (for the spec-checker and the package).
+export function driftAnswers(root, slug) {
+  return st.loadDecisions(root, slug).decisions.filter(d => d.type === 'spec_drift' && d.status === 'answered' && d.answer !== 'superseded')
+    .map(d => `- ${d.id}: ${d.context} → ${d.answer}${d.free_text ? `: ${d.free_text}` : ''} (${d.decided_by})`).join('\n');
 }
 
 // acceptancePacket: the runner's own summary for the packager — every task's verdict and rows,
@@ -741,6 +763,7 @@ export function packageDigest(root, slug) {
   add('requirements.md', join(dir, 'requirements.md'));
   add('design.md', join(dir, 'design.md'));
   add('tasks.json', st.tasksPath(root, slug));
+  add('living-spec', sp.livingPath(root));
   for (const t of loadTasks(root, slug).tasks) if (t.evidence) add(`evidence:${t.id}`, t.evidence);
   return h.digest('hex');
 }

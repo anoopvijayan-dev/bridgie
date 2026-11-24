@@ -83,11 +83,11 @@ What each step guarantees:
 
 | Step | What happens | Guards |
 |---|---|---|
-| `shape` | branch `bridgie/<slug>`, `requirements.md` (EARS) and `design.md` | signed bet, clean tree |
+| `shape` | branch `bridgie/<slug>`, `requirements.md` (EARS) and `design.md`; the shaper reads the living spec and says which earlier requirements the bet changes (`Changes:`) or removes (`## Removed`) | signed bet, clean tree; a `Changes:` or removal naming a requirement the living spec does not have is refused |
 | `plan` | `tasks.json`, every requirement mapped, each task sized `small`, `medium` or `large` | approved design, no cycles; a requirement tagged `risk: money` raises the bet's risk; a warning when a task's requirement names one that a task it does not depend on builds; re-planning supersedes any acceptance package |
 | `build` | one task per run in `.bridgie/worktrees/<slug>/<task>` (or several independent ones with `--parallel N`); a hardener pass when the task's size or the bet's risk asks for one | human ack for risky bets; `.bridgie/` edits discarded; only declared inputs reach the model; a task a killed run left half-built is picked up again without using an attempt |
 | `verify` | the runner runs every required test tier (the last, for money and data bets, checks that the tests notice small changes to the new code), then a read-only reviewer reads the results in a detached worktree | changed risk paths raise the bet's risk (logged, never lowered) and need a fresh ack; a required tier with no command is not proven; every evidence row counts and the reviewer's verdict can only tighten the result; different vendor from the producer; 3 attempts then blocked; a retry for the same commit reuses the test results instead of running them again |
-| `accept` | one-page acceptance package, bound to the branch commit and a digest of spec, tasks and evidence | every task passed, re-checked at the moment of approval; a stale package is refused and rebuilt by `bridgie accept`; approvers per the current risk (2 for money), each a different person; inside an agent the approval must say it is relayed from a person, and the record says so |
+| `accept` | an AI check that earlier requirements in the living spec still hold, each serious finding a decision for the owner; the bet's changes merged into `.bridgie/spec/requirements.md`; one-page acceptance package, bound to the branch commit and a digest of spec, living spec, tasks and evidence | every task passed, re-checked at the moment of approval; a stale package is refused and rebuilt by `bridgie accept`; approvers per the current risk (2 for money), each a different person; inside an agent the approval must say it is relayed from a person, and the record says so |
 
 ### Long runs
 
@@ -104,6 +104,30 @@ What keeps a bet of dozens of tasks moving, and honest, over days:
 - **Reading before verifying.** `bridgie run <slug> --pause-before-verify` stops after each build so you read the change first; run it again to verify that task and build the next.
 - **Where the time and money went.** `bridgie status --cost [slug]` lists attempts, runs and time per task, split into build, review and checks, with tokens and cost where the model CLI reports them, and the cost per passed task (everything spent, failed attempts included, divided by the tasks that passed). Claude Code reports tokens and a list-price cost; Codex reports a token total; Antigravity and Copilot report nothing yet, and the view says how many runs are missing. The cost is what the CLI computed from list prices: on a subscription it is not a bill. The acceptance package carries the totals.
 - **Run logs.** Test and adapter logs, diffs and raw replies stay on disk but out of git (they were 97% of a real bet's committed run folder). Evidence, claims and cost records are committed. Set `commit_transcripts: true` to commit everything.
+
+### The living spec
+
+Each bet's spec lives in `.bridgie/specs/<slug>/`. `.bridgie/spec/requirements.md` holds every requirement
+accepted so far, across bets, so a new bet sees what is already promised and a change to it is said out loud.
+
+- **One file, stable ids.** A requirement keeps the id of the bet that added it (`card-fees.R3`), with a `Source:`
+  line and a `Changed by:` line for each later bet that rewrote it.
+- **A bet says what it changes.** Its own requirements keep their R1, R2… numbers. One that replaces a living
+  requirement has `Changes: card-fees.R3` under its heading; living requirements it ends are listed under
+  `## Removed` with a reason; everything else is new. `shape` refuses ids the living spec does not have.
+- **Merged at accept, signed with the code.** `bridgie accept` writes the updated living spec on the bet's branch
+  before it builds the package, so it is in the commit and the digest the approvers sign, and the package lists
+  what was added, changed and removed (runner-written, not the packager's summary). It is computed from the living
+  spec as it was when the bet was first shaped, so packaging again never applies the change twice. If the base
+  branch changed one of the same requirements meanwhile, `accept` warns that the merge will need it reconciled.
+- **Drift check.** Before packaging, a read-only AI seat (`spec-checker`, routed like the reviewer) reads the bet's
+  whole code change against every earlier requirement the bet does not say it changes. Each blocker or major
+  finding is a decision: **amend the design** (re-opens it, as `shape --amend` does, with the finding) or **still
+  holds** (with a reason). `accept` waits until all are answered; the package lists the findings and the answers.
+  The result is reused while nothing it read has changed; a reviewer at its usage limit is a wait (exit 3). Turn it
+  off with `living_spec: { drift_check: false }`; doing that after a bet is signed is a governance decision.
+- **Existing projects.** The first bet packaged starts the file. `bridgie spec --seed` builds it from bets already
+  delivered, oldest first; `bridgie spec` says how many requirements it holds; `bridgie doctor` suggests seeding.
 
 ### Who decided, and under which rules
 
@@ -146,7 +170,7 @@ In an agent harness, say `/bridgie` (the installed skill drives the CLI and leav
 |---|---|
 | `bin/bridgie` | the command |
 | `bin/bridgie.mjs`, `runner/cmd/` | the CLI: one Node module per command, no bash anywhere |
-| `runner/` | dependency-free Node modules (state, context, surface, guard, doctor) |
+| `runner/` | dependency-free Node modules (state, context, surface, guard, doctor, spec: the living spec) |
 | `seats/<loop>/<seat>/SKILL.md` | what each agent seat is for, its inputs, what it may write (decide: scout, framer, researcher, three lenses, chair, profiler, buyer, grill, evidence) |
 | `runner/panel.mjs`, `runner/numbers.mjs` | the computed parts of the decide loop: persona cards, tallies, price range; unit economics |
 | `lanes/<lane>/` | risk paths, attack lists, checklists, verifiers per domain |
@@ -173,7 +197,7 @@ reconciliation, effective risk and mandatory tiers, state guard and seat lock, a
 server, reviewer works from runner-run test results). v0.2.0 (M1): the whole loop runs end to end on the
 fake adapter and is covered by tests for spec requirements R1–R14 and properties P1–P3. Real adapters are verified against stub CLIs with the
 flags of Claude Code 2.1, Codex 0.167 and Copilot CLI 1.0; Antigravity follows the v1 notes and its
-write mode is unverified (see `adapters/antigravity/gotchas.md`). Next: a light track for low-risk bets, living specs, marketing and sales lanes (see `docs/agentic-landscape-2026-11.md`).
+write mode is unverified (see `adapters/antigravity/gotchas.md`). Unreleased: the living spec and its drift check at accept. Next: a light track for low-risk bets, OpenSpec import and export, marketing and sales lanes (see `docs/agentic-landscape-2026-11.md`).
 
 ## Tests
 

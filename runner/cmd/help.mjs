@@ -15,6 +15,7 @@ Decide   bet new <slug> [--from <scout>/O<n>] [--risk R]   create a bet (optiona
 Build    shape | plan [--replan] | build [--parallel N] | run [--pause-before-verify] [--parallel N]
          --parallel N: build N independent tasks at once, each in its own worktree; --pause-before-verify: you read each change first
          recover <slug>           after a killed run: clear its lock, make its task buildable again
+         spec [--seed]            the living spec: every accepted requirement; --seed builds it from bets already delivered
 Verify   verify
          mutate --base <commit> --test "<command>"   would the tests notice a small change to the new code? (the mutation tier, by hand)
          rereview <slug> [--task T] [--all]   a second-family review of tasks that passed with a same-family reviewer

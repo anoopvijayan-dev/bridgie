@@ -150,6 +150,18 @@ export function diffPacket(root, slug, task, out) {
   writeFileSync(join(out, 'files.txt'), nl(d(['--name-only'])));
 }
 
+// betDiff: the whole bet's code change since it branched (three dots: later commits on the base are not in it).
+export const betDiff = (root, base, slug) => git(['-C', root, 'diff', `${base}...${featureBranch(slug)}`, ...EXCLUDE]).out;
+
+// detachedWorktree: a read-only look at a branch, for a seat that must not touch the project's checkout.
+export function detachedWorktree(root, ref, path) {
+  if (existsSync(path)) removeWorktree(root, path);
+  mkdirSync(dirname(path), { recursive: true });
+  ignoreWorktrees(root);
+  gitOrDie(['-C', root, 'worktree', 'add', '-q', '--detach', path, ref]);
+  return path;
+}
+
 export function diffStat(root, base, branch) {
   return git(['-C', root, 'diff', '--stat', base, branch, ...EXCLUDE]).out;
 }

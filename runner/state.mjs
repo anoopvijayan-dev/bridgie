@@ -161,6 +161,7 @@ export function governanceRules(root, lane, risk) {
     commands: policy.verify?.commands ? short(policy.verify.commands) : null,
     sandbox: ['off', 'auto', 'required'].includes(policy.sandbox?.build) ? policy.sandbox.build : 'auto',
     sandbox_network: [...(policy.sandbox?.network || [])].sort(),
+    drift_check: policy.living_spec?.drift_check !== false,
   };
 }
 // governanceDrift: every way `now` is weaker than `signed` (or, for verify commands, different:
@@ -187,6 +188,7 @@ export function governanceDrift(signed, now) {
   const SB = ['off', 'auto', 'required'];
   if (s.sandbox && SB.indexOf(now.sandbox) < SB.indexOf(s.sandbox)) out.push(`the sandbox for build seats went from ${s.sandbox} to ${now.sandbox}`);
   if (s.sandbox_network) { const more = (now.sandbox_network || []).filter(h => !s.sandbox_network.includes(h)); if (more.length && now.sandbox !== 'off') out.push(`sandboxed seats may now reach ${more.join(', ')}`); }
+  if (s.drift_check && now.drift_check === false) out.push('the living-spec drift check at accept was turned off');
   return out;
 }
 

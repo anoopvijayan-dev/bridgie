@@ -97,16 +97,17 @@ export function renderInbox(root, opts = {}) {
   return page(opts.public ? 'Progress' : 'Inbox', fill(T('inbox'), { heading: opts.public ? 'Progress' : 'Inbox', rows, bets, count: String(pending.length) }), opts);
 }
 
-const LABEL = { approve_design: 'Approve design', ack_risk: 'Acknowledge risk', unblock: 'Unblock', accept: 'Accept', confidence: 'Confidence proposal' };
+const LABEL = { approve_design: 'Approve design', ack_risk: 'Acknowledge risk', unblock: 'Unblock', accept: 'Accept', confidence: 'Confidence proposal', spec_drift: 'Living spec: does this still hold?' };
 const TEXT_HINT = {
   'request changes': 'what should change', 'approve with conditions': 'the conditions', reject: 'the reason',
-  'retry with guidance': 'guidance for the next attempt', decline: 'why (optional)',
+  'retry with guidance': 'guidance for the next attempt', decline: 'why (optional)', 'still holds': 'why it still holds', 'amend the design': 'what the design should say (optional)',
 };
 const CLI = {
   approve_design: (slug, d) => [`bridgie shape ${slug} --approve`, `bridgie shape ${slug} --changes "<what to change>"`],
   ack_risk: slug => [`bridgie ack ${slug}`, `bridgie ack ${slug} --decline`],
   accept: slug => [`bridgie accept ${slug} --approve`, `bridgie accept ${slug} --conditions "<conditions>"`, `bridgie accept ${slug} --reject "<reason>"`],
   unblock: (slug, d) => d.options.map(o => `bridgie decide ${slug} ${d.id} "${o}" --text "<guidance>"`),
+  spec_drift: (slug, d) => [`bridgie decide ${slug} ${d.id} "amend the design"`, `bridgie decide ${slug} ${d.id} "still holds" --text "<why>"`],
 };
 
 function decisionCard(root, slug, d, opts) {

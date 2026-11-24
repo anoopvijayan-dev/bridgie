@@ -93,7 +93,7 @@ verification and merging that brings each task up to date first. The placement t
 |---|---|---|---|
 | Decide before build | Spec Kit `assess`, gstack plan reviews; no kill criteria found | Ahead (as far as found) | Publish the bet schema as a reusable skill |
 | Spec to plan to tasks | EARS, steering, requirement-to-task traceability (Kiro, Spec Kit) | On par | Light track for low-risk bets |
-| Living specs | Delta specs merged on archive (OpenSpec); `converge` (Spec Kit) | Behind | Delta specs plus a drift check at accept |
+| Living specs | Delta specs merged on archive (OpenSpec); `converge` (Spec Kit) | On par since the living spec (delta merged at accept, AI drift check decided by the owner) | OpenSpec import and export |
 | Parallel execution | Dependency-aware task list, file ownership, hierarchy, 3–5 workers | Matches the recommended shape since 0.7.0; not yet proven on a real bet | Overlap verification with building; run it on a real bet |
 | Isolation | OS sandbox with network allowlist; microVM or container per agent | Behind | Turn on vendor sandboxes by default for build agents |
 | Runner-run tests | CI as hard gate; property tests (Kiro); mutation testing (Radar) | On par; ahead on tiers, missing mutation | Mutation score on changed code |
@@ -116,7 +116,7 @@ verification and merging that brings each task up to date first. The placement t
 4. **Default-on sandbox and network allowlist for build agents**, since worktrees isolate nothing and even Anthropic's classifier misses 17% (finding 5).
 5. **Mutation testing on changed code as a verify tier**, the named guard against always-green agent tests (finding 3).
 6. **A light track for low-risk bets**, since weight on small changes is the most repeated criticism of spec-driven tools (finding 1).
-7. **Delta specs merged at accept, plus a drift check**, to avoid stale specs (finding 1).
+7. **Delta specs merged at accept, plus a drift check**, to avoid stale specs (finding 1). *Done after 0.7.0: the living spec; OpenSpec import and export still to come.*
 8. **Reviewer finding-verification pass with a "skip style" rule**, to cut false positives the way Claude Code Review does (findings 3 and 4).
 9. **Export acceptance as in-toto plus Agent Trace, with an optional PR output**, putting evidence where SOC 2 auditors look (finding 5).
 10. **Package the flow as Agent Skills and add OTel spans behind a flag**; skills are stable and widely adopted, the OTel conventions are not yet (findings 6 and 7).
