@@ -3,6 +3,14 @@
 Date: 2026-11-24. Plan item 7 in `docs/agentic-landscape-2026-11.md` ("Delta specs merged at accept, plus a
 drift check"). Step 1 is this design; step 2 (OpenSpec import and export) is at the end.
 
+## As built
+
+The implementation plan (`docs/superpowers/plans/2026-11-24-living-spec.md`) changed four details: the seat is
+`verify/spec-checker` (verify routing and vendor rules); the base is a snapshot file `living-base.md` taken at
+first shape instead of `git show` of the branch point (works without state commits); meta lines read
+`Source: <slug> (<date>)`, the date being the day the package was built; the drift-check result is reused on a
+digest of what it read, not on the feature commit.
+
 ## Problem
 
 Each bet writes `requirements.md` and `design.md` in `.bridgie/specs/<slug>/` on its own branch. Nothing holds

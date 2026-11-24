@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+### Living spec
+- `.bridgie/spec/requirements.md` holds every accepted requirement across bets, each with a stable id (`<slug>.R<n>`), a `Source:` line and a `Changed by:` line per later change.
+- A bet states its changes in its own `requirements.md`: `Changes: <living id>` under a requirement that replaces one, `## Removed` with `- <living id>: <reason>` for ones it ends; the rest are new. The shaper reads the living spec (new seat input `living_spec`), and `shape` refuses ids it does not have, or one changed or removed twice.
+- `accept` merges the bet's changes into the living spec on the bet branch before packaging, from a snapshot taken when the bet was first shaped (`.bridgie/specs/<slug>/living-base.md`), so repackaging does not apply them twice. The living spec is part of the package digest. The acceptance body gets a runner-written **Spec changes** section, with a warning when the base branch changed the same requirements meanwhile.
+- `bridgie spec` shows it; `bridgie spec --seed` builds it from delivered bets, oldest first. `bridgie doctor` suggests seeding.
+
+### Drift check at accept
+- New seat `verify/spec-checker` (read-only, routed like the reviewer, another model family when policy asks for one): reads the bet's whole diff against every earlier living requirement the bet does not declare it changes.
+- Blocker and major findings become `spec_drift` decisions: `amend the design` re-opens the design with the finding (as `shape --amend`), `still holds` needs a reason. `accept` waits (exit 3) until they are answered; the package lists every finding and answer under **Spec drift**. Minor findings are listed only.
+- The result is reused while the living spec before the bet, the bet's requirements and its diff are unchanged. A spec-checker at its usage limit is a wait.
+- Policy `living_spec: { drift_check: true }` (default). Turning it off after signing is governance drift.
+
+### Upgrading
+- The first bet packaged after upgrading creates `.bridgie/spec/requirements.md`. Run `bridgie spec --seed` first to start it from the bets already delivered.
+- Bets shaped before upgrading have no `living-base.md`; it is taken at their next shape or accept from the living spec as it is then.
+
 ## 0.7.0
 
 Changes that came out of running a 41-task, money-risk bet from start to finish.
