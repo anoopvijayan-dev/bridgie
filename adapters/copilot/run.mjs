@@ -1,5 +1,6 @@
 // GitHub Copilot CLI adapter. Vendor follows the model (Claude → anthropic, GPT → openai, Gemini → google).
 // The prompt is too large for a command line on Windows, so -p carries an instruction to read the file.
+import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import * as A from '../lib/common.mjs';
 
@@ -26,7 +27,16 @@ if (o.mode === 'readonly') {
 } else {
   args.push('--allow-tool', 'write', '--allow-tool', 'shell', '--deny-tool', 'shell(git push)', '--deny-tool', 'shell(git remote)', '--deny-tool', 'shell(git checkout)', '--deny-tool', 'shell(git switch)');
 }
-args.push('-p', instruction);
+const usageRaw = join(dirname(o.out), 'copilot-usage.json');
+rmSync(usageRaw, { force: true });
+args.push('--usage-output-file', usageRaw, '-p', instruction);
 const reply = A.replyPath(o);
 const rc = A.run(bin, args, { cwd: o.cwd, stdout: reply, stderr: join(dirname(o.out), 'copilot.log') });
+if (existsSync(usageRaw)) {
+  try {
+    const parsed = A.parseCopilotUsage(JSON.parse(readFileSync(usageRaw, 'utf8')));
+    if (parsed) A.writeUsage(o, parsed);
+  } catch { /* ignore malformed usage file */ }
+  rmSync(usageRaw, { force: true });
+}
 A.finish(o, reply, rc);
