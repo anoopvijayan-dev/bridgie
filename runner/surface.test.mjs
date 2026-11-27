@@ -132,14 +132,12 @@ test('tasks table, blocked task card and acceptance card render; read-only shows
   assert.ok(!ro.includes('<form'));
 });
 
-test('bet page, inbox, and public page render usage / cost card and per-seat breakdown safely', async () => {
-  const { parseCopilotUsage, parseAgyJson } = await import('../adapters/lib/common.mjs');
-  const cop = parseCopilotUsage({ tokenDetails: { input: { tokenCount: 10 }, cache_read: { tokenCount: 100 }, cache_write: { tokenCount: 900 }, output: { tokenCount: 40 } } });
-  assert.deepEqual(cop, { tokens_in: 10, tokens_out: 40, tokens_cache_read: 100, tokens_cache_write: 900, tokens_total: 1050 });
-  const agy = parseAgyJson('{"status":"SUCCESS","response":"ok","usage":{"input_tokens":500,"output_tokens":20,"cache_read_tokens":100,"total_tokens":520}}');
-  assert.deepEqual(agy, { response: 'ok', usage: { tokens_in: 400, tokens_out: 20, tokens_cache_read: 100, tokens_cache_write: null, tokens_total: 520 } });
-
+test('bet page, inbox, and public page render usage / cost card and per-seat breakdown safely', () => {
   const root = shapedProject();
+  const before = renderBet(root, 'b');
+  assert.ok(before.includes('no runs yet'));
+  assert.ok(!before.includes('<h2>Cost and token usage</h2>'), 'no cost table before the first run');
+
   st.writeJsonAtomic(st.tasksPath(root, 'b'), { bet: 'b', tasks: [
     { id: 'T1', title: 'First', requirements: ['R1'], depends_on: [], status: 'passed', attempts: 1, max_attempts: 3, branch: null, evidence: null, escalation: null },
   ] }, 'tasks');

@@ -49,19 +49,32 @@ const project = findProject(o.cwd);
 if (!project) { process.stderr.write(`no Antigravity project covers ${o.cwd}; open it in Antigravity once or set BRIDGIE_AGY_PROJECT\n`); process.exit(1); }
 const mode = o.mode === 'write' ? (process.env.BRIDGIE_AGY_WRITE_MODE || 'agent') : 'plan';
 const instruction = `Read ${o.prompt} in full. It contains your role, inputs and output contract. Do the work now in ${o.cwd}, then end your reply with the fenced json block it asks for.`;
-const args = ['--project', project, '--mode', mode, '--effort', o.effort || 'high', '--print-timeout', process.env.BRIDGIE_AGY_TIMEOUT || '15m', '--output-format', 'json'];
-if (o.model !== 'default') args.push('--model', o.model);
-args.push('--print', instruction);   // --print takes the prompt as its VALUE and must come last
-const reply = A.replyPath(o), raw = join(dirname(o.out), 'agy.json');
-const rc = A.run(bin, args, { cwd: o.cwd, stdout: raw, stderr: join(dirname(o.out), 'agy.log') });
-let rawText = '';
-try { rawText = readFileSync(raw, 'utf8'); } catch { /* the CLI wrote nothing */ }
-const parsed = A.parseAgyJson(rawText);
-if (parsed) {
-  writeFileSync(reply, parsed.response);
-  if (parsed.usage) A.writeUsage(o, parsed.usage);
+const argsFor = format => {
+  const args = ['--project', project, '--mode', mode, '--effort', o.effort || 'high', '--print-timeout', process.env.BRIDGIE_AGY_TIMEOUT || '15m', '--output-format', format];
+  if (o.model !== 'default') args.push('--model', o.model);
+  args.push('--print', instruction);   // --print takes the prompt as its VALUE and must come last
+  return args;
+};
+const reply = A.replyPath(o), raw = join(dirname(o.out), 'agy.json'), log = join(dirname(o.out), 'agy.log');
+const readOr = p => { try { return readFileSync(p, 'utf8'); } catch { return ''; } };
+// JSON output carries token usage; BRIDGIE_AGY_OUTPUT=text runs plain text (no usage) as before.
+let rc;
+if (process.env.BRIDGIE_AGY_OUTPUT === 'text') {
+  rc = A.run(bin, argsFor('text'), { cwd: o.cwd, stdout: reply, stderr: log });
 } else {
-  writeFileSync(reply, rawText);
+  rc = A.run(bin, argsFor('json'), { cwd: o.cwd, stdout: raw, stderr: log });
+  const rawText = readOr(raw);
+  const parsed = A.parseAgyJson(rawText);
+  if (parsed) {
+    writeFileSync(reply, parsed.response);
+    if (parsed.usage) A.writeUsage(o, parsed.usage);
+  } else if (rc !== 0 && /output[-_ ]?format|unknown (flag|option)|unrecognized (flag|option|argument)|invalid value/i.test(`${readOr(log)}\n${rawText}`)) {
+    // An agy without JSON output refused the flag before doing any work: run again as plain text.
+    process.stderr.write('adapter: agy refused --output-format json; running again with text (no token usage)\n');
+    rc = A.run(bin, argsFor('text'), { cwd: o.cwd, stdout: reply, stderr: log });
+  } else {
+    writeFileSync(reply, rawText);
+  }
+  rmSync(raw, { force: true });
 }
-rmSync(raw, { force: true });
 A.finish(o, reply, rc);

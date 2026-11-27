@@ -112,27 +112,23 @@ export function writeUsage(o, u) {
   return true;
 }
 
+// parseCopilotUsage: the file `copilot --usage-output-file` writes, as writeUsage fields, or null
+// when it reports no tokens. The file's top level (seen from Copilot CLI 1.0.117) is totals
+// (totalPremiumRequestCost, totalNanoAiu, ...), `modelMetrics` keyed by model, `agentMetrics` keyed by
+// agent and `providerModelMetrics`; only modelMetrics is summed, so subagent tokens are not counted
+// twice. Input tokens are taken to include cache reads and writes (see adapters/copilot/gotchas.md).
+// Premium requests and AI credits are not dollars, so no usd is written.
 export function parseCopilotUsage(raw) {
   if (!raw || typeof raw !== 'object') return null;
-  const td = raw.tokenDetails;
-  if (td && typeof td === 'object') {
-    const num = x => (typeof x?.tokenCount === 'number' && Number.isFinite(x.tokenCount) ? Math.round(x.tokenCount) : null);
-    const tIn = num(td.input), tOut = num(td.output), tCr = num(td.cache_read), tCw = num(td.cache_write);
-    if ([tIn, tOut, tCr, tCw].some(v => v !== null)) {
-      const total = [tIn, tOut, tCr, tCw].filter(v => v !== null).reduce((a, b) => a + b, 0);
-      return { tokens_in: tIn, tokens_out: tOut, tokens_cache_read: tCr, tokens_cache_write: tCw, tokens_total: total };
-    }
-  }
   const mm = raw.modelMetrics;
-  if (mm && typeof mm === 'object') {
+  if (mm && typeof mm === 'object' && !Array.isArray(mm)) {
     let sumIn = 0, sumOut = 0, sumCr = 0, sumCw = 0, seen = false;
+    const add = v => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? (seen = true, v) : 0);
     for (const v of Object.values(mm)) {
       const u = v?.usage;
       if (!u || typeof u !== 'object') continue;
-      if (typeof u.inputTokens === 'number') { sumIn += u.inputTokens; seen = true; }
-      if (typeof u.outputTokens === 'number') { sumOut += u.outputTokens; seen = true; }
-      if (typeof u.cacheReadTokens === 'number') { sumCr += u.cacheReadTokens; seen = true; }
-      if (typeof u.cacheWriteTokens === 'number') { sumCw += u.cacheWriteTokens; seen = true; }
+      sumIn += add(u.inputTokens); sumOut += add(u.outputTokens);
+      sumCr += add(u.cacheReadTokens); sumCw += add(u.cacheWriteTokens);
     }
     if (seen) {
       return {
@@ -147,10 +143,17 @@ export function parseCopilotUsage(raw) {
   return null;
 }
 
+// parseAgyJson: what `agy --output-format json` printed, as { response, usage } (usage in writeUsage
+// fields, or null), or null when it is not that JSON (an older agy, or one that failed). Lines the
+// CLI printed before the JSON object (warnings) are skipped. Input tokens are taken to include cache
+// reads and writes, as total_tokens does.
 export function parseAgyJson(text) {
-  if (typeof text !== 'string' || !text.trim().startsWith('{')) return null;
+  if (typeof text !== 'string') return null;
+  const t = text.trim();
+  const at = t.startsWith('{') ? 0 : t.search(/\n\{/) + 1;   // 0 here means no line starts a JSON object
+  if (at === 0 && !t.startsWith('{')) return null;
   let j;
-  try { j = JSON.parse(text); } catch { return null; }
+  try { j = JSON.parse(t.slice(at)); } catch { return null; }
   if (!j || typeof j !== 'object' || Array.isArray(j) || typeof j.response !== 'string') return null;
   const u = j.usage;
   let usage = null;

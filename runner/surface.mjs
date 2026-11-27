@@ -92,16 +92,8 @@ export function renderInbox(root, opts = {}) {
   const bets = st.listBets(root).filter(only).map(s => {
     const { data } = st.readFm(st.betPath(root, s));
     const link = opts.readonly ? `bet-${esc(s)}.html` : `/bet/${esc(s)}`;
-    let costMeta = '';
-    try {
-      const bc = fl.betCost(root, s);
-      if (bc.runs > 0) {
-        const parts = [`${bc.runs} run${bc.runs === 1 ? '' : 's'}`, fl.durText(bc.seconds)];
-        if (bc.tokens !== null) parts.push(`${fl.tokensText(bc.tokens)} tokens`);
-        if (bc.usd !== null) parts.push(`$${bc.usd.toFixed(2)}`);
-        costMeta = ` <small class="empty">· ${esc(parts.join(' · '))}</small>`;
-      }
-    } catch {}
+    const line = usageLine(safeBetCost(root, s));
+    const costMeta = line ? ` <small class="empty">· ${esc(line)}</small>` : '';
     return `<li><a href="${link}">${esc(data.title)}</a> <span class="pill">${esc(data.status)}</span>${costMeta}</li>`;
   }).join('\n') || '<li class="empty">No bets yet.</li>';
   return page(opts.public ? 'Progress' : 'Inbox', fill(T('inbox'), { heading: opts.public ? 'Progress' : 'Inbox', rows, bets, count: String(pending.length) }), opts);
@@ -182,9 +174,21 @@ function tasksTable(root, slug) {
   return `<h2>Tasks</h2><table><thead><tr><th>Task</th><th>Title</th><th>Status</th><th>Attempts</th><th>Last verdict</th><th>Requirements</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
-function costSection(root, slug) {
-  let c;
-  try { c = fl.betCost(root, slug); } catch { return ''; }
+// safeBetCost: a bet's cost rows and totals, or null when its run records cannot be read (the page
+// still renders without them).
+function safeBetCost(root, slug) {
+  try { return fl.betCost(root, slug); } catch { return null; }
+}
+// usageLine: "3 runs · 12m · 40k tokens · $1.20", or null before the bet's first run.
+function usageLine(c) {
+  if (!c || !c.runs) return null;
+  const parts = [`${c.runs} run${c.runs === 1 ? '' : 's'}`, fl.durText(c.seconds)];
+  if (c.tokens !== null) parts.push(`${fl.tokensText(c.tokens)} tokens`);
+  if (c.usd !== null) parts.push(`$${c.usd.toFixed(2)}`);
+  return parts.join(' · ');
+}
+
+function costSection(root, slug, c) {
   if (!c || !c.runs) return '';
   const showTok = c.tokens !== null;
   const showUsd = c.usd !== null;
@@ -209,7 +213,8 @@ function costSection(root, slug) {
   if (!showTok && !showUsd) footParts.push('model CLIs did not report token usage');
   else if (c.unreported) footParts.push(`${c.unreported} model run(s) reported no usage`);
 
-  const seatRuns = fl.seatRunsCost ? fl.seatRunsCost(root, slug) : [];
+  let seatRuns = [];
+  try { seatRuns = fl.seatRunsCost(root, slug); } catch { /* the table above still renders */ }
   let seatDetail = '';
   if (seatRuns.length) {
     const sRows = seatRuns.map(s => `<tr><td>${esc(s.seat)}</td><td>${esc(s.task)}</td><td><code>${esc(s.model)}</code></td><td>${esc(fl.durText(s.seconds))}</td><td>${esc(s.tokens_in === null ? '-' : fl.tokensText(s.tokens_in))}</td><td>${esc(s.tokens_out === null ? '-' : fl.tokensText(s.tokens_out))}</td><td>${esc(s.tokens_cache === null ? '-' : fl.tokensText(s.tokens_cache))}</td><td><b>${esc(s.tokens_total === null ? '-' : fl.tokensText(s.tokens_total))}</b></td></tr>`).join('');
@@ -225,16 +230,9 @@ export function renderBet(root, slug, opts = {}) {
   const openQ = decisions.filter(d => d.type === 'question' && d.status !== 'answered');
   const sign = decisions.find(d => d.type === 'sign' && d.status !== 'answered');
   const card = (k, v) => `<div class="card"><div class="k">${esc(k)}</div><div class="v">${v}</div></div>`;
-  let usageCard = '<span class="empty">no runs yet</span>';
-  try {
-    const bc = fl.betCost(root, slug);
-    if (bc.runs > 0) {
-      const parts = [`${bc.runs} run${bc.runs === 1 ? '' : 's'}`, fl.durText(bc.seconds)];
-      if (bc.tokens !== null) parts.push(`${fl.tokensText(bc.tokens)} tokens`);
-      if (bc.usd !== null) parts.push(`$${bc.usd.toFixed(2)}`);
-      usageCard = esc(parts.join(' · '));
-    }
-  } catch {}
+  const betCost = safeBetCost(root, slug);
+  const usage = usageLine(betCost);
+  const usageCard = usage ? esc(usage) : '<span class="empty">no runs yet</span>';
   const cards = [
     card('status', `<span class="pill">${esc(data.status)}</span>`),
     card('lane / risk', esc(`${data.lane} / ${data.risk}`)),
@@ -282,7 +280,7 @@ ${d.allow_free_text ? `<label><input type="radio" name="answer" value="__text__"
   const specHtml = specs.length ? `<h2>Design and requirements</h2>${specs.map(([f, t]) => `<details><summary>${esc(f)}</summary>${f === 'requirements.md' ? requirementsTable(t) : mdDoc(t, ['Decision'])}</details>`).join('\n')}` : '';
   const decide = decideSections(root, slug);
   return page(data.title, fill(T('bet'), { title: esc(data.title), slug: esc(slug), cards, waiting, questions,
-    sign: showSign ? `<h2>Sign</h2><div class="signbox">${signHtml}</div>` : '', decide, tasks: tasksTable(root, slug), cost: costSection(root, slug), specs: specHtml, sections, raw }), opts);
+    sign: showSign ? `<h2>Sign</h2><div class="signbox">${signHtml}</div>` : '', decide, tasks: tasksTable(root, slug), cost: costSection(root, slug, betCost), specs: specHtml, sections, raw }), opts);
 }
 
 // renderAll: read-only pages for every bet, or with { public: true, bets } a progress page for only the
