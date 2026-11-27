@@ -1,5 +1,5 @@
 // Antigravity CLI adapter (google). agy has no stdin mode: it is told to read the prompt file.
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, basename } from 'node:path';
 import { homedir } from 'node:os';
 import * as A from '../lib/common.mjs';
@@ -49,9 +49,19 @@ const project = findProject(o.cwd);
 if (!project) { process.stderr.write(`no Antigravity project covers ${o.cwd}; open it in Antigravity once or set BRIDGIE_AGY_PROJECT\n`); process.exit(1); }
 const mode = o.mode === 'write' ? (process.env.BRIDGIE_AGY_WRITE_MODE || 'agent') : 'plan';
 const instruction = `Read ${o.prompt} in full. It contains your role, inputs and output contract. Do the work now in ${o.cwd}, then end your reply with the fenced json block it asks for.`;
-const args = ['--project', project, '--mode', mode, '--effort', o.effort || 'high', '--print-timeout', process.env.BRIDGIE_AGY_TIMEOUT || '15m', '--output-format', 'text'];
+const args = ['--project', project, '--mode', mode, '--effort', o.effort || 'high', '--print-timeout', process.env.BRIDGIE_AGY_TIMEOUT || '15m', '--output-format', 'json'];
 if (o.model !== 'default') args.push('--model', o.model);
 args.push('--print', instruction);   // --print takes the prompt as its VALUE and must come last
-const reply = A.replyPath(o);
-const rc = A.run(bin, args, { cwd: o.cwd, stdout: reply, stderr: join(dirname(o.out), 'agy.log') });
+const reply = A.replyPath(o), raw = join(dirname(o.out), 'agy.json');
+const rc = A.run(bin, args, { cwd: o.cwd, stdout: raw, stderr: join(dirname(o.out), 'agy.log') });
+let rawText = '';
+try { rawText = readFileSync(raw, 'utf8'); } catch { /* the CLI wrote nothing */ }
+const parsed = A.parseAgyJson(rawText);
+if (parsed) {
+  writeFileSync(reply, parsed.response);
+  if (parsed.usage) A.writeUsage(o, parsed.usage);
+} else {
+  writeFileSync(reply, rawText);
+}
+rmSync(raw, { force: true });
 A.finish(o, reply, rc);

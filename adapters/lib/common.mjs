@@ -111,6 +111,60 @@ export function writeUsage(o, u) {
   writeFileSync(usagePath(o), JSON.stringify(out) + '\n');
   return true;
 }
+
+export function parseCopilotUsage(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const td = raw.tokenDetails;
+  if (td && typeof td === 'object') {
+    const num = x => (typeof x?.tokenCount === 'number' && Number.isFinite(x.tokenCount) ? Math.round(x.tokenCount) : null);
+    const tIn = num(td.input), tOut = num(td.output), tCr = num(td.cache_read), tCw = num(td.cache_write);
+    if ([tIn, tOut, tCr, tCw].some(v => v !== null)) {
+      const total = [tIn, tOut, tCr, tCw].filter(v => v !== null).reduce((a, b) => a + b, 0);
+      return { tokens_in: tIn, tokens_out: tOut, tokens_cache_read: tCr, tokens_cache_write: tCw, tokens_total: total };
+    }
+  }
+  const mm = raw.modelMetrics;
+  if (mm && typeof mm === 'object') {
+    let sumIn = 0, sumOut = 0, sumCr = 0, sumCw = 0, seen = false;
+    for (const v of Object.values(mm)) {
+      const u = v?.usage;
+      if (!u || typeof u !== 'object') continue;
+      if (typeof u.inputTokens === 'number') { sumIn += u.inputTokens; seen = true; }
+      if (typeof u.outputTokens === 'number') { sumOut += u.outputTokens; seen = true; }
+      if (typeof u.cacheReadTokens === 'number') { sumCr += u.cacheReadTokens; seen = true; }
+      if (typeof u.cacheWriteTokens === 'number') { sumCw += u.cacheWriteTokens; seen = true; }
+    }
+    if (seen) {
+      return {
+        tokens_in: Math.max(0, Math.round(sumIn - sumCr - sumCw)),
+        tokens_out: Math.round(sumOut),
+        tokens_cache_read: Math.round(sumCr),
+        tokens_cache_write: Math.round(sumCw),
+        tokens_total: Math.round(sumIn + sumOut),
+      };
+    }
+  }
+  return null;
+}
+
+export function parseAgyJson(text) {
+  if (typeof text !== 'string' || !text.trim().startsWith('{')) return null;
+  let j;
+  try { j = JSON.parse(text); } catch { return null; }
+  if (!j || typeof j !== 'object' || Array.isArray(j) || typeof j.response !== 'string') return null;
+  const u = j.usage;
+  let usage = null;
+  if (u && typeof u === 'object') {
+    const int = v => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? Math.round(v) : null);
+    const rawIn = int(u.input_tokens), tOut = int(u.output_tokens), tCr = int(u.cache_read_tokens), tCw = int(u.cache_write_tokens), tTot = int(u.total_tokens);
+    if ([rawIn, tOut, tCr, tCw, tTot].some(v => v !== null)) {
+      const tIn = rawIn !== null ? Math.max(0, rawIn - (tCr || 0) - (tCw || 0)) : null;
+      usage = { tokens_in: tIn, tokens_out: tOut, tokens_cache_read: tCr, tokens_cache_write: tCw, tokens_total: tTot };
+    }
+  }
+  return { response: j.response, usage };
+}
+
 export const caps = obj => { process.stdout.write(JSON.stringify(obj) + '\n'); process.exit(0); };
 export const probe = (bin, what) => {
   if (bin) { process.stdout.write('OK\n'); process.exit(0); }

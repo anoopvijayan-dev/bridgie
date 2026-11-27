@@ -607,7 +607,41 @@ export function costByTask(root, slug) {
   for (const r of rows.values()) out.push({ ...r, title: r.task === '(bet)' ? 'shaping, planning, packaging' : 'not in the current plan', size: null, status: null, attempts: null });
   return out;
 }
-const dur = s => s >= 3600 ? `${Math.floor(s / 3600)}h${String(Math.round((s % 3600) / 60)).padStart(2, '0')}m` : s >= 60 ? `${Math.round(s / 60)}m` : `${s}s`;
+export function seatRunsCost(root, slug) {
+  const out = [];
+  const taskOf = dir => {
+    for (const f of ['claim.json', 'evidence.json']) {
+      const p = join(dir, f);
+      if (existsSync(p)) { try { const t = st.readJson(p).task; if (typeof t === 'string') return t; } catch {} }
+    }
+    return null;
+  };
+  const d = st.runsDir(root, slug);
+  for (const run of existsSync(d) ? readdirSync(d).sort() : []) {
+    const c = join(d, run, 'cost.json');
+    if (!existsSync(c)) continue;
+    let entries; try { entries = st.readJson(c).entries; } catch { continue; }
+    let fallback;
+    for (const e of entries || []) {
+      const cache = [e.tokens_cache_read, e.tokens_cache_write].filter(v => typeof v === 'number');
+      out.push({
+        run,
+        task: e.task || (fallback ??= taskOf(join(d, run))) || '(bet)',
+        seat: e.seat || run,
+        model: e.model || '-',
+        seconds: e.duration_s || 0,
+        tokens_in: typeof e.tokens_in === 'number' ? e.tokens_in : null,
+        tokens_out: typeof e.tokens_out === 'number' ? e.tokens_out : null,
+        tokens_cache: cache.length ? cache.reduce((a, b) => a + b, 0) : null,
+        tokens_total: entryTokens(e),
+        usd: typeof e.usd === 'number' ? e.usd : null,
+      });
+    }
+  }
+  return out;
+}
+export const durText = s => s >= 3600 ? `${Math.floor(s / 3600)}h${String(Math.round((s % 3600) / 60)).padStart(2, '0')}m` : s >= 60 ? `${Math.round(s / 60)}m` : `${s}s`;
+const dur = durText;
 // isolation: of the runs that wrote code and recorded it, how many were sandboxed.
 export function isolation(root, slug) {
   let runs = 0, sandboxed = 0;
@@ -628,6 +662,10 @@ export function costTotals(rows) {
   const usd = rows.some(r => r.usd !== null) ? sum('usd') : null, tokens = rows.some(r => r.tokens !== null) ? sum('tokens') : null;
   const passed = rows.filter(r => r.status === 'passed').length;
   return { runs: sum('runs'), seconds: sum('seconds'), tokens, usd, unreported: sum('unreported'), passed, usd_per_passed: usd !== null && passed ? usd / passed : null };
+}
+export function betCost(root, slug) {
+  const rows = costByTask(root, slug);
+  return { rows, ...costTotals(rows) };
 }
 export function costTable(rows) {
   const t = costTotals(rows);

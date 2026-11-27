@@ -131,3 +131,33 @@ test('tasks table, blocked task card and acceptance card render; read-only shows
   assert.ok(ro.includes('bridgie accept b --approve'));
   assert.ok(!ro.includes('<form'));
 });
+
+test('bet page, inbox, and public page render usage / cost card and per-seat breakdown safely', async () => {
+  const { parseCopilotUsage, parseAgyJson } = await import('../adapters/lib/common.mjs');
+  const cop = parseCopilotUsage({ tokenDetails: { input: { tokenCount: 10 }, cache_read: { tokenCount: 100 }, cache_write: { tokenCount: 900 }, output: { tokenCount: 40 } } });
+  assert.deepEqual(cop, { tokens_in: 10, tokens_out: 40, tokens_cache_read: 100, tokens_cache_write: 900, tokens_total: 1050 });
+  const agy = parseAgyJson('{"status":"SUCCESS","response":"ok","usage":{"input_tokens":500,"output_tokens":20,"cache_read_tokens":100,"total_tokens":520}}');
+  assert.deepEqual(agy, { response: 'ok', usage: { tokens_in: 400, tokens_out: 20, tokens_cache_read: 100, tokens_cache_write: null, tokens_total: 520 } });
+
+  const root = shapedProject();
+  st.writeJsonAtomic(st.tasksPath(root, 'b'), { bet: 'b', tasks: [
+    { id: 'T1', title: 'First', requirements: ['R1'], depends_on: [], status: 'passed', attempts: 1, max_attempts: 3, branch: null, evidence: null, escalation: null },
+  ] }, 'tasks');
+  const r1 = join(root, '.bridgie', 'runs', 'b', 'implementer-01');
+  mkdirSync(r1, { recursive: true });
+  st.costAdd(r1, { seat: 'implementer', task: 'T1', adapter: 'copilot', model: 'claude-sonnet-4.6', started_at: '2026-11-27T10:00:00Z', duration_s: 90, attempt: 1, exit_code: 0, tokens_in: 5000, tokens_out: 1000, tokens_cache_read: 14000, tokens_total: 20000, usd: 0.25 });
+
+  const betHtml = renderBet(root, 'b');
+  assert.ok(betHtml.includes('usage / cost'));
+  assert.ok(betHtml.includes('1 run · 2m · 20k tokens · $0.25'));
+  assert.ok(betHtml.includes('<h2>Cost and token usage</h2>'));
+  assert.ok(betHtml.includes('Per-seat run breakdown (1 run)'));
+
+  const inboxHtml = renderInbox(root);
+  assert.ok(inboxHtml.includes('1 run · 2m · 20k tokens · $0.25'));
+
+  const pubOut = renderAll(root, join(root, 'pub-cost'), { public: true, bets: ['b'] });
+  const pubBet = readFileSync(join(pubOut, 'bet-b.html'), 'utf8');
+  assert.ok(!pubBet.includes(root), 'public page must leak no local paths');
+  assert.ok(pubBet.includes('<h2>Cost and token usage</h2>'));
+});
