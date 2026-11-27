@@ -5,6 +5,11 @@
 ### Correcting a bet before it is signed
 - `bridgie bet set <slug> [--risk R] [--owner NAME] [--time 6w] [--tokens-usd N] --reason "..."` changes an unsigned bet's risk (up or down), owner or appetite. Before, these were fixed at `bet new`: a risk picked too high could not be lowered, and the owner was whoever's git name was set on the machine. Each change is a line in the bet's decision log with the reason, who made it and through which agent; a pending sign decision is reworded to match. Refused once the bet is signed (risk then only goes up, and the rest is held by the governance lock). Inside an agent it needs `--relayed`, as owner decisions do.
 
+### Cost in the UI, and tokens from Copilot and Antigravity
+- `bridgie open` shows what a bet used: a **usage / cost** card on the bet page, a **Cost and token usage** table under Tasks (time split into build, review, checks and other, with tokens and list-price cost when reported) with a per-seat run breakdown, and a runs · time · tokens · cost line beside each bet in the Inbox. Read-only and `--public` pages show the same, with no local paths.
+- Copilot: the adapter passes `--usage-output-file` and records input, output and cache tokens summed over the file's `modelMetrics`. Premium requests and AI credits are not dollars, so no cost is recorded.
+- Antigravity: the adapter runs `agy --output-format json` and records the reply's `usage`. An `agy` that refuses that flag is run again as plain text (no tokens); `BRIDGIE_AGY_OUTPUT=text` always runs plain text.
+
 ### Living spec
 - `.bridgie/spec/requirements.md` holds every accepted requirement across bets, each with a stable id (`<slug>.R<n>`), a `Source:` line and a `Changed by:` line per later change.
 - A bet states its changes in its own `requirements.md`: `Changes: <living id>` under a requirement that replaces one, `## Removed` with `- <living id>: <reason>` for ones it ends; the rest are new. The shaper reads the living spec (new seat input `living_spec`), and `shape` refuses ids it does not have, or one changed or removed twice.

@@ -6,4 +6,5 @@
 - `--sandbox` hangs on Windows. Do not use it.
 - Probe first: `agy --project <id> --mode plan --print "Reply with exactly: OK"`.
 - A QA seat that cannot read the repo invents findings (v1, 2026-08-08). Task worktrees live inside the repo (`.bridgie/worktrees/`) so the project's grants cover them.
+- UNVERIFIED: JSON output. The adapter runs `--output-format json` and expects one object `{ "status", "response": "<the reply>", "usage": { "input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens", "total_tokens" } }`, with input including cache tokens. Lines before the object are skipped. When the CLI fails and its output names the flag (an `agy` without JSON output), the adapter runs again with `--output-format text` and records no tokens. `BRIDGIE_AGY_OUTPUT=text` always runs plain text. Confirm the shape on first use and record it here.
 - UNVERIFIED: write mode. The adapter uses `--mode ${BRIDGIE_AGY_WRITE_MODE:-agent}` for implementer seats; confirm the mode name on first use and record it here.

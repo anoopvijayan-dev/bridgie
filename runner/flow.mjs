@@ -575,10 +575,9 @@ export function entryTokens(e) {
   return parts.length ? parts.reduce((a, b) => a + b, 0) : null;
 }
 const COST_KIND = { implementer: 'build', hardener: 'build', reviewer: 'review', tiers: 'checks' };
-export function costByTask(root, slug) {
-  const tasks = existsSync(st.tasksPath(root, slug)) ? loadTasks(root, slug).tasks : [];
-  const rows = new Map();
-  const row = id => { if (!rows.has(id)) rows.set(id, { task: id, runs: 0, build: 0, review: 0, checks: 0, other: 0, seconds: 0, tokens: null, usd: null, unreported: 0 }); return rows.get(id); };
+// costEntries: every cost entry a bet's runs recorded, oldest run first, each with its run dir name
+// and its task (the entry's own, else the run's claim or evidence, else '(bet)').
+function costEntries(root, slug) {
   const taskOf = dir => {
     for (const f of ['claim.json', 'evidence.json']) {
       const p = join(dir, f);
@@ -586,28 +585,58 @@ export function costByTask(root, slug) {
     }
     return null;
   };
+  const out = [];
   const d = st.runsDir(root, slug);
   for (const run of existsSync(d) ? readdirSync(d).sort() : []) {
     const c = join(d, run, 'cost.json');
     if (!existsSync(c)) continue;
     let entries; try { entries = st.readJson(c).entries; } catch { continue; }
     let fallback;
-    for (const e of entries) {
-      const r = row(e.task || (fallback ??= taskOf(join(d, run))) || '(bet)');
-      const s = e.duration_s || 0;
-      r.runs++; r.seconds += s; r[COST_KIND[e.seat] || 'other'] += s;
-      if (typeof e.usd === 'number') r.usd = (r.usd || 0) + e.usd;
-      const tok = entryTokens(e);
-      if (tok !== null) r.tokens = (r.tokens || 0) + tok;
-      else if (e.seat !== 'tiers' && typeof e.usd !== 'number') r.unreported++;       // a model run whose CLI said nothing about usage
+    for (const e of Array.isArray(entries) ? entries : []) {
+      if (!e.task && fallback === undefined) fallback = taskOf(join(d, run));
+      out.push({ run, e, task: e.task || fallback || '(bet)' });
     }
+  }
+  return out;
+}
+export function costByTask(root, slug) {
+  const tasks = existsSync(st.tasksPath(root, slug)) ? loadTasks(root, slug).tasks : [];
+  const rows = new Map();
+  const row = id => { if (!rows.has(id)) rows.set(id, { task: id, runs: 0, build: 0, review: 0, checks: 0, other: 0, seconds: 0, tokens: null, usd: null, unreported: 0 }); return rows.get(id); };
+  for (const { e, task } of costEntries(root, slug)) {
+    const r = row(task);
+    const s = e.duration_s || 0;
+    r.runs++; r.seconds += s; r[COST_KIND[e.seat] || 'other'] += s;
+    if (typeof e.usd === 'number') r.usd = (r.usd || 0) + e.usd;
+    const tok = entryTokens(e);
+    if (tok !== null) r.tokens = (r.tokens || 0) + tok;
+    else if (e.seat !== 'tiers' && typeof e.usd !== 'number') r.unreported++;       // a model run whose CLI said nothing about usage
   }
   const out = [];
   for (const t of tasks) { const r = row(t.id); out.push({ ...r, title: t.title, size: t.size || null, status: t.status, attempts: t.attempts }); rows.delete(t.id); }
   for (const r of rows.values()) out.push({ ...r, title: r.task === '(bet)' ? 'shaping, planning, packaging' : 'not in the current plan', size: null, status: null, attempts: null });
   return out;
 }
-const dur = s => s >= 3600 ? `${Math.floor(s / 3600)}h${String(Math.round((s % 3600) / 60)).padStart(2, '0')}m` : s >= 60 ? `${Math.round(s / 60)}m` : `${s}s`;
+// seatRunsCost: one row per recorded seat run (the per-seat breakdown on the bet page).
+export function seatRunsCost(root, slug) {
+  const num = v => (typeof v === 'number' ? v : null);
+  return costEntries(root, slug).map(({ run, e, task }) => {
+    const cache = [e.tokens_cache_read, e.tokens_cache_write].filter(v => typeof v === 'number');
+    return {
+      run, task,
+      seat: e.seat || run,
+      model: e.model || '-',
+      seconds: e.duration_s || 0,
+      tokens_in: num(e.tokens_in),
+      tokens_out: num(e.tokens_out),
+      tokens_cache: cache.length ? cache.reduce((a, b) => a + b, 0) : null,
+      tokens_total: entryTokens(e),
+      usd: num(e.usd),
+    };
+  });
+}
+export const durText = s => s >= 3600 ? `${Math.floor(s / 3600)}h${String(Math.round((s % 3600) / 60)).padStart(2, '0')}m` : s >= 60 ? `${Math.round(s / 60)}m` : `${s}s`;
+const dur = durText;
 // isolation: of the runs that wrote code and recorded it, how many were sandboxed.
 export function isolation(root, slug) {
   let runs = 0, sandboxed = 0;
@@ -628,6 +657,10 @@ export function costTotals(rows) {
   const usd = rows.some(r => r.usd !== null) ? sum('usd') : null, tokens = rows.some(r => r.tokens !== null) ? sum('tokens') : null;
   const passed = rows.filter(r => r.status === 'passed').length;
   return { runs: sum('runs'), seconds: sum('seconds'), tokens, usd, unreported: sum('unreported'), passed, usd_per_passed: usd !== null && passed ? usd / passed : null };
+}
+export function betCost(root, slug) {
+  const rows = costByTask(root, slug);
+  return { rows, ...costTotals(rows) };
 }
 export function costTable(rows) {
   const t = costTotals(rows);
