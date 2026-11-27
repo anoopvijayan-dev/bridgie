@@ -318,6 +318,8 @@ export function listDecisions(root, slug, opts = {}) {
   return filtered.sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
 }
 
+const signContext = data => `Sign "${data.title}"? lane ${data.lane}, risk ${data.risk}, confidence ${data.confidence}, appetite ${data.appetite?.time || '?'}.`;
+
 export function ensureSignDecision(root, slug) {
   const doc = loadDecisions(root, slug);
   const open = doc.decisions.find(d => d.type === 'sign' && d.status !== 'answered');
@@ -325,9 +327,44 @@ export function ensureSignDecision(root, slug) {
   const { data } = readFm(betPath(root, slug));
   return addDecision(root, slug, {
     type: 'sign', allow_free_text: false,
-    context: `Sign "${data.title}"? lane ${data.lane}, risk ${data.risk}, confidence ${data.confidence}, appetite ${data.appetite?.time || '?'}.`,
+    context: signContext(data),
     options: ['sign', 'kill', 'need more evidence'],
   });
+}
+
+// betSet: correct a bet's risk, owner or appetite before it is signed. Once signed, the risk only goes
+// up (raiseRisk) and the rest is held by the governance lock. Every change is logged in the bet body
+// with the reason, who made it and through what; a pending sign decision is reworded to match.
+export const UNSIGNED = ['draft', 'grilling', 'evidence'];
+export function betSet(root, slug, changes, opts = {}) {
+  const file = betPath(root, slug);
+  if (!existsSync(file)) throw new Error(`bet "${slug}" not found`);
+  if (!opts.reason) throw new Error('bet set: --reason is required (it is written to the bet\'s decision log)');
+  const { data, body } = readFm(file);
+  if (!UNSIGNED.includes(data.status)) throw new Error(`bet "${slug}" is ${data.status}: risk, owner and appetite are fixed once a bet is signed (risk is still raised automatically when the work needs it)`);
+  if (changes.risk !== undefined && !RISK_ORDER.includes(changes.risk)) throw new Error(`unknown risk "${changes.risk}" (one of: ${RISK_ORDER.join(', ')})`);
+  const app = { ...(data.appetite || {}) };
+  if (changes.time !== undefined) app.time = changes.time;
+  if (changes.tokens_usd !== undefined) app.tokens_usd = changes.tokens_usd;
+  const next = { ...data };
+  if (changes.risk !== undefined) next.risk = changes.risk;
+  if (changes.owner !== undefined) next.owner = changes.owner;
+  next.appetite = app;
+  const appText = a => `${a?.time ?? '?'}/$${a?.tokens_usd ?? '?'}`;
+  const done = [];
+  if (next.risk !== data.risk) done.push(`risk ${data.risk} → ${next.risk}`);
+  if (next.owner !== data.owner) done.push(`owner ${data.owner} → ${next.owner}`);
+  if (appText(next.appetite) !== appText(data.appetite)) done.push(`appetite ${appText(data.appetite)} → ${appText(next.appetite)}`);
+  if (!done.length) throw new Error('bet set: nothing to change (give --risk, --owner, --time or --tokens-usd with a new value)');
+  const via = opts.via || null;
+  const through = via?.agent ? ` through ${via.agent}${via.relayed ? ' (relayed)' : ''}` : '';
+  let b = body;
+  for (const c of done) b = appendToSection(b, 'Decision log', `- ${today()} ${c}: ${opts.reason} (by ${opts.by || 'unknown'}${through})`);
+  writeFm(file, next, b, 'bet');
+  const doc = loadDecisions(root, slug);
+  const sign = doc.decisions.find(d => d.type === 'sign' && d.status !== 'answered');
+  if (sign) { sign.context = signContext(next); saveDecisions(root, slug, doc); }
+  return done;
 }
 
 function appendBody(root, slug, heading, line) {

@@ -64,6 +64,8 @@ Every verdict is computed by the runner, never written by a model: the board's v
 panel's buy rate and Van Westendorp price range, the unit-economics checks. Simulated buyers are an
 upper bound and never change a bet's confidence; only `bridgie evidence` (real interviews, data, tests)
 proposes a tier, and you accept it. A money bet cannot be signed without positive unit economics.
+Risk, owner and appetite are set at `bet new` and can be corrected until the bet is signed:
+`bridgie bet set <slug> --risk ux --owner alice --time 6w --tokens-usd 150 --reason "..."` (each change is logged).
 
 ## The loop
 
