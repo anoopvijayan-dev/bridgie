@@ -1,22 +1,162 @@
 {
   "type": "object",
-  "required": ["id", "title", "lane", "risk", "owner", "status", "confidence"],
+  "required": [
+    "id",
+    "title",
+    "lane",
+    "risk",
+    "owner",
+    "status",
+    "confidence"
+  ],
   "additionalProperties": false,
   "properties": {
-    "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,63}$" },
-    "title": { "type": "string" },
-    "lane": { "type": "string", "enum": ["engineering", "product", "marketing", "sales", "platform", "security"] },
-    "risk": { "type": "string", "enum": ["money", "data", "security", "infra", "ux", "none"] },
-    "owner": { "type": "string" },
-    "status": { "type": "string", "enum": ["draft", "grilling", "evidence", "signed", "killed", "delivered", "evaluated"] },
-    "confidence": { "type": "string", "enum": ["opinion", "anecdote", "data", "test"] },
-    "appetite": { "type": "object", "properties": { "time": { "type": "string" }, "tokens_usd": { "type": "number" } } },
-    "kill_criteria": { "type": "array", "items": { "type": "string" } },
-    "outcome_metric": { "type": "object", "properties": { "name": { "type": "string" }, "baseline": { "type": ["string", "number", "null"] }, "target": { "type": ["string", "number", "null"] }, "read_by": { "type": ["string", "null"] } } },
-    "non_goals": { "type": "array", "items": { "type": "string" } },
-    "created": { "type": "string" },
-    "signed_at": { "type": ["string", "null"] },
-    "signed_by": { "type": ["string", "null"] },
-    "governance": { "type": ["object", "null"], "properties": { "at": { "type": "string" }, "rules": { "type": "object" }, "accepted_by": { "type": "string" } } }
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
+    },
+    "title": {
+      "type": "string"
+    },
+    "lane": {
+      "type": "string",
+      "enum": [
+        "engineering",
+        "product",
+        "marketing",
+        "sales",
+        "platform",
+        "security"
+      ]
+    },
+    "risk": {
+      "type": "string",
+      "enum": [
+        "money",
+        "data",
+        "security",
+        "infra",
+        "ux",
+        "none"
+      ]
+    },
+    "owner": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "draft",
+        "grilling",
+        "evidence",
+        "signed",
+        "killed",
+        "delivered",
+        "evaluated"
+      ]
+    },
+    "confidence": {
+      "type": "string",
+      "enum": [
+        "opinion",
+        "anecdote",
+        "data",
+        "test"
+      ]
+    },
+    "appetite": {
+      "type": "object",
+      "properties": {
+        "time": {
+          "type": "string"
+        },
+        "tokens_usd": {
+          "type": "number"
+        }
+      }
+    },
+    "kill_criteria": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "outcome_metric": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "baseline": {
+          "type": [
+            "string",
+            "number",
+            "null"
+          ]
+        },
+        "target": {
+          "type": [
+            "string",
+            "number",
+            "null"
+          ]
+        },
+        "read_by": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "non_goals": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "created": {
+      "type": "string"
+    },
+    "signed_at": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "signed_by": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "governance": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "at": {
+          "type": "string"
+        },
+        "rules": {
+          "type": "object"
+        },
+        "accepted_by": {
+          "type": "string"
+        }
+      }
+    },
+    "sign_track": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "evidence",
+        "launch",
+        null
+      ]
+    }
   }
 }

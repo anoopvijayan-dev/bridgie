@@ -1,5 +1,6 @@
 // bridgie bet new <slug> [--title T] [--lane L] [--risk R] [--from <scout>/O<n>]
-// bridgie bet set <slug> [--risk R] [--owner NAME] [--time 6w] [--tokens-usd N] --reason "..." [--relayed]
+// bridgie bet set <slug> [--risk R] [--owner NAME] [--time 6w] [--tokens-usd N]
+//                  [--metric M --baseline B --target T --read-by YYYY-MM-DD] [--kill "..."]... --reason "..." [--relayed]
 import * as st from '../state.mjs';
 import { seedBetFromOpportunity } from '../decide.mjs';
 import { actor, die, log, parseArgs, projectRoot, stateCommit, user, rel } from '../cli/core.mjs';
@@ -7,7 +8,7 @@ import { actor, die, log, parseArgs, projectRoot, stateCommit, user, rel } from 
 // set: correct an unsigned bet's risk, owner or appetite. Like a decision, it is the owner's call, so
 // inside an agent the command must say it relays a person (--relayed) and the log records that.
 function set(rest) {
-  const a = parseArgs(rest, { risk: 'value', owner: 'value', time: 'value', 'tokens-usd': 'value', reason: 'value', relayed: 'bool' }, 'bet set');
+  const a = parseArgs(rest, { risk: 'value', owner: 'value', time: 'value', 'tokens-usd': 'value', metric: 'value', baseline: 'value', target: 'value', 'read-by': 'value', kill: 'list', reason: 'value', relayed: 'bool' }, 'bet set');
   const slug = a._[0];
   if (!slug) die('bet set: slug required');
   const changes = {};
@@ -19,6 +20,12 @@ function set(rest) {
     if (!Number.isFinite(n) || n < 0) die(`bet set: --tokens-usd must be a number of dollars (got "${a['tokens-usd']}")`);
     changes.tokens_usd = n;
   }
+  for (const k of ['metric', 'baseline', 'target']) if (a[k] !== undefined) changes[k] = String(a[k]).trim();
+  if (a['read-by'] !== undefined) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(a['read-by']) || Number.isNaN(Date.parse(a['read-by']))) die(`bet set: --read-by must be a date as YYYY-MM-DD (got "${a['read-by']}")`);
+    changes.read_by = a['read-by'];
+  }
+  if (a.kill) changes.kill = a.kill.map(k => String(k).trim()).filter(Boolean);
   const who = actor(a.relayed);
   if (who.via.agent && !a.relayed) die(`bet set changes what the bet is held to, and this command is running inside an agent (${who.via.agent}). If ${who.by} told you this change, pass --relayed (the log will say it came through ${who.via.agent}); otherwise ask them to run it.`);
   const root = projectRoot();

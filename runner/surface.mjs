@@ -259,11 +259,11 @@ ${d.allow_free_text ? `<label><input type="radio" name="answer" value="__text__"
   else if (opts.readonly) signHtml = `<p>${esc(sign.context)}</p>${cli(opts, `<p class="cli">CLI: <code>bridgie sign ${esc(slug)}</code> · <code>bridgie sign ${esc(slug)} --more-evidence</code> · <code>bridgie sign ${esc(slug)} --kill</code></p>`)}`;
   else {
     const pol = st.lanePolicy(st.loadPolicy(root), data.lane, data.risk);
-    const min = pol.min_confidence_to_sign || 'anecdote';
     const reasons = [];
     const nums = st.numbersGate(root, slug, pol); if (nums) reasons.push(nums);
     if (pendingQ.length) reasons.push(`${pendingQ.length} question(s) pending: ${pendingQ.map(x => x.id).join(', ')}`);
-    if (st.CONFIDENCE.indexOf(data.confidence) < st.CONFIDENCE.indexOf(min)) reasons.push(`confidence "${data.confidence}" is below "${min}" required for risk ${data.risk}; gather evidence (bridgie evidence ${slug}) and accept its confidence proposal`);
+    const gate = st.confidenceGate(pol, data, slug);
+    if (!gate.ok) reasons.push(gate.reason);
     const blocked = reasons.join('; ');
     const btn = (v, cls) => `<button type="submit" name="answer" value="${esc(v)}" class="${cls}"${blocked && v === 'sign' ? ' disabled' : ''}>${esc(v)}</button>`;
     signHtml = `<form method="post" action="/decide" id="${esc(sign.id)}">${hidden(sign.id)}<p>${esc(sign.context)}</p>${blocked ? `<p class="warn">Sign is blocked: ${esc(blocked)}</p>` : ''}${btn('sign', 'primary')} ${btn('need more evidence', '')} ${btn('kill', 'danger')}</form>`;

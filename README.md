@@ -67,6 +67,12 @@ proposes a tier, and you accept it. A money bet cannot be signed without positiv
 Risk, owner and appetite are set at `bet new` and can be corrected until the bet is signed:
 `bridgie bet set <slug> --risk ux --owner alice --time 6w --tokens-usd 150 --reason "..."` (each change is logged).
 
+**Deciding by launching.** For a low-risk bet where launching is cheaper than interviewing (product bets at `ux` or
+`none` risk by default; policy `decide_by_launch`), the bet can be signed below the confidence bar once the owner
+says how the launch will be judged: `bridgie bet set <slug> --metric "post impressions" --baseline "median of last 10"
+--target "3x baseline" --read-by 2027-01-20 --kill "under 1x baseline after 7 days" --reason "..."`. The bet is
+marked as signed to learn by launching, and `bridgie` reminds you to read the outcome on that date before `learn`.
+
 ## The loop
 
 ```bash

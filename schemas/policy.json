@@ -25,7 +25,11 @@
       "properties": {
         "build": {
           "type": "string",
-          "enum": ["off", "auto", "required"]
+          "enum": [
+            "off",
+            "auto",
+            "required"
+          ]
         },
         "network": {
           "type": "array",
@@ -127,11 +131,17 @@
                 },
                 "require_numbers": {
                   "type": "boolean"
+                },
+                "decide_by_launch": {
+                  "type": "boolean"
                 }
               }
             }
           },
           "require_numbers": {
+            "type": "boolean"
+          },
+          "decide_by_launch": {
             "type": "boolean"
           }
         }

@@ -2,6 +2,14 @@
 import * as st from '../state.mjs';
 import { findRoot } from '../cli/core.mjs';
 
+// launchDue: a bet signed to learn by launching whose read-by date has come: its outcome metric, or null.
+function launchDue(root, slug) {
+  const { data } = st.readFm(st.betPath(root, slug));
+  const m = data.outcome_metric;
+  if (data.sign_track !== 'launch' || !m?.read_by || !['signed', 'delivered'].includes(data.status)) return null;
+  return m.read_by <= st.today() ? m : null;
+}
+
 export default async function next() {
   const root = findRoot();
   const say = s => process.stdout.write(`${s}\n`);
@@ -25,6 +33,8 @@ export default async function next() {
     const s = r.slug, lines = [];
     lines.push(`\n${s}: ${r.title} — ${r.status}, risk ${r.risk}, confidence ${r.confidence}${r.pending ? `, ${r.pending} decision(s) waiting` : ''}`);
     if (r.pending) lines.push(`  bridgie open ${s}                 answer the ${r.pending} decision(s) in your browser`);
+    const due = launchDue(root, s);
+    if (due) lines.push(`  read the outcome (due ${due.read_by}): ${due.name}, target ${due.target}${due.baseline ? `, baseline ${due.baseline}` : ''}; write the result in the bet, then bridgie learn ${s}`);
     switch (r.status) {
       case 'draft': lines.push(`  bridgie frame ${s} "<idea>"       draft the bet body (or edit .bridgie/bets/${s}/bet.md)`, `  bridgie grill ${s} --lenses       stress-test it and convene the board`); break;
       case 'grilling': case 'evidence':

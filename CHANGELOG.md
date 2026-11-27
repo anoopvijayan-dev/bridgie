@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Decide by launching
+- A low-risk bet can be signed below the confidence bar when launching it is the cheapest honest test, as long as the owner first says how the launch will be judged: an outcome metric with a target and a read-by date (`bet set --metric --baseline --target --read-by`) and at least one kill criterion (`bet set --kill`, repeatable). Policy `decide_by_launch: true` turns it on per lane or risk; the default turns it on for product bets at `ux` and `none` risk. Every other lane and risk still needs evidence.
+- The bet records `sign_track: launch` (or `evidence`), the sign page and `sign` explain the option when it applies, and `bridgie next` says when the read-by date has come: read the outcome, write it in the bet, then `bridgie learn`.
+
 ### Correcting a bet before it is signed
 - `bridgie bet set <slug> [--risk R] [--owner NAME] [--time 6w] [--tokens-usd N] --reason "..."` changes an unsigned bet's risk (up or down), owner or appetite. Before, these were fixed at `bet new`: a risk picked too high could not be lowered, and the owner was whoever's git name was set on the machine. Each change is a line in the bet's decision log with the reason, who made it and through which agent; a pending sign decision is reworded to match. Refused once the bet is signed (risk then only goes up, and the rest is held by the governance lock). Inside an agent it needs `--relayed`, as owner decisions do.
 

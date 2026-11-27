@@ -4,6 +4,7 @@ export const USAGE = `bridgie <command> [args]
 Find     scout --from <folder> [--name N]   rank the problems in a folder of raw signals (bet-less)
 Decide   bet new <slug> [--from <scout>/O<n>] [--risk R]   create a bet (optionally seeded from an opportunity)
          bet set <slug> [--risk R] [--owner NAME] [--time 6w] [--tokens-usd N] --reason "..."   correct an unsigned bet; logged
+         bet set <slug> --metric M [--baseline B] --target T --read-by YYYY-MM-DD --kill "..." --reason "..."   say how the launch is judged (decide by launching)
          frame <slug> ["<idea>"]  draft the bet body; assumptions become questions
          research <slug>          competitors, prices, complaints from the web, every fact linked
          grill <slug> [--lenses]  stress-test the why; --lenses adds the three-lens board and chair
