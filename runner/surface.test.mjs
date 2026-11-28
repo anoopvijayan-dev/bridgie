@@ -44,6 +44,18 @@ test('bet page shows cards, the question form, and a blocked sign button while q
   assert.ok(html2.includes('No open questions'));
 });
 
+test('the sign page says how to decide by launching, and unblocks once the launch is described', () => {
+  const root = project();
+  st.betNew(root, 'g', { title: 'Game', lane: 'product', risk: 'ux', owner: 'tester' });
+  st.betTransition(root, 'g', 'grilling'); st.betTransition(root, 'g', 'evidence'); st.ensureSignDecision(root, 'g');
+  const html = renderBet(root, 'g');
+  assert.ok(html.includes('Sign is blocked'));
+  assert.ok(html.includes('decide by launching'));
+  st.betSet(root, 'g', { metric: 'post impressions', target: '3x', read_by: '2027-01-15', kill: ['under 1x'] }, { reason: 'r', by: 'tester' });
+  const html2 = renderBet(root, 'g');
+  assert.ok(!html2.includes('Sign is blocked'));
+});
+
 test('renderAll writes read-only pages with CLI hints', () => {
   const root = project();
   const out = renderAll(root, join(root, '.bridgie', 'ui'));

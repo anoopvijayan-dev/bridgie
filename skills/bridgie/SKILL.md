@@ -57,7 +57,7 @@ If the person has raw signals (emails, support exports, notes, forum threads) in
 
 ## 5. Decide loop
 
-1. `B bet new <slug> --title "..." --risk <money|data|security|infra|ux|none>`.
+1. `B bet new <slug> --title "..." --risk <money|data|security|infra|ux|none>`. Ask the person for the risk and the appetite; don't pick them. Before signing they can be corrected with `B bet set <slug> --risk R --owner NAME --time 6w --tokens-usd N --reason "..." --relayed` (only on the person's word). A low-risk product bet whose launch is the real test can be signed on opinion once the person gives the metric, baseline, target, read-by date and a kill criterion (`B bet set <slug> --metric ... --target ... --read-by YYYY-MM-DD --kill "..." --reason "..." --relayed`); never fill these in yourself.
 2. `B frame <slug> "<one-line idea>"` drafts Who, Problem, Why now, What they do today, Expected outcome, and raises every assumption as a question. Or help the person write the markdown body of `.bridgie/bets/<slug>/bet.md` by hand (never the YAML frontmatter).
 3. `B research <slug>`: competitors, prices and complaints, with a link on every fact.
 4. `B grill <slug> --lenses`: adversarial grill plus the offer, moat and product board with a chair. The runner computes the vote.

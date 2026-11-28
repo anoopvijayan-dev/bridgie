@@ -51,6 +51,10 @@ lanes:
     min_confidence_to_sign: anecdote
     by_risk:
       money: { approvers: 1, min_confidence_to_sign: data, require_numbers: true }
+      # decide_by_launch: below the confidence bar, the bet can still be signed when the owner has set
+      # an outcome metric (target and read-by date) and a kill criterion: the launch is the experiment.
+      ux: { decide_by_launch: true }
+      none: { decide_by_launch: true }
   marketing:
     tiers_default: [mechanical, adversarial]
     approvers: 1

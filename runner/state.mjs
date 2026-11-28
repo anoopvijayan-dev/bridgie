@@ -245,8 +245,9 @@ export function betTransition(root, slug, to, opts = {}) {
   const patch = { status: to };
   if (to === 'signed') {
     const pol = lanePolicy(loadPolicy(root), data.lane, data.risk);
-    const min = pol.min_confidence_to_sign || 'anecdote';
-    if (CONFIDENCE.indexOf(data.confidence) < CONFIDENCE.indexOf(min)) throw new Error(`bet "${slug}": confidence "${data.confidence}" is below "${min}" required for lane ${data.lane} / risk ${data.risk}`);
+    const gate = confidenceGate(pol, data, slug);
+    if (!gate.ok) throw new Error(`bet "${slug}": ${gate.reason}`);
+    patch.sign_track = gate.track;
     if (!opts.by || opts.by !== data.owner) throw new Error(`bet "${slug}": only the owner "${data.owner}" can sign (acting as "${opts.by || 'nobody'}")`);
     const pending = existsSync(decisionsPath(root, slug)) ? readJson(decisionsPath(root, slug)).decisions.filter(d => d.type === 'question' && d.status === 'pending') : [];
     if (pending.length) throw new Error(`bet "${slug}": ${pending.length} question(s) still pending (${pending.map(d => d.id).join(', ')}); answer or defer them first`);
@@ -267,6 +268,25 @@ export function raiseRisk(root, slug, risk, reason) {
   if (RISK_ORDER.indexOf(risk) <= RISK_ORDER.indexOf(data.risk)) return { from: data.risk, to: data.risk, changed: false };
   writeFm(file, { ...data, risk }, appendToSection(body, 'Risk log', `- ${today()} risk ${data.risk} → ${risk}: ${reason}`), 'bet');
   return { from: data.risk, to: risk, changed: true };
+}
+
+// launchReady: the bet says how its launch will be judged: a metric with a target and a read-by
+// date, and at least one kill criterion.
+export function launchReady(data) {
+  const m = data.outcome_metric || {};
+  const has = v => v !== undefined && v !== null && String(v).trim() !== '';
+  return has(m.name) && has(m.target) && has(m.read_by) && (data.kill_criteria || []).length > 0;
+}
+// confidenceGate: whether the bet's confidence lets it be signed. Below the bar, a lane and risk with
+// decide_by_launch accept a bet that says how its launch will be judged (track 'launch').
+// Returns { ok, track, reason }.
+export function confidenceGate(pol, data, slug) {
+  const min = pol.min_confidence_to_sign || 'anecdote';
+  if (CONFIDENCE.indexOf(data.confidence) >= CONFIDENCE.indexOf(min)) return { ok: true, track: 'evidence' };
+  const below = `confidence "${data.confidence}" is below "${min}" required for lane ${data.lane} / risk ${data.risk}; gather evidence (bridgie evidence ${slug}) and accept its confidence proposal`;
+  if (!pol.decide_by_launch) return { ok: false, reason: below };
+  if (launchReady(data)) return { ok: true, track: 'launch' };
+  return { ok: false, reason: `${below}, or decide by launching: say how the launch will be judged first, with bridgie bet set ${slug} --metric "<what you measure>" --baseline "<today>" --target "<success>" --read-by YYYY-MM-DD --kill "<what means stop>" --reason "..."` };
 }
 
 // numbersGate: why a bet whose policy requires numbers cannot be signed yet, or null.
@@ -318,6 +338,8 @@ export function listDecisions(root, slug, opts = {}) {
   return filtered.sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
 }
 
+const signContext = data => `Sign "${data.title}"? lane ${data.lane}, risk ${data.risk}, confidence ${data.confidence}, appetite ${data.appetite?.time || '?'}.`;
+
 export function ensureSignDecision(root, slug) {
   const doc = loadDecisions(root, slug);
   const open = doc.decisions.find(d => d.type === 'sign' && d.status !== 'answered');
@@ -325,9 +347,52 @@ export function ensureSignDecision(root, slug) {
   const { data } = readFm(betPath(root, slug));
   return addDecision(root, slug, {
     type: 'sign', allow_free_text: false,
-    context: `Sign "${data.title}"? lane ${data.lane}, risk ${data.risk}, confidence ${data.confidence}, appetite ${data.appetite?.time || '?'}.`,
+    context: signContext(data),
     options: ['sign', 'kill', 'need more evidence'],
   });
+}
+
+// betSet: correct a bet's risk, owner or appetite before it is signed. Once signed, the risk only goes
+// up (raiseRisk) and the rest is held by the governance lock. Every change is logged in the bet body
+// with the reason, who made it and through what; a pending sign decision is reworded to match.
+export const UNSIGNED = ['draft', 'grilling', 'evidence'];
+export function betSet(root, slug, changes, opts = {}) {
+  const file = betPath(root, slug);
+  if (!existsSync(file)) throw new Error(`bet "${slug}" not found`);
+  if (!opts.reason) throw new Error('bet set: --reason is required (it is written to the bet\'s decision log)');
+  const { data, body } = readFm(file);
+  if (!UNSIGNED.includes(data.status)) throw new Error(`bet "${slug}" is ${data.status}: risk, owner, appetite, outcome metric and kill criteria are fixed once a bet is signed (risk is still raised automatically when the work needs it)`);
+  if (changes.risk !== undefined && !RISK_ORDER.includes(changes.risk)) throw new Error(`unknown risk "${changes.risk}" (one of: ${RISK_ORDER.join(', ')})`);
+  const app = { ...(data.appetite || {}) };
+  if (changes.time !== undefined) app.time = changes.time;
+  if (changes.tokens_usd !== undefined) app.tokens_usd = changes.tokens_usd;
+  const next = { ...data };
+  if (changes.risk !== undefined) next.risk = changes.risk;
+  if (changes.owner !== undefined) next.owner = changes.owner;
+  next.appetite = app;
+  const metric = { name: null, baseline: null, target: null, read_by: null, ...(data.outcome_metric || {}) };
+  for (const [k, c] of [['name', 'metric'], ['baseline', 'baseline'], ['target', 'target'], ['read_by', 'read_by']]) if (changes[c] !== undefined) metric[k] = changes[c];
+  if (['metric', 'baseline', 'target', 'read_by'].some(k => changes[k] !== undefined)) next.outcome_metric = metric;
+  const added = (changes.kill || []).filter(k => !(data.kill_criteria || []).includes(k));
+  if (added.length) next.kill_criteria = [...(data.kill_criteria || []), ...added];
+  const appText = a => `${a?.time ?? '?'}/$${a?.tokens_usd ?? '?'}`;
+  const done = [];
+  if (next.risk !== data.risk) done.push(`risk ${data.risk} → ${next.risk}`);
+  if (next.owner !== data.owner) done.push(`owner ${data.owner} → ${next.owner}`);
+  if (appText(next.appetite) !== appText(data.appetite)) done.push(`appetite ${appText(data.appetite)} → ${appText(next.appetite)}`);
+  const mText = m => [m?.name, m?.baseline != null && `baseline ${m.baseline}`, m?.target != null && `target ${m.target}`, m?.read_by && `read by ${m.read_by}`].filter(Boolean).join('; ');
+  if (JSON.stringify(next.outcome_metric ?? null) !== JSON.stringify(data.outcome_metric ?? null)) done.push(`outcome metric → ${mText(next.outcome_metric)}`);
+  for (const k of added) done.push(`kill criterion added: ${k}`);
+  if (!done.length) throw new Error('bet set: nothing to change (give --risk, --owner, --time, --tokens-usd, --metric, --baseline, --target, --read-by or --kill with a new value)');
+  const via = opts.via || null;
+  const through = via?.agent ? ` through ${via.agent}${via.relayed ? ' (relayed)' : ''}` : '';
+  let b = body;
+  for (const c of done) b = appendToSection(b, 'Decision log', `- ${today()} ${c}: ${opts.reason} (by ${opts.by || 'unknown'}${through})`);
+  writeFm(file, next, b, 'bet');
+  const doc = loadDecisions(root, slug);
+  const sign = doc.decisions.find(d => d.type === 'sign' && d.status !== 'answered');
+  if (sign) { sign.context = signContext(next); saveDecisions(root, slug, doc); }
+  return done;
 }
 
 function appendBody(root, slug, heading, line) {
